@@ -1,0 +1,107 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/codex.gd" id="1_codex"]
+
+[node name="Codex" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_codex")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.07, 0.08, 0.11, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+theme_override_font_sizes/font_size = 26
+text = "規則與圖鑑"
+
+[node name="StarLabel" type="Label" parent="Margin/VBox/Header"]
+layout_mode = 2
+text = "圖鑑星級："
+
+[node name="Star1" type="Button" parent="Margin/VBox/Header"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+text = "★"
+
+[node name="Star2" type="Button" parent="Margin/VBox/Header"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+text = "★★"
+
+[node name="Star3" type="Button" parent="Margin/VBox/Header"]
+custom_minimum_size = Vector2(64, 40)
+layout_mode = 2
+text = "★★★"
+
+[node name="BackButton" type="Button" parent="Margin/VBox/Header"]
+custom_minimum_size = Vector2(120, 40)
+layout_mode = 2
+text = "返回"
+
+[node name="Tabs" type="TabContainer" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="Rules" type="RichTextLabel" parent="Margin/VBox/Tabs"]
+layout_mode = 2
+bbcode_enabled = true
+metadata/_tab_index = 0
+
+[node name="Units" type="ScrollContainer" parent="Margin/VBox/Tabs"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+metadata/_tab_index = 1
+
+[node name="UnitGrid" type="GridContainer" parent="Margin/VBox/Tabs/Units"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+columns = 4
+
+[node name="Civs" type="RichTextLabel" parent="Margin/VBox/Tabs"]
+visible = false
+layout_mode = 2
+bbcode_enabled = true
+metadata/_tab_index = 2
+
+[node name="Traits" type="RichTextLabel" parent="Margin/VBox/Tabs"]
+visible = false
+layout_mode = 2
+bbcode_enabled = true
+metadata/_tab_index = 3

@@ -1,0 +1,110 @@
+{
+  "_note": "《六族遠征》V0.1 原型測試值。所有數值皆可在此調整，不需修改程式。",
+  "version": "0.1.0",
+  "rounds": {
+    "total": 24,
+    "chapter_length": 6,
+    "boss_rounds": [6, 12, 18, 24]
+  },
+  "economy": {
+    "start_gold": 5,
+    "base_income": 5,
+    "clear_bonus": 2,
+    "interest_step": 10,
+    "interest_max": 2,
+    "reroll_cost": 2,
+    "xp_cost": 4,
+    "xp_per_buy": 4,
+    "natural_xp": 2,
+    "sell_multiplier_by_star": [1, 3, 9]
+  },
+  "expedition": {
+    "start_hp": 40,
+    "max_hp": 40,
+    "threat_by_star": [1, 2, 4],
+    "max_loss_per_round": 10,
+    "round_multipliers": [
+      {"from": 1, "to": 3, "mult": 1.0},
+      {"from": 4, "to": 6, "mult": 1.2},
+      {"from": 7, "to": 9, "mult": 1.4},
+      {"from": 10, "to": 12, "mult": 1.6},
+      {"from": 13, "to": 15, "mult": 1.8},
+      {"from": 16, "to": 18, "mult": 2.0},
+      {"from": 19, "to": 21, "mult": 2.2},
+      {"from": 22, "to": 24, "mult": 2.4}
+    ]
+  },
+  "level": {
+    "_note": "xp_thresholds[i] = 到達 Lv.(i+1) 所需累積 XP；上場上限 = 文明等級",
+    "max_level": 10,
+    "xp_thresholds": [0, 2, 6, 12, 20, 30, 42, 56, 72, 90]
+  },
+  "shop": {
+    "slots": 5,
+    "bench_slots": 12,
+    "_odds_note": "各等級抽到 1/2/3/4 費的百分比，總和必須為 100",
+    "odds": {
+      "1": [100, 0, 0, 0],
+      "2": [85, 15, 0, 0],
+      "3": [70, 30, 0, 0],
+      "4": [55, 35, 10, 0],
+      "5": [40, 40, 20, 0],
+      "6": [25, 40, 33, 2],
+      "7": [15, 35, 45, 5],
+      "8": [10, 25, 55, 10],
+      "9": [5, 20, 60, 15],
+      "10": [5, 10, 60, 25]
+    }
+  },
+  "star": {
+    "max": 3,
+    "hp_mult": [1.0, 1.9, 3.3],
+    "atk_mult": [1.0, 1.85, 3.33],
+    "armor_add": [0, 3, 7],
+    "mr_add": [0, 3, 7],
+    "skill_mult": [1.0, 1.85, 3.33],
+    "cc_mult": [1.0, 1.1, 1.2],
+    "cc_max_extra": [0.0, 0.2, 0.4],
+    "hot_duration_mult": [1.0, 1.1, 1.2]
+  },
+  "tiers": {
+    "1": {"name": "平凡", "hp": 110, "atk": 12, "armor": 10, "mr": 10, "atk_speed": 0.8, "skill_budget": 24, "color": "#9aa3ad"},
+    "2": {"name": "出眾", "hp": 175, "atk": 18, "armor": 14, "mr": 14, "atk_speed": 0.8, "skill_budget": 40, "color": "#3f8cff"},
+    "3": {"name": "珍稀", "hp": 260, "atk": 26, "armor": 18, "mr": 18, "atk_speed": 0.8, "skill_budget": 65, "color": "#a55cff"},
+    "4": {"name": "頂尖", "hp": 370, "atk": 36, "armor": 22, "mr": 22, "atk_speed": 0.8, "skill_budget": 95, "color": "#f2b632"}
+  },
+  "classes": {
+    "warrior":  {"name": "戰士", "hp": 1.05, "atk": 1.10, "armor": 1.0},
+    "guardian": {"name": "守衛", "hp": 1.40, "atk": 0.75, "armor": 1.25},
+    "archer":   {"name": "射手", "hp": 0.80, "atk": 1.15, "armor": 1.0},
+    "mage":     {"name": "法師", "hp": 0.78, "atk": 0.95, "armor": 1.0},
+    "assassin": {"name": "刺客", "hp": 0.88, "atk": 1.20, "armor": 1.0},
+    "priest":   {"name": "祭司", "hp": 0.90, "atk": 0.70, "armor": 1.0}
+  },
+  "combat": {
+    "tick": 0.05,
+    "max_time": 45.0,
+    "mana_max": 60,
+    "mana_per_attack": 10,
+    "mana_per_hit": 5,
+    "crit_chance": 0.05,
+    "crit_mult": 1.5,
+    "move_speed": 2.0,
+    "_move_note": "移動速度單位：每秒幾格",
+    "cast_time": 0.3,
+    "idle_retry": 0.2,
+    "low_hp_threshold": 0.5,
+    "execute_threshold": 0.35,
+    "civ_cc_extra_cap": 0.2,
+    "dot_tick": 0.5,
+    "max_phys_reduction": 0.8
+  },
+  "enemy": {
+    "use_synergies": false
+  },
+  "labels": {
+    "races": {"elf": "精靈", "human": "人類", "orc": "半獸人", "centaur": "半人馬", "deer": "鹿角人", "oni": "鬼人"},
+    "types": {"vanguard": "前衛", "rear": "後衛", "mobile": "機動", "support": "支援"},
+    "race_colors": {"elf": "#4fbf6a", "human": "#d9c27a", "orc": "#c0563a", "centaur": "#b9864a", "deer": "#5fa7a0", "oni": "#9a3d7c"}
+  }
+}

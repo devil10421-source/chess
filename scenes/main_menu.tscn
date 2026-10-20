@@ -1,0 +1,104 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.07, 0.08, 0.11, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Box" type="VBoxContainer" parent="Center"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+theme_override_font_sizes/font_size = 54
+text = "六族遠征"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/Box"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
+text = "單機 PVE 自走棋・24 回合遠征"
+horizontal_alignment = 1
+
+[node name="Gap" type="Control" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+
+[node name="NewGameButton" type="Button" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "開始新遠征"
+
+[node name="ContinueButton" type="Button" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "繼續遠征"
+
+[node name="CodexButton" type="Button" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "規則／棋子圖鑑"
+
+[node name="UnlockButton" type="Button" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+disabled = true
+text = "局外解鎖：替代型態（後續階段開放）"
+
+[node name="QuitButton" type="Button" parent="Center/Box"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "離開遊戲"
+
+[node name="Version" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -34.0
+offset_right = -12.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.45, 0.48, 0.55, 1)
+theme_override_font_sizes/font_size = 14
+text = "V0.1 原型"
+horizontal_alignment = 2
+
+[node name="ConfirmNewGame" type="ConfirmationDialog" parent="."]
+title = "開始新遠征"
+size = Vector2i(420, 160)
+ok_button_text = "清除並開始"
+cancel_button_text = "取消"
+dialog_text = "已有進行中的遠征存檔。
+開始新遠征會清除目前的存檔，確定嗎？"

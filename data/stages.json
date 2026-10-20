@@ -1,0 +1,56 @@
+{
+  "_note": "24 關敵軍配置。col 0~6；row 0 = 敵方最後排、3 = 敵方最前排（靠近玩家）。star 1~3。seed 決定該關戰鬥亂數（暴擊）。難度以上場數、稀有度、星級、站位與戰術遞增，不另外灌血。",
+  "stages": [
+    {"round": 1, "chapter": 1, "name": "草原斥候（教學）", "seed": 101, "units": [
+      {"id": "CEN1", "star": 1, "col": 3, "row": 1}]},
+    {"round": 2, "chapter": 1, "name": "荒野游勇", "seed": 102, "units": [
+      {"id": "ORC1", "star": 1, "col": 3, "row": 3}, {"id": "HUM1", "star": 1, "col": 4, "row": 1}]},
+    {"round": 3, "chapter": 1, "name": "刀與弓", "seed": 103, "units": [
+      {"id": "ONI1", "star": 1, "col": 2, "row": 3}, {"id": "CEN1", "star": 1, "col": 3, "row": 1}]},
+    {"round": 4, "chapter": 1, "name": "前哨營地", "seed": 104, "units": [
+      {"id": "ORC1", "star": 1, "col": 2, "row": 3}, {"id": "DEE1", "star": 1, "col": 4, "row": 3}, {"id": "CEN1", "star": 1, "col": 3, "row": 1}]},
+    {"round": 5, "chapter": 1, "name": "雙鋒突擊", "seed": 105, "units": [
+      {"id": "ORC1", "star": 1, "col": 3, "row": 3}, {"id": "ONI1", "star": 1, "col": 4, "row": 3}, {"id": "CEN1", "star": 1, "col": 2, "row": 1}, {"id": "ELF2", "star": 1, "col": 4, "row": 0}]},
+    {"round": 6, "chapter": 1, "name": "首領：狂戰之營", "seed": 106, "boss": true, "units": [
+      {"id": "ORC4", "star": 1, "col": 3, "row": 3}, {"id": "ORC1", "star": 1, "col": 2, "row": 3}, {"id": "CEN1", "star": 1, "col": 3, "row": 1}, {"id": "HUM1", "star": 1, "col": 4, "row": 0}]},
+
+    {"round": 7, "chapter": 2, "name": "盾牆", "seed": 107, "units": [
+      {"id": "HUM2", "star": 1, "col": 2, "row": 3}, {"id": "ELF1", "star": 2, "col": 4, "row": 3}, {"id": "CEN1", "star": 1, "col": 3, "row": 1}, {"id": "HUM1", "star": 1, "col": 2, "row": 0}]},
+    {"round": 8, "chapter": 2, "name": "破甲獵隊", "seed": 108, "units": [
+      {"id": "ORC1", "star": 2, "col": 2, "row": 3}, {"id": "HUM2", "star": 1, "col": 4, "row": 3}, {"id": "ORC3", "star": 1, "col": 3, "row": 1}, {"id": "ELF2", "star": 1, "col": 5, "row": 1}]},
+    {"round": 9, "chapter": 2, "name": "鐵蹄陣", "seed": 109, "units": [
+      {"id": "CEN3", "star": 1, "col": 3, "row": 3}, {"id": "DEE1", "star": 2, "col": 2, "row": 3}, {"id": "CEN2", "star": 1, "col": 5, "row": 2}, {"id": "CEN1", "star": 2, "col": 2, "row": 1}, {"id": "HUM1", "star": 1, "col": 4, "row": 0}]},
+    {"round": 10, "chapter": 2, "name": "夜襲", "seed": 110, "units": [
+      {"id": "HUM2", "star": 2, "col": 3, "row": 3}, {"id": "ONI1", "star": 1, "col": 2, "row": 3}, {"id": "HUM3", "star": 1, "col": 6, "row": 2}, {"id": "ORC3", "star": 1, "col": 2, "row": 1}, {"id": "DEE2", "star": 1, "col": 4, "row": 0}]},
+    {"round": 11, "chapter": 2, "name": "堅城", "seed": 111, "units": [
+      {"id": "CEN3", "star": 1, "col": 2, "row": 3}, {"id": "HUM2", "star": 2, "col": 4, "row": 3}, {"id": "ORC1", "star": 1, "col": 3, "row": 3}, {"id": "ORC3", "star": 1, "col": 2, "row": 1}, {"id": "ELF2", "star": 1, "col": 4, "row": 1}, {"id": "HUM1", "star": 1, "col": 3, "row": 0}]},
+    {"round": 12, "chapter": 2, "name": "首領：王國大元帥", "seed": 112, "boss": true, "units": [
+      {"id": "HUM4", "star": 1, "col": 3, "row": 3}, {"id": "HUM2", "star": 1, "col": 2, "row": 3}, {"id": "CEN3", "star": 1, "col": 4, "row": 3}, {"id": "ORC3", "star": 1, "col": 2, "row": 1}, {"id": "ELF2", "star": 1, "col": 4, "row": 1}, {"id": "HUM1", "star": 1, "col": 3, "row": 0}]},
+
+    {"round": 13, "chapter": 3, "name": "星光結界", "seed": 113, "units": [
+      {"id": "ELF1", "star": 2, "col": 2, "row": 3}, {"id": "DEE1", "star": 2, "col": 4, "row": 3}, {"id": "HUM2", "star": 2, "col": 3, "row": 3}, {"id": "ELF3", "star": 1, "col": 3, "row": 1}, {"id": "ONI2", "star": 2, "col": 2, "row": 0}, {"id": "ELF2", "star": 2, "col": 4, "row": 0}]},
+    {"round": 14, "chapter": 3, "name": "藤蔓迷宮", "seed": 114, "units": [
+      {"id": "CEN3", "star": 1, "col": 3, "row": 3}, {"id": "DEE1", "star": 2, "col": 2, "row": 3}, {"id": "ORC2", "star": 2, "col": 5, "row": 3}, {"id": "DEE3", "star": 1, "col": 4, "row": 1}, {"id": "DEE2", "star": 1, "col": 2, "row": 0}, {"id": "ELF3", "star": 1, "col": 3, "row": 0}]},
+    {"round": 15, "chapter": 3, "name": "咒霧", "seed": 115, "units": [
+      {"id": "HUM2", "star": 2, "col": 2, "row": 3}, {"id": "ORC1", "star": 2, "col": 4, "row": 3}, {"id": "ONI1", "star": 2, "col": 3, "row": 3}, {"id": "ONI2", "star": 2, "col": 1, "row": 1}, {"id": "ONI2", "star": 2, "col": 5, "row": 1}, {"id": "DEE3", "star": 1, "col": 3, "row": 0}, {"id": "ONI3", "star": 1, "col": 6, "row": 2}]},
+    {"round": 16, "chapter": 3, "name": "雷鳴原野", "seed": 116, "units": [
+      {"id": "CEN4", "star": 1, "col": 3, "row": 3}, {"id": "CEN3", "star": 2, "col": 2, "row": 3}, {"id": "CEN2", "star": 2, "col": 5, "row": 3}, {"id": "CEN1", "star": 2, "col": 2, "row": 1}, {"id": "ELF3", "star": 1, "col": 4, "row": 0}, {"id": "DEE2", "star": 2, "col": 3, "row": 0}, {"id": "CEN1", "star": 2, "col": 5, "row": 1}]},
+    {"round": 17, "chapter": 3, "name": "禁錮與追獵", "seed": 117, "units": [
+      {"id": "DEE1", "star": 2, "col": 2, "row": 3}, {"id": "HUM2", "star": 2, "col": 4, "row": 3}, {"id": "ELF4", "star": 1, "col": 6, "row": 2}, {"id": "DEE3", "star": 2, "col": 3, "row": 1}, {"id": "ELF3", "star": 1, "col": 1, "row": 1}, {"id": "HUM1", "star": 2, "col": 4, "row": 0}, {"id": "ORC3", "star": 2, "col": 2, "row": 0}]},
+    {"round": 18, "chapter": 3, "name": "首領：業火鬼王", "seed": 118, "boss": true, "units": [
+      {"id": "ONI4", "star": 1, "col": 3, "row": 0}, {"id": "CEN3", "star": 2, "col": 3, "row": 3}, {"id": "ONI1", "star": 2, "col": 2, "row": 3}, {"id": "HUM2", "star": 2, "col": 4, "row": 3}, {"id": "ONI2", "star": 2, "col": 1, "row": 1}, {"id": "ONI3", "star": 2, "col": 6, "row": 2}, {"id": "DEE2", "star": 1, "col": 5, "row": 0}]},
+
+    {"round": 19, "chapter": 4, "name": "混編先鋒", "seed": 119, "units": [
+      {"id": "ORC4", "star": 1, "col": 3, "row": 3}, {"id": "CEN3", "star": 2, "col": 2, "row": 3}, {"id": "HUM2", "star": 2, "col": 4, "row": 3}, {"id": "ORC3", "star": 2, "col": 2, "row": 1}, {"id": "ELF2", "star": 2, "col": 4, "row": 1}, {"id": "DEE2", "star": 2, "col": 3, "row": 0}, {"id": "ONI3", "star": 1, "col": 6, "row": 2}, {"id": "ELF3", "star": 1, "col": 1, "row": 0}]},
+    {"round": 20, "chapter": 4, "name": "月下追殺", "seed": 120, "units": [
+      {"id": "ELF4", "star": 1, "col": 6, "row": 2}, {"id": "HUM3", "star": 2, "col": 0, "row": 2}, {"id": "CEN3", "star": 2, "col": 3, "row": 3}, {"id": "DEE1", "star": 2, "col": 2, "row": 3}, {"id": "ORC3", "star": 2, "col": 4, "row": 1}, {"id": "DEE3", "star": 2, "col": 2, "row": 1}, {"id": "HUM1", "star": 2, "col": 3, "row": 0}, {"id": "ELF2", "star": 2, "col": 5, "row": 0}]},
+    {"round": 21, "chapter": 4, "name": "王與將", "seed": 121, "units": [
+      {"id": "HUM4", "star": 1, "col": 3, "row": 3}, {"id": "ORC4", "star": 1, "col": 2, "row": 3}, {"id": "CEN3", "star": 2, "col": 4, "row": 3}, {"id": "ORC1", "star": 2, "col": 5, "row": 3}, {"id": "ELF3", "star": 2, "col": 2, "row": 1}, {"id": "ORC3", "star": 2, "col": 4, "row": 1}, {"id": "DEE2", "star": 2, "col": 3, "row": 0}, {"id": "ONI2", "star": 2, "col": 1, "row": 0}, {"id": "CEN1", "star": 2, "col": 5, "row": 0}]},
+    {"round": 22, "chapter": 4, "name": "聖林守望", "seed": 122, "units": [
+      {"id": "DEE4", "star": 1, "col": 3, "row": 0}, {"id": "DEE1", "star": 2, "col": 3, "row": 3}, {"id": "CEN3", "star": 2, "col": 2, "row": 3}, {"id": "HUM2", "star": 2, "col": 4, "row": 3}, {"id": "DEE3", "star": 2, "col": 2, "row": 1}, {"id": "ELF3", "star": 2, "col": 4, "row": 1}, {"id": "ONI2", "star": 2, "col": 1, "row": 0}, {"id": "ORC3", "star": 2, "col": 5, "row": 0}, {"id": "ONI3", "star": 2, "col": 6, "row": 2}]},
+    {"round": 23, "chapter": 4, "name": "雷霆鐵騎", "seed": 123, "units": [
+      {"id": "CEN4", "star": 2, "col": 3, "row": 3}, {"id": "CEN3", "star": 2, "col": 2, "row": 3}, {"id": "ORC4", "star": 1, "col": 4, "row": 3}, {"id": "CEN2", "star": 2, "col": 5, "row": 3}, {"id": "ORC3", "star": 2, "col": 2, "row": 1}, {"id": "ELF2", "star": 2, "col": 4, "row": 1}, {"id": "DEE2", "star": 2, "col": 3, "row": 0}, {"id": "ONI2", "star": 2, "col": 1, "row": 0}, {"id": "ELF3", "star": 2, "col": 5, "row": 0}]},
+    {"round": 24, "chapter": 4, "name": "終局首領：赤牙戰王與群王", "seed": 124, "boss": true, "units": [
+      {"id": "ORC4", "star": 2, "col": 3, "row": 3}, {"id": "HUM4", "star": 1, "col": 2, "row": 3}, {"id": "CEN3", "star": 2, "col": 4, "row": 3}, {"id": "CEN4", "star": 1, "col": 5, "row": 3}, {"id": "ONI4", "star": 2, "col": 3, "row": 0}, {"id": "DEE4", "star": 1, "col": 4, "row": 0}, {"id": "ELF4", "star": 1, "col": 6, "row": 2}, {"id": "ORC3", "star": 2, "col": 2, "row": 1}, {"id": "ELF3", "star": 2, "col": 4, "row": 1}, {"id": "ONI2", "star": 2, "col": 1, "row": 0}]}
+  ]
+}
