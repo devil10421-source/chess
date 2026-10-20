@@ -1,0 +1,34 @@
+# 每次推送或開 Pull Request 時自動檢查：腳本解析、規則／戰鬥測試、畫面冒煙測試
+name: 自動檢查
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下載 Godot ${{ env.GODOT_VERSION }}
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip -d "$HOME/godot"
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: 執行 tools/check.sh
+        run: tools/check.sh "$GODOT"
+
+      - name: 上傳檢查紀錄
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-logs
+          path: build/check_*.log

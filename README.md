@@ -1,5 +1,9 @@
 # 六族遠征 V0.1（Godot 4 版）
 
+[![自動檢查](https://github.com/devil10421-source/chess/actions/workflows/check.yml/badge.svg)](https://github.com/devil10421-source/chess/actions/workflows/check.yml)
+
+**直接玩（Windows）**：到 [Releases](https://github.com/devil10421-source/chess/releases) 下載最新的 `SixTribes_Windows_*.zip`，解壓後執行 `SixTribes.exe`，不需要安裝 Godot。
+
 單機 PVE 自走棋原型：六大文明、24 回合、TFT 式 7×8 錯位六角棋盤、24 種棋子、三星合成、商店／利息／文明等級、三層羈絆、文明 Buff／Debuff、遠征生命。
 引擎：**Godot 4.7.2 stable（GDScript）**，渲染器 Compatibility。架構與場景樹說明見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
@@ -62,6 +66,8 @@ godot --headless --path . --script res://tests/balance_sim.gd -- --runs=20   # �
 | Android | 已設定套件名稱 `com.sixtribes.expedition`、橫向、arm64；需在「編輯器設定 → 匯出 → Android」設定 Android SDK 與 debug keystore 後才能匯出。 |
 | iOS | 已設定 Bundle ID；需在 macOS + Xcode 並填入 Apple Team ID 才能匯出。 |
 | Linux（自動驗證用） | 用於在 Linux 上自動驗證匯出流程。 |
+
+**自動發布**：推送 `v` 開頭的標籤（例如 `git tag v0.2.0 && git push origin v0.2.0`），GitHub 會自動跑檢查、匯出 Windows 版並建立 Release。每次推送到 `main` 也會自動跑 `tools/check.sh`，結果顯示在 Actions 頁面與 README 上方的徽章。
 
 命令列匯出 Windows 版：
 ```bash

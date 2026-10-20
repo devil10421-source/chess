@@ -1,0 +1,57 @@
+# 推送 v 開頭的標籤（例如 v0.2.0）時：先跑檢查，再匯出 Windows 執行檔並建立 GitHub Release
+name: 發布 Windows 版
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下載 Godot 與 Windows 匯出範本
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip -d "$HOME/godot"
+          echo "GODOT=$HOME/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          curl -sSL -o templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          T="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$T"
+          unzip -q -j templates.tpz templates/version.txt templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe -d "$T"
+          rm templates.tpz
+
+      - name: 檢查
+        run: tools/check.sh "$GODOT"
+
+      - name: 匯出 Windows 版
+        run: |
+          mkdir -p build/windows
+          "$GODOT" --headless --path . --export-release "Windows Desktop" build/windows/SixTribes.exe
+          test -s build/windows/SixTribes.exe
+          cd build/windows && zip -9 -q "../../SixTribes_Windows_${GITHUB_REF_NAME}.zip" SixTribes.exe
+
+      - name: 建立 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "SixTribes_Windows_${GITHUB_REF_NAME}.zip" \
+            --title "六族遠征 ${GITHUB_REF_NAME}" \
+            --notes "Windows 版：下載 zip、解壓後執行 SixTribes.exe。存檔位置：%APPDATA%\\Godot\\app_userdata\\六族遠征\\"
+
+      - name: 上傳執行檔（手動執行時）
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SixTribes-Windows
+          path: SixTribes_Windows_*.zip
