@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: 下載 Godot 與 Windows 匯出範本
         run: |
@@ -51,7 +51,7 @@ jobs:
 
       - name: 上傳執行檔（手動執行時）
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: SixTribes-Windows
           path: SixTribes_Windows_*.zip
