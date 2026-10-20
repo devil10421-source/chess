@@ -1,8 +1,13 @@
-# 推送 v 開頭的標籤（例如 v0.2.0）時：先跑檢查，再匯出 Windows 執行檔並建立 GitHub Release
+# 自動發布 Windows 版
+# project.godot 的 config/version（例如 0.1.0）還沒有對應的 Release（v0.1.0）時：
+# 跑檢查 → 匯出 Windows 執行檔 → 建立標籤與 Release。已發布過的版本會自動跳過。
+# 觸發：推送到 main（改到 project.godot 或本檔）、推送 v* 標籤、或在 Actions 頁面手動執行。
 name: 發布 Windows 版
 
 on:
   push:
+    branches: [main]
+    paths: ['project.godot', '.github/workflows/release.yml']
     tags: ['v*']
   workflow_dispatch:
 
@@ -19,7 +24,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: 讀取遊戲版本並檢查是否已發布
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP '^config/version="\K[^"]+' project.godot)
+          TAG="v${VER}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "$TAG 已經發布過，略過。要發新版請先修改 project.godot 的 config/version。"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "準備發布 $TAG"
+          fi
+
       - name: 下載 Godot 與 Windows 匯出範本
+        if: steps.ver.outputs.skip == 'false'
         run: |
           curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
           unzip -q godot.zip -d "$HOME/godot"
@@ -31,27 +53,29 @@ jobs:
           rm templates.tpz
 
       - name: 檢查
+        if: steps.ver.outputs.skip == 'false'
         run: tools/check.sh "$GODOT"
 
       - name: 匯出 Windows 版
+        if: steps.ver.outputs.skip == 'false'
         run: |
           mkdir -p build/windows
           "$GODOT" --headless --path . --export-release "Windows Desktop" build/windows/SixTribes.exe
           test -s build/windows/SixTribes.exe
-          cd build/windows && zip -9 -q "../../SixTribes_Windows_${GITHUB_REF_NAME}.zip" SixTribes.exe
+          cd build/windows && zip -9 -q "../../SixTribes_Windows_${{ steps.ver.outputs.tag }}.zip" SixTribes.exe
 
-      - name: 建立 Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: 建立標籤與 Release
+        if: steps.ver.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "SixTribes_Windows_${GITHUB_REF_NAME}.zip" \
-            --title "六族遠征 ${GITHUB_REF_NAME}" \
-            --notes "Windows 版：下載 zip、解壓後執行 SixTribes.exe。存檔位置：%APPDATA%\\Godot\\app_userdata\\六族遠征\\"
+          cat > notes.md <<NOTES
+          **Windows 版下載**：下載下方的 \`SixTribes_Windows_${TAG}.zip\`，解壓後執行 \`SixTribes.exe\`（不需安裝 Godot）。
 
-      - name: 上傳執行檔（手動執行時）
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: SixTribes-Windows
-          path: SixTribes_Windows_*.zip
+          - 第一次執行若出現 Windows SmartScreen「已保護您的電腦」，按「其他資訊 → 仍要執行」（未購買程式碼簽章憑證的原型都會這樣）。
+          - 存檔位置：\`%APPDATA%\\Godot\\app_userdata\\六族遠征\\\`
+          - 這個版本已通過 tools/check.sh 自動檢查。
+          NOTES
+          gh release create "$TAG" "SixTribes_Windows_${TAG}.zip" --target "$GITHUB_SHA" \
+            --title "六族遠征 ${TAG}" --notes-file notes.md
