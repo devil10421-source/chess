@@ -30,6 +30,9 @@ var inventory: Array = []      # 裝備背包（裝備 id）
 var rewards_claimed: Array = []  # 已領取裝備獎勵的回合
 var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, drop, choices: [id, id, id]}
 var removers := 0                 # 裝備卸除器數量（V0.4）
+## 進行中的即時戰鬥（V0.5）：開戰到結算之間有效；戰鬥中替場上棋子換裝會排入這場模擬
+var live_battle: CombatSim = null
+var battle_active := false
 var removers_granted: Array = []  # 已發放卸除器的回合
 
 
@@ -378,6 +381,7 @@ func equip(uid: int, inv_index: int) -> String:
 		return "裝備欄已滿（最多 %d 件），需要用%s取下" % [GameData.item_slots(), GameData.remover_name()]
 	items.append(inventory[inv_index])
 	inventory.remove_at(inv_index)
+	_sync_live_items(uid)
 	_notify()
 	return ""
 
@@ -531,15 +535,44 @@ func auto_fill_board() -> Array:
 	return placed
 
 
-func start_battle() -> Dictionary:
+## 開戰（V0.5 即時模擬）：自動補位 → 記錄開戰金幣 → 建立尚未推進的戰鬥模擬，由畫面依播放時間推進
+func create_battle() -> CombatSim:
 	auto_fill_board()
 	gold_at_battle_start = gold
-	var sim := BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
-	return sim.run()
+	live_battle = BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
+	battle_active = true
+	_notify()
+	return live_battle
+
+
+## 一次算完整場（測試、bot 用）
+func start_battle() -> Dictionary:
+	return create_battle().run()
+
+
+## 這隻棋子是否正在本回合的戰鬥中（場上棋子；戰鬥中不能出售、移動或替換）
+func is_fighting(uid: int) -> bool:
+	if not battle_active:
+		return false
+	for c in board.keys():
+		if int(board[c]["uid"]) == uid:
+			return true
+	return false
+
+
+## 戰鬥中替場上棋子更換裝備：通知即時模擬（下一個步進生效）
+func _sync_live_items(uid: int) -> void:
+	if live_battle == null or not is_fighting(uid):
+		return
+	var f := find_unit(uid)
+	if not f.is_empty():
+		live_battle.queue_items(uid, unit_items(f["unit"]))
 
 
 ## 戰後結算（企劃 3.3 的執行順序）。回傳結算報告。
 func settle(result: Dictionary) -> Dictionary:
+	battle_active = false
+	live_battle = null
 	var report := {
 		"round": round_no, "cleared": bool(result.get("cleared", false)), "threat": int(result.get("threat", 0)),
 		"hp_before": hp, "hp_loss": 0, "deer_heal": 0, "income_base": 0, "income_interest": 0, "income_clear": 0,

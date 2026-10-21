@@ -68,6 +68,13 @@ static func on_basic_hit(sim: CombatSim, u: CombatUnit, tgt: CombatUnit) -> void
 					sim.deal_damage(u, tgt, float(p.get("damage", 40)), "magic", "item", false)
 
 
+## 移動一格後（游擊等）
+static func on_move(sim: CombatSim, u: CombatUnit) -> void:
+	for p in u.passives:
+		if p["kind"] == "after_move_armor":
+			sim.add_status(u, "armor_up", float(p.get("armor", 20)), float(p.get("dur", 1.5)), u.cid, {"tag": "after_move"})
+
+
 ## 暴擊時（灼心：重傷）
 static func on_crit(sim: CombatSim, u: CombatUnit, tgt: CombatUnit) -> void:
 	if tgt == null or not tgt.alive:

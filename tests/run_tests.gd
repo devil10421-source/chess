@@ -77,6 +77,9 @@ func _initialize() -> void:
 		"test_equipment_remover_rounds",
 		"test_merge_keeps_deployed",
 		"test_item_conservation",
+		"test_live_battle_stepping",
+		"test_live_equip",
+		"test_projectile_and_windup",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -1088,14 +1091,14 @@ func test_oni_skill_dot() -> void:
 
 
 func test_playback_clock() -> void:
-	check(is_equal_approx(PlaybackClock.sim_from_real(10.0), 10.0), "0–15 秒 1.0×")
-	check(is_equal_approx(PlaybackClock.sim_from_real(15.0), 15.0), "15 秒時模擬 15 秒")
-	check(is_equal_approx(PlaybackClock.sim_from_real(25.0), 30.0), "15–25 秒 1.5×：25 秒時模擬 30 秒")
-	check(is_equal_approx(PlaybackClock.sim_from_real(32.5), 45.0), "25 秒後 2.0×：45 秒戰鬥約 32.5 秒播完")
-	check(is_equal_approx(PlaybackClock.real_from_sim(45.0), 32.5), "反向換算 45 → 32.5")
-	eq(PlaybackClock.rate_at_real(5.0), 1.0, "5 秒時倍率 1.0")
-	eq(PlaybackClock.rate_at_real(20.0), 1.5, "20 秒時倍率 1.5")
-	eq(PlaybackClock.rate_at_real(30.0), 2.0, "30 秒時倍率 2.0")
+	# V0.5：整體放慢約 15%：0–18 秒 0.85×、18–30 秒 1.3×、之後 1.7×
+	check(is_equal_approx(PlaybackClock.sim_from_real(10.0), 8.5), "0–18 秒 0.85×（播放放慢 15%）")
+	check(is_equal_approx(PlaybackClock.sim_from_real(18.0), 15.3), "18 秒時模擬 15.3 秒")
+	check(is_equal_approx(PlaybackClock.sim_from_real(30.0), 15.3 + 12.0 * 1.3), "18–30 秒 1.3×")
+	check(is_equal_approx(PlaybackClock.real_from_sim(PlaybackClock.sim_from_real(40.0)), 40.0), "反向換算一致")
+	eq(PlaybackClock.rate_at_real(5.0), 0.85, "5 秒時倍率 0.85")
+	eq(PlaybackClock.rate_at_real(20.0), 1.3, "20 秒時倍率 1.3")
+	eq(PlaybackClock.rate_at_real(35.0), 1.7, "35 秒時倍率 1.7")
 	var prev := -1.0
 	var ok := true
 	for i in 400:
@@ -1450,7 +1453,9 @@ func test_equipment_passives() -> void:
 	var foe := s5.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
 	caster.mana = caster.mana_max
 	caster.target_cid = foe.cid
-	s5._act(caster)
+	s5._act(caster)   # 施法前搖
+	check(caster.winding_up and caster.shield_total() == 0.0, "前搖期間尚未施放")
+	s5._act(caster)   # 前搖結束 → 施放
 	check(caster.shield_total() >= 120.0, "炎魔之心：施法後獲得護盾")
 	check(foe.has_status("stun"), "虛空之眼：技能主要目標暈眩")
 	# 每第 3 次普攻的法術追加
@@ -2452,3 +2457,103 @@ func test_item_conservation() -> void:
 	eq(run.all_items().size(), total, "400 次隨機操作（購買、合成、裝備、卸除、出售、存讀檔）後裝備總數不變")
 	check(run.all_units().all(func(u): return RunState.unit_items(u).size() <= 2), "每隻棋子最多 2 件")
 	_pool_ok(run, "同時卡池守恆")
+
+
+# ------------------------------------------------------------ V0.5 即時戰鬥
+func _live_sim(seed_value: int = 21) -> CombatSim:
+	var lineup := [{"id": "ORC1", "star": 2, "cell": Vector2i(3, 4), "uid": 1, "items": []},
+		{"id": "CEN1", "star": 2, "cell": Vector2i(3, 7), "uid": 2, "items": []},
+		{"id": "HUM1", "star": 1, "cell": Vector2i(2, 7), "uid": 3, "items": []}]
+	return BattleSetup.build(lineup, "orc", 10, seed_value)
+
+
+func test_live_battle_stepping() -> void:
+	var a := _live_sim().run()
+	var b := _live_sim()
+	var tt := 0.0
+	while not b.finished:
+		tt += 0.37
+		b.step_to(tt)
+	eq(JSON.stringify(b.result()["events"]), JSON.stringify(a["events"]), "逐步推進與一次跑完的事件完全相同")
+	eq(b.result()["cleared"], a["cleared"], "結果相同")
+	# 推進到某時間後，所有事件時間都不超過目前模擬時間（畫面不會看到未來的結算）
+	var c := _live_sim()
+	c.step_to(3.0)
+	check(c.events.all(func(e): return float(e["t"]) <= 3.0 + 0.001), "推進到 3 秒時沒有超前的事件")
+	check(not c.finished, "戰鬥尚未結束")
+
+
+func test_live_equip() -> void:
+	# 戰鬥中穿裝備：之後的普攻立即使用新攻擊力；之前的事件不被追溯修改
+	var sim := _live_sim(5)
+	sim.step_to(2.0)
+	var orc: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var atk0 := orc.atk
+	var before := JSON.stringify(sim.events)
+	var n_before := sim.events.size()
+	check(sim.queue_items(1, ["DM_GREATAXE"]), "排入裝備操作")
+	sim.step()
+	check(is_equal_approx(orc.atk, atk0 + 22.0), "裝上攻擊 +22：攻擊力 %.1f → %.1f" % [atk0, orc.atk])
+	eq(JSON.stringify(sim.events.slice(0, n_before)), before, "操作前已結算的事件沒有被修改")
+	check(sim.events.slice(n_before).any(func(e): return e["k"] == "items" and int(e["cid"]) == orc.cid), "產生裝備事件（畫面同步）")
+	check(is_equal_approx(orc.penetration("physical"), 20.0), "裝備的物理穿透立即生效")
+	# 唯一特性立即登記：之後的普攻帶持續傷害
+	sim.step_to(8.0)
+	var dot_after := false
+	for i in range(n_before, sim.events.size()):
+		var e: Dictionary = sim.events[i]
+		if e["k"] == "status" and e["kind"] == "dot" and int(e["src"]) == orc.cid:
+			dot_after = true
+	check(dot_after or not orc.alive, "炎獄連擊在穿上後開始觸發")
+	# 重播：同種子＋同操作時間 → 事件完全相同
+	sim.run()
+	var replay := _live_sim(5)
+	for op in sim.op_log:
+		var lst: Array = replay.scheduled_ops.get(int(op["tick"]), [])
+		lst.append({"uid": op["uid"], "items": op["items"]})
+		replay.scheduled_ops[int(op["tick"])] = lst
+	replay.run()
+	eq(JSON.stringify(replay.events), JSON.stringify(sim.events), "相同種子與相同操作時間可完全重現")
+	# 開戰時觸發的效果不補觸發；生命上限增加時目前生命一起增加
+	var s2 := _live_sim(6)
+	s2.step_to(1.0)
+	var hum: CombatUnit = s2.units.filter(func(x): return x.uid == 3)[0]
+	var hp0 := hum.hp
+	var max0 := hum.max_hp
+	s2.queue_items(3, ["CU_ROBE", "CU_CODEX"])
+	s2.step()
+	eq(hum.shield_total(), 0.0, "祭儀庇護（開戰護盾）不補觸發")
+	eq(hum.max_hp, max0 + 120.0, "生命上限 +120")
+	check(hum.hp >= hp0 + 120.0 - 0.01, "生命交換（開戰失血）不補觸發，目前生命一起 +120")
+	# 換裝：舊裝備數值完全移除，不重複計算
+	s2.queue_items(3, ["CU_CODEX"])
+	s2.step()
+	eq(hum.max_hp, max0, "移除法袍後生命上限回到原值")
+	check(is_equal_approx(float(hum.mods.get("hp_flat", 0.0)), 0.0), "修正值沒有殘留")
+	# 戰鬥結束後不再接受操作
+	s2.run()
+	check(not s2.queue_items(3, []), "戰鬥結束後不接受操作")
+
+
+func test_projectile_and_windup() -> void:
+	var sim := _live_sim(8)
+	sim.run()
+	var archer := -1
+	for u in sim.units:
+		if u.uid == 2:
+			archer = u.cid
+	var first_attack := -1.0
+	var first_hit := -1.0
+	for e in sim.events:
+		if e["k"] == "attack" and int(e["cid"]) == archer and bool(e["ranged"]) and first_attack < 0.0:
+			first_attack = float(e["t"])
+		if e["k"] == "damage" and int(e["src"]) == archer and e["source"] == "basic" and first_hit < 0.0 and first_attack >= 0.0:
+			first_hit = float(e["t"])
+	check(first_attack >= 0.0 and first_hit > first_attack, "遠程普攻：命中（%.2f）晚於出手（%.2f），傷害在投射物抵達時結算" % [first_hit, first_attack])
+	var starts := sim.events.filter(func(e): return e["k"] == "cast_start")
+	var casts := sim.events.filter(func(e): return e["k"] == "cast")
+	check(not starts.is_empty(), "有施法前搖事件")
+	if not starts.is_empty():
+		var s0: Dictionary = starts[0]
+		var c0: Array = casts.filter(func(e): return int(e["cid"]) == int(s0["cid"]) and float(e["t"]) >= float(s0["t"]))
+		check(not c0.is_empty() and float(c0[0]["t"]) - float(s0["t"]) >= GameData.cfg("combat").get("cast_windup", 0.25) - 0.001, "前搖結束後才施放技能")

@@ -341,7 +341,7 @@ func _run() -> void:
 		var moved_uid := int(run.bench[from_i]["uid"])
 		await drag(screen_pos(board, board.bench_center(from_i)), screen_pos(board, board.bench_center(to_i)))
 		check(run.bench[to_i] != null and int(run.bench[to_i]["uid"]) == moved_uid, "戰鬥中可以整理候補區")
-		check(run.board_count() == g._last_result["units"].filter(func(x): return x["side"] == 0).size(), "整理候補不會把棋子加入戰場")
+		check(run.board_count() == g.battle_player.sim().snapshots().filter(func(x): return x["side"] == 0).size(), "整理候補不會把棋子加入戰場")
 	await wait(0.8)
 	var my_cid := -1
 	var foe_cid := -1

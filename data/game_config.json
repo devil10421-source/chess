@@ -188,17 +188,18 @@
     "segments": [
       {
         "from": 0,
-        "rate": 1.0
+        "rate": 0.85
       },
       {
-        "from": 15,
-        "rate": 1.5
+        "from": 18,
+        "rate": 1.3
       },
       {
-        "from": 25,
-        "rate": 2.0
+        "from": 30,
+        "rate": 1.7
       }
-    ]
+    ],
+    "_v05_note": "V0.5：整體播放放慢約 15%（0–18 秒 0.85×、18–30 秒 1.3×、之後 1.7×），只改播放快慢，不改模擬數值"
   },
   "star": {
     "max": 3,
@@ -353,7 +354,11 @@
       "wound_heal_reduction_pct": 40,
       "penetration_max_pct": 60,
       "retreat_move_time": 0.25
-    }
+    },
+    "cast_windup": 0.25,
+    "projectile_base": 0.1,
+    "projectile_per_hex": 0.06,
+    "_v05_note": "V0.5：cast_windup＝施法前搖秒數（魔力滿時先前搖再施放）；遠程普攻投射物飛行時間＝projectile_base＋projectile_per_hex×距離，傷害在命中時才結算"
   },
   "defense": {
     "_note": "物防與魔防共用的邊際遞減公式：減傷率 = max_reduction × D / (D + k)，實際傷害 = 原始 × (1 − 減傷率 × (1 − 攻擊方穿透))；D 為有效防禦（最低 0）。V0.4 取消破甲，改用攻擊方的物理／魔法穿透",

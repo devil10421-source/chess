@@ -619,10 +619,11 @@ func _on_start_battle(auto: bool) -> void:
 	_set_bar_neutral()
 	board.select(-1)
 	board.interactive = false
-	_last_result = run.start_battle()
+	_last_result = {}
+	var sim := run.create_battle()
 	board.set_prep_visible(false)
 	board.battle_mode = true
-	battle_player.play(_last_result, board)
+	battle_player.play_live(sim, board)
 	leader.set_stats(battle_player.live_stats())
 	speed_btn.visible = true
 	skip_btn.visible = true
@@ -640,6 +641,7 @@ func _on_start_battle(auto: bool) -> void:
 func _on_battle_finished() -> void:
 	if phase != Phase.BATTLE:
 		return
+	_last_result = battle_player.sim().result()
 	var rep := run.settle(_last_result)
 	leader.set_stats(_last_result.get("stats", []))   # 保留上一場統計，直到下一場開始
 	if run.finished:

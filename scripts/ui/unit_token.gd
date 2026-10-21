@@ -104,6 +104,16 @@ func add_status(kind: String, dur: float) -> void:
 	statuses[kind] = maxf(float(statuses.get(kind, 0.0)), dur)
 
 
+## 施法前搖：短暫發光
+var _windup_left := 0.0
+var _windup_total := 0.0
+
+
+func windup(dur: float) -> void:
+	_windup_left = dur
+	_windup_total = maxf(0.01, dur)
+
+
 func die(dur: float) -> void:
 	var tw := create_tween()
 	tw.tween_property(self, "modulate:a", 0.0, dur)
@@ -112,6 +122,8 @@ func die(dur: float) -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	if _windup_left > 0.0:
+		_windup_left = maxf(0.0, _windup_left - delta)
 	if not statuses.is_empty():
 		for k in statuses.keys():
 			statuses[k] = float(statuses[k]) - delta * Session.playback_rate
@@ -162,6 +174,10 @@ func _draw() -> void:
 	draw_circle(bp, r * 0.3, Color(0.08, 0.09, 0.12))
 	draw_circle(bp, r * 0.25, rarity)
 	draw_string(UiStyle.FONT, bp + Vector2(-r * 0.3, r * 0.13), str(cost), HORIZONTAL_ALIGNMENT_CENTER, r * 0.6, int(r * 0.36), Color(0.05, 0.05, 0.08))
+	# 施法前搖：外圈逐漸收束的光環
+	if _windup_left > 0.0:
+		var k := 1.0 - _windup_left / _windup_total
+		draw_arc(o, r * (1.6 - 0.45 * k), 0, TAU, 40, Color(1.0, 0.85, 0.35, 0.35 + 0.5 * k), 3.0, true)
 	# 受擊／施法閃光
 	if flash_color.a > 0.01:
 		draw_circle(o, r * 1.05, flash_color)

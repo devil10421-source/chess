@@ -46,6 +46,10 @@ var passives: Array = []
 var item_counter := 0
 ## 追跡獵手（被動）：連續普攻同一目標的層數
 var focus_target := -1
+## 施法前搖中（V0.5）
+var winding_up := false
+## 裝備特效的冷卻（唯一特性 id -> 可再次觸發的時間）
+var item_cd: Dictionary = {}
 var focus_stacks := 0
 ## 狀態：{kind, value, until, src, next_tick?, tick_amount?, dtype?, tag?}
 var statuses: Array = []

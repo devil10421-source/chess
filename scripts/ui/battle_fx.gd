@@ -11,8 +11,9 @@ func clear() -> void:
 	queue_redraw()
 
 
-func projectile(from: Vector2, to: Vector2, color: Color, dur: float) -> void:
-	_fx.append({"type": "proj", "t": 0.0, "dur": dur, "from": from, "to": to, "color": color})
+## dur 為模擬秒數（與 _process 的播放倍率換算一致）；rate 參數保留相容
+func projectile(from: Vector2, to: Vector2, color: Color, dur: float, _rate: float = 1.0) -> void:
+	_fx.append({"type": "proj", "t": 0.0, "dur": maxf(0.05, dur), "from": from, "to": to, "color": color})
 
 
 func float_text(pos: Vector2, text: String, color: Color, size: int = 18, dur: float = 0.8) -> void:
