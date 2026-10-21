@@ -547,7 +547,7 @@ func test_solo_pve() -> void:
 	var bt: ClashBattle = m.battles.filter(func(b): return b.kind == "solo")[0]
 	eq(bt.a, solo, "單人挑戰者")
 	var st := ClashBattle.pve_stage(m.pve_count)
-	check(float(GameData.clash_cfg("pve").get("solo_scale", 1.0)) < 1.0, "單人敵軍較弱（沒有隊友救援的補償）")
+	check(float(GameData.clash_cfg("pve").get("solo_scale", 1.0)) < float(GameData.clash_cfg("pve").get("duo_scale", 1.0)), "單人敵軍比雙人略弱（沒有隊友救援的補償）")
 	var hp := {}
 	for p in m.players:
 		hp[p.index] = p.hp

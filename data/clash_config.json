@@ -135,7 +135,7 @@
     "win_gold": 1
   },
   "pve": {
-    "_note": "合作 PvE。stages：第 n 次 PvE 使用《六族遠征》第幾回合的敵軍；超出清單後重複最後一項並逐次加強 extra_scale_per_repeat。duo_scale／solo_scale＝敵軍生命與攻擊倍率（落單者沒有隊友救援，敵軍略弱）。失敗扣血依 loss；成功獎勵 reward_gold＋1 個隨機基礎組件，special_item_pves 另外獲得 1 件特殊裝備。",
+    "_note": "合作 PvE。stages：第 n 次 PvE 使用《六族遠征》第幾回合的敵軍；超出清單後重複最後一項並逐次加強 extra_scale_per_repeat。duo_scale／solo_scale＝敵軍生命與攻擊倍率（十人模式的玩家比單人模式同回合強，所以放大；落單者沒有隊友救援，敵軍略弱）。第一輪模擬：倍率 1.0 時合作成功 98%（PvE 幾乎沒有影響），1.25 時約 70%、援軍救援情況明顯增加，暫定 1.25。失敗扣血依 loss；成功獎勵 reward_gold＋1 個隨機基礎組件，special_item_pves 另外獲得 1 件特殊裝備。",
     "stages": [
       2,
       6,
@@ -145,8 +145,8 @@
       24
     ],
     "extra_scale_per_repeat": 0.25,
-    "duo_scale": 1.0,
-    "solo_scale": 0.85,
+    "duo_scale": 1.25,
+    "solo_scale": 1.05,
     "loss": [
       {
         "from": 1,

@@ -313,3 +313,48 @@ version 3：新增 `pool`（快照）、`removers`、`removers_granted`；`pendi
 
 ### 存檔
 version 3 不變；新增 `component_log`（舊存檔讀為空）。
+
+## 12. 《氏族爭霸》10 人 PvPvE 原型（V0.1）
+
+單人《六族遠征》保持原樣（主選單仍可進入，v0.5.0 為可回退的穩定版）。新模式全部放在 `scripts/core/clash/`、`scripts/ui/clash_*.gd`、`data/clash_config.json`，盡量重用既有系統。
+
+### 責任分工（指令建議的名稱 → 實際類別）
+| 建議 | 實際 | 內容 |
+|---|---|---|
+| MatchManager | `ClashMatch` | 十人對局、回合流程、`submit()` 統一行動接口、戰鬥建立、生命結算、淘汰與名次、終局 |
+| PlayerState | `ClashPlayer`＋`RunState` | 經濟／商店／棋盤／候補／背包沿用 `RunState`（同一套規則方法）；`ClashPlayer` 加上身份、生命、名次、制度與政策狀態 |
+| SharedPoolManager | `SharedPool` | 剩餘份數＝供應 − Σ（所有存活玩家的持有＋商店預留），隨時重算，所以不可能不守恆；`audit()` 檢查 |
+| MatchmakingManager | `ClashMatchmaking` | PvP（避開近兩回合對手、奇數人幽靈戰）、PvE（隨機雙人＋單人），固定種子 |
+| TradeManager | `ClashTrade` | 提案、確認、原子成交、逾時取消 |
+| ReinforcementManager | `ClashBattle`（coop）＋`CombatSim` | 兩張棋盤同步推進、清場派援軍、全滅凍結等待 |
+| GovernmentManager | `ClashGovernment` | 三制度、六政策的經濟與戰鬥效果 |
+| CombatSimulator | `CombatSim`（原有） | 只新增 `hold_on_wipe`、`add_reinforcements()`、村民；PvP 用同一套戰鬥 |
+| AI | `ClashAI` | 經由 `ClashMatch.submit()` 行動，受同樣規則與棋池限制 |
+
+### 回合流程
+`begin_round()`（刷新商店、配對、AI 備戰）→ 備戰倒數 → `lock_in()`（未選制度自動選、自動補位）→ PvE 時 `交易`（真人那組可提前成交；AI 組合開場即談完）→ `start_battles()` → 真人那場由 `BattlePlayer` 逐步播放（推進器＝`ClashBattle`），其他直接 `run()` → `settle_round()`（一次套用所有扣血 → 淘汰與名次 → 存活者收入／經驗／政策）→ 下一回合。`settle_round()` 只在戰鬥階段且全部戰鬥結束後執行一次。
+
+### PvP 與幽靈戰
+對手棋盤以 `(c, r) → (6 − c, 7 − r)`（錯位六角的 180° 旋轉）放到上方。幽靈戰是另一名玩家陣容的快照（棋子、星級、裝備、站位、修正值），不屬於任何玩家、不佔棋池、不影響原玩家。輸方扣 `回合基礎值 + 對方存活棋子（1／2／3 星各 1／2／3）`；時間到雙方都有存活為平手，雙方都扣。
+
+### 合作 PvE 與援軍（`ClashBattle.make_coop`）
+- 兩張 `CombatSim` 各自打同一組 PvE 敵軍（沿用《六族遠征》的關卡），每一步同時推進，時間軸一致。
+- `hold_on_wipe`：我方全滅但敵軍仍在時不結束，進入 `holding`（戰場完全凍結，敵軍生命與狀態保留），凍結時間不計入戰鬥上限（只計 `_active_steps`），所以沒有「必須在幾秒內獲救」的限制。
+- 一方清場：`survivor_snapshots()`（種類、星級、裝備、修正值、剩餘生命與魔力）在 `reinforce_delay` 秒後以 `add_reinforcements()` 加入另一張棋盤（後排空格），產生 `spawn` 事件；援軍不從棋池生成任何份數。
+- 無法再救援（隊友已結束且沒有援軍要來、或雙方都在等待）時 `force_finish()` 判定失敗。兩張棋盤都清場才算成功；成功雙方都不扣血，失敗雙方各扣 PvE 失敗生命（同一回合一起套用，不會因先全滅而先扣血）。
+
+### 交易（`ClashTrade`）
+提案 `{kind: unit, uid}` 或 `{kind: item, inv, id}`；任一方變更內容 → 雙方確認清除（`version` +1）；雙方都提出且都確認才成交。成交前 `check()` 重新驗證全部條件（棋子仍存在、背包內容未變、接收者候補至少 1 格），全部成立才一次移轉：棋子身上的裝備退回原主背包，棋子本體以新 uid 放進接收者候補區並檢查升星。時間到 `close()` → 取消。
+
+### 國家制度（`ClashGovernment`）
+制度與政策的修正以 `source = "gov"` 的來源清單產生，和羈絆、裝備走同一條 `Modifiers.sum_sources()`，所以資訊卡明細與戰鬥數值一致。新增修正鍵：`atk_pct`（攻擊力 %）、`dmg_pct`（所有傷害 %）、`mobilize`（人民的力量）。
+人民的力量：`CombatSim._mobilize()` 只在「普攻來源、非持續傷害」的有效命中時替攻擊者與受擊者累積；每 `hits_per_villager` 次 +1 村民（上限 `max_villagers`）。村民不是戰鬥單位（不占格、不算人口、不進棋池、不觸發羈絆），由 `_villager_pulse()` 每 `pulse_interval` 秒統一結算一次魔法傷害（`source = "villager"`，不再累積動員）。
+
+### 氏族歸屬
+`GameData.set_clash_clans(true)` 在進入模式時把 10 隻中立棋子的 `race` 改成 `clans.neutral_assignment`（測試分配），離開時還原；費用、技能、數值都不變。`Shop.pool_for("")` 沒有文明限制，34 隻全部可抽。
+
+### 畫面（`ClashScreen` 繼承 `GameScreen`）
+場景 `scenes/clash_game.tscn` 與 `game.tscn` 由同一個產生器輸出，只換根節點腳本。覆寫：階段流程、上方回合／對手文字、文明列 → 國家列、底部生命、資訊卡修正來源（加上制度）、選單（不存檔）。新增：十人列表（右側、可收合、資訊卡或背包打開時讓位）、交易畫面、制度選擇（倒數不暫停）、隊友戰況、核心指定、淘汰／觀戰／冠軍畫面。`BoardView.enemy_preview_provider` 讓備戰時顯示對手陣容（翻轉）或 PvE 敵軍。
+
+### 限制（V0.1）
+對局不存檔；沒有真人連線（`ClashMatch` 為本地權威）；AI 為規則式策略；數值皆為測試值。

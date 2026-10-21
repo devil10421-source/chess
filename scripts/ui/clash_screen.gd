@@ -85,7 +85,7 @@ func _build_clash_ui() -> void:
 	players_panel.add_child(pv)
 	players_toggle = Button.new()
 	players_toggle.name = "Toggle"
-	players_toggle.text = "十人排名 ▾"
+	players_toggle.text = "十人排名 ▼"
 	players_toggle.custom_minimum_size = Vector2(0, 30)
 	UiStyle.style_button(players_toggle, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 13)
 	players_toggle.pressed.connect(func():
@@ -904,7 +904,7 @@ func _mark_core_tokens() -> void:
 func _refresh_players() -> void:
 	if players_list == null:
 		return
-	players_toggle.text = "十人排名 %s（存活 %d）" % ["▾" if _players_open else "▸", m.alive_count()]
+	players_toggle.text = "十人排名 %s（存活 %d）" % ["▼" if _players_open else "▶", m.alive_count()]
 	for c in players_list.get_children():
 		players_list.remove_child(c)
 		c.queue_free()
@@ -1060,7 +1060,7 @@ func _show_end() -> void:
 	if m.finished:
 		var champs: Array = m.players.filter(func(p): return (p as ClashPlayer).placement == 1)
 		var names: Array = champs.map(func(p): return (p as ClashPlayer).country)
-		end_title.text = ("🏆 冠軍！" if me.placement == 1 else "對局結束：冠軍 %s" % "、".join(names))
+		end_title.text = ("冠軍！你的國家統一了大陸" if me.placement == 1 else "對局結束：冠軍 %s" % "、".join(names))
 	else:
 		end_title.text = "你在第 %d 回合遭到淘汰：第 %d 名" % [me.eliminated_round, me.placement]
 	end_body.text = _standings_text()
