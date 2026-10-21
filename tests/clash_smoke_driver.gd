@@ -63,6 +63,7 @@ func _run() -> void:
 		await wait(0.5)
 		check(g.phase == 3 and g.trade_overlay.visible, "備戰結束 → 交易畫面")
 		check(g.trade_title.text.contains("隊友"), "交易畫面顯示隊友")
+		check(g._do({"type": "buy", "slot": 0}) == "交易中不能購買", "真人動作經由對局管理器的同一個規則接口（交易中不能購買）")
 		await shot("clash_trade")
 		var t: Dictionary = m.trade_for(m.human_seat)
 		var other := ClashTrade.partner(t, m.human_seat)

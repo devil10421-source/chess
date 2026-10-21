@@ -369,6 +369,11 @@ func _refresh_info() -> void:
 	core_btn.visible = me.policy == "i_am_the_state" and uid >= 0 and phase == Phase.PREP and uid != me.core_uid
 
 
+## 真人的所有動作都交給對局管理器（與 AI 相同的 submit 接口）
+func _do(action: Dictionary) -> String:
+	return m.submit(me.index, action)
+
+
 # ---------- 覆寫：上方與底部 ----------
 func _refresh_top() -> void:
 	round_label.text = "第 %d 回合" % m.round_no

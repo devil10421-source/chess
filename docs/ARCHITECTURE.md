@@ -331,6 +331,8 @@ version 3 不變；新增 `component_log`（舊存檔讀為空）。
 | CombatSimulator | `CombatSim`（原有） | 只新增 `hold_on_wipe`、`add_reinforcements()`、村民；PvP 用同一套戰鬥 |
 | AI | `ClashAI` | 經由 `ClashMatch.submit()` 行動，受同樣規則與棋池限制 |
 
+真人的所有動作同樣經過 `submit()`：`GameScreen._do(action)` 是畫面上所有玩家動作（購買、出售、刷新、升級、鎖定、移動、穿裝備、合成、卸除）的唯一出口，單人模式直接呼叫 `RunState`，`ClashScreen` 覆寫成 `ClashMatch.submit(me.index, action)`；交易、制度、核心指定也走 `submit()`。改成連線版時，只要把 `submit()` 換成送往伺服器即可。
+
 ### 回合流程
 `begin_round()`（刷新商店、配對、AI 備戰）→ 備戰倒數 → `lock_in()`（未選制度自動選、自動補位）→ PvE 時 `交易`（真人那組可提前成交；AI 組合開場即談完）→ `start_battles()` → 真人那場由 `BattlePlayer` 逐步播放（推進器＝`ClashBattle`），其他直接 `run()` → `settle_round()`（一次套用所有扣血 → 淘汰與名次 → 存活者收入／經驗／政策）→ 下一回合。`settle_round()` 只在戰鬥階段且全部戰鬥結束後執行一次。
 

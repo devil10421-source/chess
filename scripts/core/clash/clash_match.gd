@@ -250,6 +250,8 @@ func submit(seat: int, action: Dictionary) -> String:
 			r = p.run.combine_inventory(int(action["i"]), int(action["j"]))
 		"combine_unit":
 			r = p.run.combine_on_unit(int(action["uid"]), int(action["slot"]), int(action["inv"]))
+		"remover":
+			r = p.run.use_remover(int(action["uid"]), int(action["slot"]))
 		"government":
 			r = ClashGovernment.choose_system(p, str(action["value"]), round_no)
 			if r == "":
