@@ -14,7 +14,7 @@ const STATE_MARK := {
 	"board": "[color=#6bdc85]● 已上場[/color]",
 	"bench": "[color=#ffd24d]◐ 候補區[/color]",
 	"none": "[color=#9aa3ad]○ 尚未持有[/color]",
-	"unavailable": "[color=#7a6f73]✕ 本文明商店無法取得[/color]",
+	"unavailable": "[color=#7a6f73]× 本文明商店無法取得[/color]",
 }
 
 @onready var board: BoardView = $BoardView

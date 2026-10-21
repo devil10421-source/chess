@@ -225,7 +225,7 @@ func _run() -> void:
 		if info_btn:
 			info_btn.pressed.emit()
 			await get_tree().process_frame
-			check(info_btn.text.begins_with("▾"), "點屬性展開數值來源")
+			check(info_btn.text.begins_with("▼"), "點屬性展開數值來源")
 			await shot("stat_expanded")
 		var empty_spot := screen_pos(board, Vector2(-30, board.board_size().y * 0.5))
 		await click_at(empty_spot)

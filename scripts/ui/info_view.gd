@@ -79,7 +79,7 @@ func update_stats(header: String, rows: Array, footer: String) -> void:
 
 
 func _row_title(r: Dictionary) -> String:
-	var arrow := "▾" if expanded.get(r["key"], false) else "▸"
+	var arrow := "▼" if expanded.get(r["key"], false) else "▶"
 	return "%s %s：%s" % [arrow, r["label"], r["text"]]
 
 
@@ -127,7 +127,7 @@ func _add_row(r: Dictionary) -> void:
 	b.pressed.connect(func():
 		expanded[key] = not expanded.get(key, false)
 		detail.visible = expanded[key]
-		var arrow := "▾" if expanded[key] else "▸"
+		var arrow := "▼" if expanded[key] else "▶"
 		b.text = arrow + b.text.substr(1))
 	body.add_child(b)
 	body.add_child(panel)
