@@ -75,6 +75,15 @@ static func _in_radius(list: Array, center: Vector2i, radius: int) -> Array:
 	return list.filter(func(x: CombatUnit) -> bool: return HexGrid.distance(x.cell, center) <= radius)
 
 
+## 技能附帶的自身穿透（V0.4 取代「破甲」）：params.pen（%）、pen_dur（秒）；穿透屬性依技能傷害屬性決定
+static func _self_pen(sim: CombatSim, u: CombatUnit) -> void:
+	var pen := float(_p(u, "pen", 0))
+	if pen <= 0.0:
+		return
+	var kind := "magic_pen" if _dtype(u) == "magic" else "phys_pen"
+	sim.add_status(u, kind, pen, float(_p(u, "pen_dur", 4)), u.cid, {"tag": "skill"})
+
+
 static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 	var kind := str(u.data.get("skill", {}).get("kind", ""))
 	match kind:
@@ -106,7 +115,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			for e in _in_radius(sim.enemies_of(u), center, radius):
 				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
-					sim.apply_cc(u, e, str(_p(u, "cc_kind", "slow")), _cc(u), float(_p(u, "pct", 0)))
+					sim.apply_cc(u, e, str(_p(u, "cc_kind", "slow")), _cc(u))
 			return true
 
 		"dash_strike":
@@ -116,9 +125,8 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			var tg: CombatUnit = list[0]
 			sim.dash_next_to(u, tg)
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
+			_self_pen(sim, u)
 			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
-			if tg.alive and float(_p(u, "armor", 0)) > 0.0:
-				sim.add_status(tg, "armor_down", float(_p(u, "armor", 0)), float(_p(u, "dur", 4)), u.cid)
 			u.target_cid = tg.cid
 			return true
 
@@ -154,9 +162,8 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			if tg == null or HexGrid.distance(u.cell, tg.cell) > u.attack_range:
 				return false
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
+			_self_pen(sim, u)
 			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
-			if tg.alive and float(_p(u, "armor", 0)) > 0.0:
-				sim.add_status(tg, "armor_down", float(_p(u, "armor", 0)), float(_p(u, "dur", 4)), u.cid)
 			return true
 
 		"blood_rage":
@@ -186,6 +193,8 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			sim.emit({"k": "attack", "cid": u.cid, "tgt": tg.cid, "ranged": true})
 			var raw := u.effective_atk() * float(_p(u, "atk_pct", 100)) / 100.0 + _amt(u, "dmg")
 			sim.deal_damage(u, tg, raw, _dtype(u), "skill", false)
+			if int(_p(u, "retreat", 0)) > 0:
+				sim.retreat_step(u)   # 施法後後撤一格（風箏）
 			return true
 
 		"brace":
@@ -248,7 +257,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 				return false
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
 			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
-			sim.add_periodic(u, tg, "dot", _amt(u, "dot"), float(_p(u, "dur", 3)), "physical")
+			sim.add_periodic(u, tg, "dot", _amt(u, "dot"), float(_p(u, "dur", 3)), "physical", "skill", "skill")
 			return true
 
 		"curse":
@@ -289,11 +298,11 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			for e in _in_radius(sim.enemies_of(u), center, radius):
 				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
-					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic")
+					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic", "skill", "skill")
 			return true
 
 		"eldritch_pulse":
-			# 古神化身（最終首領）：全場法術傷害＋暈眩＋侵蝕＋破甲，自身護盾
+			# 古神化身（最終首領）：全場法術傷害＋暈眩＋持續傷害，自身獲得魔法穿透與護盾
 			var foes := sim.enemies_of(u)
 			if foes.is_empty():
 				return false
@@ -301,12 +310,12 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			for e in foes:
 				cells.append(e.cell)
 			_cast_event(sim, u, COLORS["magic"], cells)
+			_self_pen(sim, u)
 			for e in foes:
 				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
 					sim.apply_cc(u, e, "stun", _cc(u))
-					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic")
-					sim.add_status(e, "armor_down", float(_p(u, "armor", 10)), float(_p(u, "dur", 4)), u.cid)
+					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic", "skill", "skill")
 			sim.add_shield(u, u, _amt(u, "shield"), float(_p(u, "dur", 4)))
 			return true
 

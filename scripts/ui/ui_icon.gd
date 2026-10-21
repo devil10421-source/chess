@@ -16,7 +16,7 @@ const KINDS := ["sword", "shield", "magic_shield", "bolt", "foot", "aim", "cross
 	"chain", "coin", "heart", "people", "refresh", "lock", "unlock", "play", "bag", "plus", "civ", "weapon", "armor",
 	"trinket", "damage", "taken", "absorb", "healing", "civ_elf", "civ_human", "civ_orc", "civ_centaur", "civ_deer", "civ_oni",
 	"cls_warrior", "cls_guardian", "cls_archer", "cls_mage", "cls_assassin", "cls_priest",
-	"type_vanguard", "type_rear", "type_mobile", "type_support", "remover", "neutral", "chart"]
+	"type_vanguard", "type_rear", "type_mobile", "type_support", "remover", "neutral", "chart", "pierce", "magic_pierce"]
 
 
 ## 羈絆對應的圖示：race → 文明徽章；class／type → 職業／類型圖示
@@ -215,6 +215,14 @@ static func paint(ci: CanvasItem, kind: String, o: Vector2, s: float, c: Color) 
 			paint(ci, "heart", o, s, c)
 			ci.draw_line(P.call(0.5, 0.36), P.call(0.5, 0.64), c.darkened(0.6), w)
 			ci.draw_line(P.call(0.36, 0.5), P.call(0.64, 0.5), c.darkened(0.6), w)
+		"pierce", "magic_pierce":
+			# 穿透：箭頭穿過盾牌（物理＝實心盾、魔法＝圓環）
+			if kind == "pierce":
+				ci.draw_colored_polygon(PackedVector2Array([P.call(0.42, 0.2), P.call(0.66, 0.28), P.call(0.62, 0.62), P.call(0.42, 0.82), P.call(0.24, 0.62), P.call(0.2, 0.28)]), Color(c, 0.45))
+			else:
+				ci.draw_arc(P.call(0.43, 0.5), s * 0.28, 0, TAU, 24, Color(c, 0.6), w)
+			ci.draw_line(P.call(0.06, 0.5), P.call(0.86, 0.5), c, w * 1.3)
+			ci.draw_colored_polygon(PackedVector2Array([P.call(0.96, 0.5), P.call(0.78, 0.38), P.call(0.78, 0.62)]), c)
 		"chart":
 			ci.draw_rect(Rect2(P.call(0.12, 0.5), Vector2(0.18, 0.4) * s), c)
 			ci.draw_rect(Rect2(P.call(0.41, 0.2), Vector2(0.18, 0.7) * s), c)

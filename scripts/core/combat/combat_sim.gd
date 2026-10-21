@@ -12,6 +12,7 @@ extends RefCounted
 ##   status {cid, kind, dur, value, src}   cleanse{cid, kind}
 ##   death  {cid}                          end   {cleared, time}
 ##   item   {cid, kind, hp}（裝備被動，例如開戰時的生命交換）
+##   retreat{cid, from, to, dur}（施法後後撤一格，例如草原弓手；播放時同 move）
 
 const EPS := 0.0001
 
@@ -365,7 +366,7 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 		amount *= src.crit_mult
 		crit = true
 	var defense := tgt.effective_mr() if dtype == "magic" else tgt.effective_armor()
-	amount *= 1.0 - UnitStats.defense_reduction(defense)
+	amount *= 1.0 - effective_reduction(src, defense, dtype)
 	if dtype != "magic":
 		var dr := minf(float(cfg.get("max_phys_reduction", 0.8)), tgt.status_sum("phys_dr") / 100.0)
 		amount *= (1.0 - dr)
@@ -402,6 +403,16 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 		ItemPassives.on_basic_taken(self, tgt, src, dmg)
 	ItemPassives.on_damage_dealt(self, src, hp_damage)
 	return dmg
+
+
+## 穿透後的防禦減傷率：減傷率 × (1 − 穿透%)。按比例忽略既有減傷，不是扣除百分點；不會低於 0。
+## 物理穿透只作用於物理傷害、魔法穿透只作用於魔法傷害；額外的百分比減傷（迎擊姿態）不受穿透影響。
+static func reduction_after_pen(defense: float, pen_pct: float) -> float:
+	return maxf(0.0, UnitStats.defense_reduction(defense) * (1.0 - clampf(pen_pct, 0.0, 100.0) / 100.0))
+
+
+func effective_reduction(src: CombatUnit, defense: float, dtype: String) -> float:
+	return reduction_after_pen(defense, src.penetration(dtype) if src != null else 0.0)
 
 
 ## 傷害加成百分比（加總後一次套用）。拆成獨立函式方便測試與 UI 說明。
@@ -446,6 +457,8 @@ func heal(src: CombatUnit, tgt: CombatUnit, amount: float) -> float:
 	if tgt == null or not tgt.alive or amount <= 0.0:
 		return 0.0
 	var mult := (1.0 + float(src.mods.get("heal_shield_pct", 0.0)) / 100.0) * (1.0 + float(tgt.mods.get("heal_received_pct", 0.0)) / 100.0)
+	if tgt.has_status("wound"):
+		mult *= 1.0 - wound_pct() / 100.0   # 重傷：固定 −40%，不疊加，不影響護盾
 	var v := minf(tgt.max_hp - tgt.hp, roundf(amount * maxf(0.0, mult)))
 	if v <= 0.0:
 		return 0.0
@@ -464,12 +477,36 @@ func add_shield(src: CombatUnit, tgt: CombatUnit, amount: float, dur: float) -> 
 
 
 # ---------- 狀態 ----------
+## 只會有一份的狀態（不同來源不相加，取最強效果、時間取較長者）：緩速、重傷
+const UNIQUE_STATUSES := ["slow", "wound"]
+## 同一來源重複施加時刷新（不重複堆疊）：持續傷害、持續治療、穿透增益、標記
+const REFRESH_STATUSES := ["dot", "hot", "phys_pen", "magic_pen", "mark"]
+
+
+static func wound_pct() -> float:
+	return float(GameData.cfg("combat").get("status", {}).get("wound_heal_reduction_pct", 40))
+
+
 ## 一般增減益（不受控制時間修正）
 func add_status(tgt: CombatUnit, kind: String, value: float, dur: float, src_cid: int = -1, extra: Dictionary = {}) -> void:
 	if tgt == null or not tgt.alive:
 		return
 	var s := {"kind": kind, "value": value, "until": t + dur, "src": src_cid}
 	s.merge(extra)
+	var tag := str(extra.get("tag", ""))
+	for i in tgt.statuses.size():
+		var old: Dictionary = tgt.statuses[i]
+		if old["kind"] != kind:
+			continue
+		if kind in UNIQUE_STATUSES:
+			old["until"] = maxf(float(old["until"]), t + dur)
+			old["value"] = maxf(float(old["value"]), value)
+			emit({"k": "status", "cid": tgt.cid, "kind": kind, "dur": float(old["until"]) - t, "value": old["value"], "src": src_cid})
+			return
+		if kind in REFRESH_STATUSES and int(old.get("src", -1)) == src_cid and str(old.get("tag", "")) == tag:
+			tgt.statuses[i] = s
+			emit({"k": "status", "cid": tgt.cid, "kind": kind, "dur": dur, "value": value, "src": src_cid})
+			return
 	tgt.statuses.append(s)
 	emit({"k": "status", "cid": tgt.cid, "kind": kind, "dur": dur, "value": value, "src": src_cid})
 
@@ -489,14 +526,66 @@ func apply_cc(src: CombatUnit, tgt: CombatUnit, kind: String, base_dur: float, v
 	add_status(tgt, kind, value, maxf(0.05, dur), src.cid)
 
 
-## 持續傷害／治療：總量 total 分攤在 dur 秒內，每 dot_tick 秒結算一次
-func add_periodic(src: CombatUnit, tgt: CombatUnit, kind: String, total: float, dur: float, dtype: String = "physical", source: String = "skill") -> void:
+## 持續傷害／治療：總量 total 分攤在 dur 秒內，每 dot_tick 秒結算一次。
+## 不同施加者各自獨立；同一來源的同一效果（tag）重複施加時刷新（重新計時），不會無限堆疊。
+func add_periodic(src: CombatUnit, tgt: CombatUnit, kind: String, total: float, dur: float, dtype: String = "physical", source: String = "skill", tag: String = "") -> void:
 	if tgt == null or not tgt.alive or total <= 0.0:
 		return
 	var period := float(cfg.get("dot_tick", 0.5))
 	var ticks := maxi(1, int(round(dur / period)))
 	add_status(tgt, kind, 0.0, ticks * period + EPS, src.cid,
-		{"next_tick": t + period, "tick_amount": total / ticks, "ticks_left": ticks, "dtype": dtype, "source": source})
+		{"next_tick": t + period, "tick_amount": total / ticks, "ticks_left": ticks, "dtype": dtype, "source": source,
+		"tag": tag if tag != "" else source})
+
+
+## 施法後後撤一格（草原弓手）：只走到相鄰合法空格；優先拉開與最近敵人的距離，
+## 不走到會被更多敵人攻擊的位置；同分時保留在原目標射程內者優先，再依格子座標固定排序。沒有合適空格就不動。
+func retreat_step(u: CombatUnit) -> bool:
+	if not u.alive or u.has_status("root") or u.has_status("stun"):
+		return false
+	var foes := enemies_of(u)
+	if foes.is_empty():
+		return false
+	var here := _retreat_eval(u.cell, foes)
+	var tgt := unit_by_cid(u.target_cid)
+	var best := Vector2i(-1, -1)
+	var best_key: Array = []
+	for c in HexGrid.neighbors(u.cell):
+		if occupancy.has(c):
+			continue
+		var ev := _retreat_eval(c, foes)
+		if int(ev["threat"]) > int(here["threat"]):
+			continue
+		if int(ev["near"]) < int(here["near"]) or (int(ev["near"]) == int(here["near"]) and int(ev["threat"]) >= int(here["threat"])):
+			continue
+		var keep := 0 if (tgt != null and tgt.alive and HexGrid.distance(c, tgt.cell) <= u.attack_range) else 1
+		var key: Array = [-int(ev["near"]), int(ev["threat"]), keep, -int(ev["sum"]), c.y, c.x]
+		if best_key.is_empty() or _key_less(key, best_key):
+			best = c
+			best_key = key
+	if best_key.is_empty():
+		return false
+	var from := u.cell
+	var dur := float(cfg.get("status", {}).get("retreat_move_time", 0.25))
+	occupancy.erase(from)
+	occupancy[best] = u.cid
+	u.cell = best
+	emit({"k": "retreat", "cid": u.cid, "from": from, "to": best, "dur": dur})
+	return true
+
+
+## 某格對敵人的情勢：near＝最近敵人距離、threat＝射程能打到這格的敵人數、sum＝與所有敵人距離總和
+func _retreat_eval(c: Vector2i, foes: Array) -> Dictionary:
+	var near := 999
+	var threat := 0
+	var total := 0
+	for e in foes:
+		var d := HexGrid.distance(c, e.cell)
+		near = mini(near, d)
+		total += d
+		if d <= e.attack_range:
+			threat += 1
+	return {"near": near, "threat": threat, "sum": total}
 
 
 func cleanse_one(u: CombatUnit) -> String:

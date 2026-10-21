@@ -28,6 +28,8 @@ const KEYS := [
 	"atk_speed_pct",      # 攻速 %
 	"crit_chance_add",    # 暴擊率（百分點）
 	"crit_dmg_add",       # 暴擊傷害（百分點）
+	"phys_pen",           # 物理穿透 %：造成物理傷害時忽略目標該比例的物理減傷率（V0.4）
+	"magic_pen",          # 魔法穿透 %：造成魔法傷害時忽略目標該比例的魔法減傷率（V0.4）
 ]
 
 

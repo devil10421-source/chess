@@ -60,6 +60,12 @@ func _initialize() -> void:
 		"test_otherworld_enemies",
 		"test_live_stats_match",
 		"test_bench_during_battle",
+		"test_penetration",
+		"test_wound",
+		"test_slow_rules",
+		"test_dot_unified",
+		"test_archer_retreat",
+		"test_no_armor_down_left",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -611,13 +617,13 @@ func test_combat_no_overlap() -> void:
 	var ok := true
 	for e in res["events"]:
 		match e["k"]:
-			"move", "dash":
+			"move", "dash", "retreat":
 				if occ.has(e["to"]) and occ[e["to"]] != e["cid"]:
 					ok = false
 				occ.erase(e["from"])
 				occ[e["to"]] = e["cid"]
 				pos[e["cid"]] = e["to"]
-				if e["k"] == "move":
+				if e["k"] == "move" or e["k"] == "retreat":
 					check(HexGrid.distance(e["from"], e["to"]) == 1, "每次只移動 1 格")
 			"death":
 				occ.erase(pos[e["cid"]])
@@ -746,8 +752,6 @@ func test_defense_formula() -> void:
 	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), 100.0, "法術傷害看魔抗（0）")
 	b.mr = 75.0
 	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), 63.0, "魔抗 75 同一公式")
-	b.statuses.append({"kind": "armor_down", "value": 500.0, "until": 99.0, "src": -1})
-	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 100.0, "破甲超過護甲時有效防禦為 0，不會增傷")
 	# 百分比減傷與防禦分開計算
 	b.statuses.clear()
 	b.statuses.append({"kind": "phys_dr", "value": 50.0, "until": 99.0, "src": -1})
@@ -1125,13 +1129,22 @@ func test_stat_breakdown() -> void:
 	check(arm["lines"].all(func(l): return l["cat"] == "base" or not str(l["text"]).ends_with("0") or str(l["text"]) != "+0"), "不列零值來源")
 	check(arm["extra"][0].contains("減傷率"), "物防明細顯示目前減傷率")
 	# 戰鬥中暫時效果：破甲；Buff 與 Debuff 同時存在時以淨值決定顏色
-	var mixed := _cell(StatBreakdown.cells("HUM2", 1, [{"stat": "armor_flat", "value": 5.0, "source": "trait", "label": "守衛 2"}],
-		[{"kind": "armor_down", "value": 8.0, "left": 2.0}]), "armor")
-	eq(int(mixed["sign"]), -1, "物防 +5 與破甲 -8 → 淨值為負，紅字")
+	var mixed := _cell(StatBreakdown.cells("ORC1", 1, [{"stat": "melee_basic_pct", "value": -8.0, "source": "civ", "label": "精靈"}],
+		[{"kind": "atk_down", "value": 30.0, "left": 2.0}, {"kind": "atk_up", "value": 20.0, "left": 3.0}]), "atk")
+	eq(int(mixed["sign"]), -1, "攻擊 −8%（文明）−30%（弱化）＋20%（增益）→ 淨值為負，紅字")
 	check(mixed["lines"].any(func(l): return l["cat"] == "status" and int(l["sign"]) == -1), "明細列出暫時性戰鬥效果（紅字）")
-	var up := _cell(StatBreakdown.cells("HUM2", 1, [{"stat": "armor_flat", "value": 10.0, "source": "trait", "label": "x"}],
-		[{"kind": "armor_down", "value": 4.0, "left": 2.0}]), "armor")
-	eq(int(up["sign"]), 1, "物防 +10 與破甲 -4 → 淨值為正，藍字")
+	var up := _cell(StatBreakdown.cells("ORC1", 1, [{"stat": "melee_basic_pct", "value": -8.0, "source": "civ", "label": "精靈"}],
+		[{"kind": "atk_up", "value": 40.0, "left": 3.0}]), "atk")
+	eq(int(up["sign"]), 1, "攻擊 −8% 與 ＋40% → 淨值為正，藍字")
+	# 緩速：攻速 −10%、移速 −25%
+	var slowed := StatBreakdown.cells("ORC1", 1, [], [{"kind": "slow", "value": 0.0, "left": 1.0}])
+	eq(int(_cell(slowed, "as")["sign"]), -1, "緩速 → 攻速紅字")
+	check(is_equal_approx(float(_cell(slowed, "move")["value"]), UnitStats.base_stats("ORC1", 1)["move_speed"] * 0.75), "緩速 → 移速 ×0.75")
+	# 穿透格
+	var pen := StatBreakdown.cells("ORC1", 1, [{"stat": "phys_pen", "value": 25.0, "source": "item", "label": "裝備"}], [{"kind": "phys_pen", "value": 50.0, "left": 2.0}])
+	eq(_cell(pen, "phys_pen")["text"], "60%", "物理穿透 25%＋50% 受上限 60%")
+	eq(int(_cell(pen, "phys_pen")["sign"]), 1, "物理穿透 → 藍字")
+	eq(_cell(pen, "magic_pen")["text"], "0%", "魔法穿透不受物理穿透影響")
 	# 攻速、暴擊（裝備）
 	var ring: Array = Modifiers.sources_for_lineup(["CEN1"], "", false, [["DM_RING", "CU_FANG"]])[0]
 	var rc := StatBreakdown.cells("CEN1", 1, ring)
@@ -1140,6 +1153,8 @@ func test_stat_breakdown() -> void:
 	eq(_cell(rc, "crit_dmg")["text"], "175%", "暴擊傷害 150% + 25%")
 	eq(int(_cell(rc, "as")["sign"]), 1, "攻速裝備 → 藍")
 	# 鬼人文明技能傷害、戰鬥中魔力顯示
+	var deer: Array = Modifiers.sources_for_lineup(["DEE2"], "deer", true)[0]
+	eq(int(_cell(StatBreakdown.cells("DEE2", 1, deer), "skill")["sign"]), 1, "鹿角人治療護盾 +12% → 技能格藍字（收在技能明細）")
 	var oni: Array = Modifiers.sources_for_lineup(["ONI2"], "oni", true)[0]
 	eq(_cell(StatBreakdown.cells("ONI2", 1, oni), "skill")["text"], "112%", "鬼人技能傷害 112%")
 	eq(_cell(StatBreakdown.cells("ONI2", 1, [], [], {"mana": 40.0}), "mana")["text"], "40/60", "戰鬥中魔力顯示 目前／上限")
@@ -1576,3 +1591,178 @@ func test_bench_during_battle() -> void:
 	check(run.bench[7] != null and int(run.bench[7]["uid"]) == 50, "候補區排列已更新（影響下一回合）")
 	var rep := run.settle(res)
 	eq(rep["cleared"], res["cleared"], "結算使用開戰時的結果")
+
+
+# ------------------------------------------------------------ V0.4 戰鬥術語
+func _dummy_sim() -> Array:
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty())
+	var b := sim.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	b.max_hp = 99999.0
+	b.hp = 99999.0
+	return [sim, a, b]
+
+
+func test_penetration() -> void:
+	# 規格範例：減傷 40%、物理穿透 25% → 有效減傷 30%，100 原始傷害造成 70
+	var d40 := 0.0
+	for i in 2000:
+		if UnitStats.defense_reduction(i * 0.1) >= 0.4:
+			d40 = i * 0.1
+			break
+	check(absf(CombatSim.reduction_after_pen(d40, 25.0) - 0.30) < 0.002, "減傷 40% × (1 − 25%) = 30%")
+	var t := _dummy_sim()
+	var sim: CombatSim = t[0]
+	var a: CombatUnit = t[1]
+	var b: CombatUnit = t[2]
+	b.armor = 75.0      # 減傷 37.5%
+	b.mr = 75.0
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 63.0, "沒有穿透：100 打 75 護甲 = 63")
+	a.mods["phys_pen"] = 40.0
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), float(roundi(100.0 * (1.0 - 0.375 * 0.6))), "物理穿透 40%：減傷 37.5% → 22.5%")
+	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), 63.0, "物理穿透不影響魔法傷害")
+	a.mods["phys_pen"] = 0.0
+	a.mods["magic_pen"] = 40.0
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 63.0, "魔法穿透不影響物理傷害")
+	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), float(roundi(100.0 * (1.0 - 0.375 * 0.6))), "魔法穿透 40% 作用於魔法傷害")
+	# 上限 60%，不會低於 0
+	a.mods["magic_pen"] = 50.0
+	sim.add_status(a, "magic_pen", 50.0, 5.0, a.cid, {"tag": "skill"})
+	check(is_equal_approx(a.penetration("magic"), 60.0), "同類穿透加總上限 60%")
+	check(CombatSim.reduction_after_pen(75.0, 150.0) >= 0.0, "穿透不會讓減傷低於 0")
+	# 技能提供的穿透（取代破甲）：同來源重複施放只刷新
+	var s2 := CombatSim.new(2)
+	var orc3 := s2.add_unit("ORC3", 1, Vector2i(3, 6), 0, Modifiers.empty())
+	s2.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	orc3.mana = orc3.mana_max
+	SkillRunner.cast(s2, orc3)
+	SkillRunner.cast(s2, orc3)
+	eq(orc3.statuses.filter(func(x): return x["kind"] == "phys_pen").size(), 1, "戰矛獵手：穿透只有一份（重複施放刷新）")
+	check(is_equal_approx(orc3.penetration("physical"), 30.0), "戰矛獵手施法後自身物理穿透 30%")
+
+
+func test_wound() -> void:
+	var t := _dummy_sim()
+	var sim: CombatSim = t[0]
+	var a: CombatUnit = t[1]
+	a.hp = 10.0
+	eq(sim.heal(a, a, 100.0), 100.0, "沒有重傷：治療 100")
+	a.hp = 10.0
+	sim.add_status(a, "wound", 0.0, 3.0, -1)
+	sim.add_status(a, "wound", 0.0, 5.0, 99)
+	eq(a.statuses.filter(func(x): return x["kind"] == "wound").size(), 1, "多個重傷不疊加（只有一份）")
+	eq(sim.heal(a, a, 100.0), 60.0, "重傷：治療固定 −40%")
+	sim.add_shield(a, a, 100.0, 3.0)
+	eq(a.shield_total(), 100.0, "重傷不降低護盾")
+	var w: Dictionary = a.statuses.filter(func(x): return x["kind"] == "wound")[0]
+	check(is_equal_approx(float(w["until"]), 5.0), "重傷持續時間取較長者")
+
+
+func test_slow_rules() -> void:
+	var t := _dummy_sim()
+	var sim: CombatSim = t[0]
+	var b: CombatUnit = t[2]
+	var as0 := b.effective_atk_speed()
+	var mv0 := b.effective_move_speed()
+	sim.apply_cc(t[1], b, "slow", 2.0)
+	check(is_equal_approx(b.effective_atk_speed(), as0 * 0.9), "緩速：攻速 −10%")
+	check(is_equal_approx(b.effective_move_speed(), mv0 * 0.75), "緩速：移速 −25%")
+	sim.add_status(b, "slow", 0.0, 4.0, 77)
+	eq(b.statuses.filter(func(x): return x["kind"] == "slow").size(), 1, "不同來源緩速不相加")
+	check(is_equal_approx(b.effective_move_speed(), mv0 * 0.75), "兩個緩速仍只有 −25%")
+	check(b.effective_atk_speed() > 0.0 and b.effective_move_speed() > 0.0, "緩速不會讓速度變成負值")
+	sim.t = 2.5
+	sim._update_statuses()
+	check(b.has_status("slow"), "時間取較長者：2.5 秒時仍緩速")
+	sim.t = 4.1
+	sim._update_statuses()
+	check(not b.has_status("slow"), "到期後解除")
+	# 星紋術士的緩速使用統一規則（不再帶百分比）
+	check(not GameData.unit("ELF3")["skill"]["params"].has("pct"), "星紋術士緩速不再自訂百分比")
+
+
+func test_dot_unified() -> void:
+	var t := _dummy_sim()
+	var sim: CombatSim = t[0]
+	var a: CombatUnit = t[1]
+	var b: CombatUnit = t[2]
+	sim.add_periodic(a, b, "dot", 60.0, 3.0, "physical", "skill", "skill")
+	sim.add_periodic(a, b, "dot", 60.0, 3.0, "physical", "skill", "skill")
+	eq(b.statuses.filter(func(x): return x["kind"] == "dot").size(), 1, "同一來源同一效果重複施加只刷新")
+	var c := sim.add_unit("ONI1", 1, Vector2i(2, 4), 0, Modifiers.empty())
+	sim.add_periodic(c, b, "dot", 60.0, 3.0, "magic", "skill", "skill")
+	eq(b.statuses.filter(func(x): return x["kind"] == "dot").size(), 2, "不同施加者的持續傷害各自計算")
+	# 名稱統一：資料與介面不再出現流血／燃燒／中毒
+	var texts: Array = []
+	for u in GameData.units() + GameData.special_units():
+		texts.append(str(u.get("skill", {}).get("desc", "")))
+	for it in GameData.items():
+		texts.append(str(it.get("desc", "")))
+	for c2 in GameData.civs():
+		for bf in c2["buffs"] + c2["debuffs"]:
+			texts.append(str(bf["text"]))
+	var bad := texts.filter(func(x): return x.contains("流血") or x.contains("燃燒") or x.contains("中毒") or x.contains("侵蝕"))
+	eq(bad.size(), 0, "技能、裝備、文明說明統一稱「持續傷害」")
+
+
+func test_archer_retreat() -> void:
+	# 草原弓手：施法後向後撤一格，拉開與最近敵人的距離
+	var sim := CombatSim.new(3)
+	var arc := sim.add_unit("CEN1", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	var foe := sim.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	foe.max_hp = 9999.0
+	foe.hp = 9999.0
+	arc.target_cid = foe.cid
+	arc.mana = arc.mana_max
+	var d0 := HexGrid.distance(arc.cell, foe.cell)
+	var before := arc.cell
+	check(SkillRunner.cast(sim, arc), "草原弓手施法成功")
+	check(arc.cell != before and HexGrid.distance(before, arc.cell) == 1, "施法後移動一格")
+	check(HexGrid.distance(arc.cell, foe.cell) > d0, "後撤後與最近敵人的距離增加")
+	eq(arc.target_cid, foe.cid, "後撤不取消原本的目標鎖定")
+	eq(sim.occupancy.get(arc.cell), arc.cid, "占位同步更新")
+	check(not sim.occupancy.has(before), "原格子釋放")
+	check(sim.events.any(func(e): return e["k"] == "retreat" and e["cid"] == arc.cid), "產生後撤事件（播放同步）")
+	# 沒有合法空格：被包圍時不動、不卡住
+	var s2 := CombatSim.new(4)
+	var a2 := s2.add_unit("CEN1", 1, Vector2i(3, 6), 0, Modifiers.empty())
+	var f2 := s2.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	f2.max_hp = 9999.0
+	f2.hp = 9999.0
+	for n in HexGrid.neighbors(a2.cell):
+		s2.add_unit("ELF1", 1, n, 0, Modifiers.empty())
+	a2.target_cid = f2.cid
+	a2.mana = a2.mana_max
+	check(SkillRunner.cast(s2, a2), "被包圍時仍可施法")
+	eq(a2.cell, Vector2i(3, 6), "沒有空格時維持原位")
+	# 不會走到更容易被攻擊的位置：所有候選格都更危險時不動
+	var s3 := CombatSim.new(5)
+	var a3 := s3.add_unit("CEN1", 1, Vector2i(0, 7), 0, Modifiers.empty())
+	var f3 := s3.add_unit("ORC1", 1, Vector2i(0, 6), 1, Modifiers.empty())
+	f3.max_hp = 9999.0
+	f3.hp = 9999.0
+	s3.add_unit("CEN1", 1, Vector2i(2, 4), 1, Modifiers.empty())
+	a3.target_cid = f3.cid
+	a3.mana = a3.mana_max
+	var cell3 := a3.cell
+	SkillRunner.cast(s3, a3)
+	var ev := s3._retreat_eval(a3.cell, s3.enemies_of(a3))
+	var ev0 := s3._retreat_eval(cell3, s3.enemies_of(a3))
+	check(int(ev["threat"]) <= int(ev0["threat"]), "不移到會被更多敵人攻擊的位置")
+	# 整場戰鬥：可重現、不重疊
+	var r1 := BattleSetup.build([{"id": "CEN1", "star": 2, "cell": Vector2i(3, 6), "uid": 1, "items": []},
+		{"id": "CEN1", "star": 1, "cell": Vector2i(1, 6), "uid": 2, "items": []}], "centaur", 5, 9).run()
+	var r2 := BattleSetup.build([{"id": "CEN1", "star": 2, "cell": Vector2i(3, 6), "uid": 1, "items": []},
+		{"id": "CEN1", "star": 1, "cell": Vector2i(1, 6), "uid": 2, "items": []}], "centaur", 5, 9).run()
+	eq(JSON.stringify(r1["events"]), JSON.stringify(r2["events"]), "含後撤的戰鬥同種子可重現")
+
+
+func test_no_armor_down_left() -> void:
+	# 「破甲」已全面遷移：資料與技能不再對目標降低防禦
+	for u in GameData.units() + GameData.special_units():
+		var pr: Dictionary = u.get("skill", {}).get("params", {})
+		check(not pr.has("armor") or str(u.get("skill", {}).get("kind", "")) in ["rally", "living_bark"], "%s 沒有降低目標防禦的參數" % u["id"])
+	for id in ["HUM3", "ORC3", "OG_AVATAR"]:
+		check(float(GameData.unit(id)["skill"]["params"].get("pen", 0)) > 0.0, "%s 改為自身穿透" % id)
+	var r := BattleSetup.build(_demo_run(11).board_lineup(), "human", 15, 11).run()
+	check(not r["events"].any(func(e): return e["k"] == "status" and e["kind"] == "armor_down"), "戰鬥中不再出現破甲狀態")

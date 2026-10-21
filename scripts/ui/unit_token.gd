@@ -5,9 +5,9 @@ extends Node2D
 ## V0.4：頭上固定顯示「星級標記＋HP／MP 條」：一星＝一個小圓點、二星＝兩個小圓點、三星＝一顆金色星星（在狀態條左側）；
 ##       有裝備時在狀態條下方顯示 1～2 個小圖示，沒有裝備就完全不畫（不畫空格）。2 星銀環、3 星光環仍保留作為輔助。
 
-const STATUS_GLYPH := {"stun": "暈", "root": "定", "slow": "緩", "taunt": "嘲", "dot": "灼", "atk_down": "弱",
-	"armor_down": "破", "mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒"}
-const NEGATIVE := ["stun", "root", "slow", "taunt", "dot", "atk_down", "armor_down", "mark"]
+const STATUS_GLYPH := {"stun": "暈", "root": "定", "slow": "緩", "taunt": "嘲", "dot": "蝕", "atk_down": "弱", "wound": "傷",
+	"mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒", "phys_pen": "穿", "magic_pen": "穿"}
+const NEGATIVE := ["stun", "root", "slow", "taunt", "dot", "atk_down", "wound", "mark"]
 
 @onready var art: Sprite2D = $Art
 

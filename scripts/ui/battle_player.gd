@@ -125,7 +125,7 @@ func _pos(cid: int) -> Vector2:
 func _apply(e: Dictionary, instant: bool) -> void:
 	var sp := maxf(0.1, Session.playback_rate)
 	match str(e["k"]):
-		"move":
+		"move", "retreat":
 			var tk: UnitToken = _tokens.get(int(e["cid"]))
 			if tk:
 				tk.move_to(board.cell_center(e["to"]), 0.0 if instant else float(e["dur"]) / sp)

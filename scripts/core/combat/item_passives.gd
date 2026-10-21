@@ -20,12 +20,11 @@ static func on_battle_start(sim: CombatSim, u: CombatUnit) -> void:
 static func on_basic_hit(sim: CombatSim, u: CombatUnit, tgt: CombatUnit) -> void:
 	for p in u.passives:
 		match str(p["kind"]):
-			"on_hit_bleed":
+			"on_hit_bleed", "on_hit_burn", "on_hit_dot":
+				# 持續傷害（V0.4 統一名稱）；同一攻擊者重複命中只刷新，不堆疊
 				if tgt.alive:
-					sim.add_periodic(u, tgt, "dot", float(p.get("total", 10)), float(p.get("dur", 3)), "physical", "item")
-			"on_hit_burn":
-				if tgt.alive:
-					sim.add_periodic(u, tgt, "dot", float(p.get("total", 10)), float(p.get("dur", 3)), "magic", "item")
+					var dt := str(p.get("dtype", "magic" if p["kind"] == "on_hit_burn" else "physical"))
+					sim.add_periodic(u, tgt, "dot", float(p.get("total", 10)), float(p.get("dur", 3)), dt, "item", "item:" + str(p["kind"]))
 			"curse_on_hit":
 				if tgt.alive and tgt.status_from("atk_down", u.cid).is_empty():
 					sim.add_status(tgt, "atk_down", float(p.get("pct", 10)), float(p.get("dur", 3)), u.cid)
@@ -56,8 +55,7 @@ static func on_basic_taken(sim: CombatSim, u: CombatUnit, attacker: CombatUnit, 
 				if attacker.is_melee():
 					sim.deal_damage(u, attacker, dmg * float(p.get("pct", 20)) / 100.0, "magic", "item", false)
 			"on_hit_slow":
-				if attacker.status_from("slow", u.cid).is_empty():
-					sim.add_status(attacker, "slow", float(p.get("pct", 20)), float(p.get("dur", 1.5)), u.cid)
+				sim.add_status(attacker, "slow", 0.0, float(p.get("dur", 1.5)), u.cid)
 
 
 ## 施放技能後

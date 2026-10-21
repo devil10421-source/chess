@@ -54,13 +54,12 @@
    "skill": {
     "kind": "area_cc",
     "name": "星光束縛",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並緩速 {pct}%（{cc} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並使其緩速 {cc} 秒。",
     "params": {
      "dmg": 0.9,
      "radius": 1,
      "cc": 2.0,
      "cc_kind": "slow",
-     "pct": 35,
      "dtype": "magic"
     }
    }
@@ -139,13 +138,13 @@
    "skill": {
     "kind": "dash_strike",
     "name": "弱點奇襲",
-    "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害並使其護甲 -{armor}（{dur} 秒）。",
+    "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害；之後 {pen_dur} 秒自身物理穿透 +{pen}%。",
     "params": {
      "dmg": 1.2,
      "pick": "lowest_hp",
-     "armor": 15,
-     "dur": 4,
-     "dtype": "physical"
+     "dtype": "physical",
+     "pen": 30,
+     "pen_dur": 4
     }
    }
   },
@@ -223,12 +222,12 @@
    "skill": {
     "kind": "strike",
     "name": "裂甲投矛",
-    "desc": "投矛造成 {dmg} 物理傷害並使目標護甲 -{armor}（{dur} 秒）。",
+    "desc": "投矛造成 {dmg} 物理傷害；之後 {pen_dur} 秒自身物理穿透 +{pen}%。",
     "params": {
      "dmg": 1.1,
-     "armor": 15,
-     "dur": 4,
-     "dtype": "physical"
+     "dtype": "physical",
+     "pen": 30,
+     "pen_dur": 4
     }
    }
   },
@@ -267,11 +266,12 @@
    "skill": {
     "kind": "rapid_shot",
     "name": "迅捷連射",
-    "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害。",
+    "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害，然後向後撤一格拉開距離（沒有合適空格則不動）。",
     "params": {
      "dmg": 1.0,
      "atk_pct": 100,
-     "dtype": "physical"
+     "dtype": "physical",
+     "retreat": 1
     }
    }
   },
@@ -428,7 +428,7 @@
    "skill": {
     "kind": "bleed_strike",
     "name": "血刃斬",
-    "desc": "造成 {dmg} 物理傷害，並使目標流血共 {dot}（{dur} 秒）。",
+    "desc": "造成 {dmg} 物理傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 1.3,
      "dot": 1.0,
@@ -491,7 +491,7 @@
    "skill": {
     "kind": "hellfire",
     "name": "業火降臨",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 0.9,
      "radius": 2,
@@ -639,7 +639,7 @@
    "skill": {
     "kind": "hellfire",
     "name": "炎爆",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 1.0,
      "radius": 1,
@@ -691,7 +691,7 @@
    "skill": {
     "kind": "hellfire",
     "name": "腐朽孢子",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並侵蝕共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 0.6,
      "radius": 1,
@@ -739,15 +739,16 @@
    "skill": {
     "kind": "eldritch_pulse",
     "name": "萬眼凝視",
-    "desc": "對全場敵人造成 {dmg} 法術傷害並暈眩 {cc} 秒，施加侵蝕共 {dot}（{dur} 秒）與護甲 -{armor}；自身獲得 {shield} 護盾。",
+    "desc": "對全場敵人造成 {dmg} 法術傷害並暈眩 {cc} 秒，造成持續傷害共 {dot}（{dur} 秒）；自身魔法穿透 +{pen}%（{pen_dur} 秒）並獲得 {shield} 護盾。",
     "params": {
      "dmg": 0.8,
      "cc": 1.0,
      "dot": 0.8,
      "dur": 4,
-     "armor": 10,
      "shield": 3.0,
-     "dtype": "magic"
+     "dtype": "magic",
+     "pen": 25,
+     "pen_dur": 4
     }
    }
   }
