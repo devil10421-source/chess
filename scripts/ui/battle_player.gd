@@ -19,6 +19,9 @@ var _playing := false
 var _tokens: Dictionary = {}   # cid -> UnitToken
 var _units: Dictionary = {}    # cid -> snapshot
 var _alive_enemy: Dictionary = {}
+## 戰鬥中即時狀態（只由事件重建，給資訊面板查看）：cid -> [{kind, value, until}]
+var _live_status: Dictionary = {}
+var _selected_cid := -1
 
 
 func is_playing() -> bool:
@@ -58,6 +61,8 @@ func clear() -> void:
 	_tokens.clear()
 	_units.clear()
 	_alive_enemy.clear()
+	_live_status.clear()
+	_selected_cid = -1
 	_playing = false
 	if board:
 		board.fx.clear()
@@ -177,21 +182,91 @@ func _apply(e: Dictionary, instant: bool) -> void:
 				tk.flash(Color(col, 0.6), 0.4)
 				board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 1.2), str(e["name"]), Color(1, 0.9, 0.5), 15, 1.0)
 		"status":
-			var tk: UnitToken = _tokens.get(int(e["cid"]))
+			var cid := int(e["cid"])
+			var list: Array = _live_status.get(cid, [])
+			list.append({"kind": str(e["kind"]), "value": float(e.get("value", 0.0)), "until": float(e["t"]) + float(e["dur"])})
+			_live_status[cid] = list
+			var tk: UnitToken = _tokens.get(cid)
 			if tk and not instant:
 				tk.add_status(str(e["kind"]), float(e["dur"]))
 		"cleanse":
-			var tk: UnitToken = _tokens.get(int(e["cid"]))
+			var cid := int(e["cid"])
+			var tk: UnitToken = _tokens.get(cid)
 			if tk:
 				tk.statuses.erase(str(e["kind"]))
+			var list: Array = _live_status.get(cid, [])
+			for i in list.size():
+				if list[i]["kind"] == str(e["kind"]):
+					list.remove_at(i)
+					break
 		"death":
 			var cid := int(e["cid"])
 			var tk: UnitToken = _tokens.get(cid)
 			if tk:
 				tk.die(0.0 if instant else 0.35 / sp)
 				tk.show_bars = false
+			_live_status.erase(cid)
 			if _alive_enemy.has(cid):
 				_alive_enemy.erase(cid)
 				_emit_threat()
 		"end":
 			pass
+
+
+# ---------- 戰鬥中查看（唯讀） ----------
+## BoardView 區域座標上的戰鬥單位 cid；沒有則 -1
+func cid_at(local_pos: Vector2, radius: float) -> int:
+	var best := -1
+	var best_d := radius * radius
+	for cid in _tokens.keys():
+		var tk: UnitToken = _tokens[cid]
+		if not tk.visible or tk.modulate.a < 0.5:
+			continue
+		var d := tk.position.distance_squared_to(local_pos)
+		if d <= best_d:
+			best_d = d
+			best = int(cid)
+	return best
+
+
+func set_selected(cid: int) -> void:
+	_selected_cid = cid
+	for k in _tokens.keys():
+		_tokens[k].selected = int(k) == cid
+
+
+func has_unit(cid: int) -> bool:
+	return _units.has(cid)
+
+
+func is_alive(cid: int) -> bool:
+	var tk: UnitToken = _tokens.get(cid)
+	return tk != null and tk.visible and tk.modulate.a > 0.5
+
+
+func unit_snapshot(cid: int) -> Dictionary:
+	return _units.get(cid, {})
+
+
+func token(cid: int) -> UnitToken:
+	return _tokens.get(cid)
+
+
+## 目前仍生效的狀態（剩餘秒數為模擬時間）：[{kind, value, left}]
+func live_statuses(cid: int) -> Array:
+	var out: Array = []
+	for st in _live_status.get(cid, []):
+		var left := float(st["until"]) - _clock
+		if left > 0.0:
+			out.append({"kind": st["kind"], "value": st["value"], "left": left})
+	return out
+
+
+## 我方上場棋子的快照（依 cid 順序，與 Modifiers 計算時的順序一致）
+func player_lineup() -> Array:
+	var out: Array = []
+	for snap in _units.values():
+		if int(snap["side"]) == 0:
+			out.append(snap)
+	out.sort_custom(func(a, b) -> bool: return int(a["cid"]) < int(b["cid"]))
+	return out

@@ -164,10 +164,11 @@ func _draw() -> void:
 	# 受擊／施法閃光
 	if flash_color.a > 0.01:
 		draw_circle(o, r * 1.05, flash_color)
-	# 選取
+	# 選取：金色粗外框＋呼吸光暈（比 V0.1 明顯）
 	if selected:
-		var w := 2.0 + 1.5 * (0.5 + 0.5 * sin(_time * 6.0))
-		draw_arc(o, r * 1.22, 0, TAU, 40, Color(1, 1, 1, 0.95), w, true)
+		var pulse := 0.5 + 0.5 * sin(_time * 6.0)
+		draw_arc(o, r * 1.32, 0, TAU, 48, Color(1.0, 0.88, 0.4, 0.35 + 0.25 * pulse), 7.0, true)
+		draw_arc(o, r * 1.2, 0, TAU, 48, Color(1.0, 0.95, 0.6, 1.0), 3.0 + 1.5 * pulse, true)
 	# 戰鬥血條／魔力條
 	if show_bars:
 		var bw := r * 2.0

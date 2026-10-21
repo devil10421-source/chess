@@ -15,6 +15,9 @@ var codex_return := SCENE_MENU
 var battle_speed := 1.0
 ## 目前實際的播放倍率（戰鬥加速分段 × 玩家選的速度），動畫與狀態倒數都用這個值
 var playback_rate := 1.0
+## 從圖鑑返回同一回合時，接續備戰剩餘秒數（避免開圖鑑重置倒數）
+var prep_time_left := 0.0
+var prep_time_round := -1
 
 const THEME_PATH := "res://assets/theme/main_theme.tres"
 

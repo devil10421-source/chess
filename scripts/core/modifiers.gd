@@ -71,21 +71,50 @@ static func civ_effects(civ_id: String) -> Array:
 	return out
 
 
-## 計算一方棋盤上每隻棋子的修正值。
-## unit_ids：棋盤上每一隻的 id（可重複，順序對應回傳陣列）。
-## civ_id：玩家文明（敵方傳 ""）；use_synergy：是否套用羈絆。
-static func for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool) -> Array:
+## 每隻棋子的修正來源（可追溯）：回傳陣列，每隻一個 [{stat, value, source, label}]
+## source：civ（文明 Buff／Debuff）或 trait（羈絆）；label 為給玩家看的來源說明。
+static func sources_for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool) -> Array:
 	var counts := Synergy.count(unit_ids)
 	var actives: Array = Synergy.active(counts) if use_synergy else []
 	var ctx := {"distinct_races": counts["race"].size()}
-	var civ_fx := civ_effects(civ_id) if civ_id != "" else []
+	var c := GameData.civ(civ_id) if civ_id != "" else {}
 	var out: Array = []
 	for id in unit_ids:
 		var u := GameData.unit(str(id))
-		var m := empty()
-		add_effects(m, civ_fx, u, ctx)
+		var list: Array = []
+		for group in ["buffs", "debuffs"]:
+			for b in c.get(group, []):
+				for e in b.get("effects", []):
+					if cond_ok(e.get("cond", {}), u, ctx):
+						list.append({"stat": str(e["stat"]), "value": float(e["value"]), "source": "civ",
+							"label": "%s文明：%s" % [c.get("name", ""), b.get("text", "")]})
 		for a in actives:
-			if str(u.get(a["group"], "")) == str(a["key"]):
-				add_effects(m, a["effects"], u, ctx)
-		out.append(m)
+			if str(u.get(a["group"], "")) != str(a["key"]):
+				continue
+			var tdef: Dictionary = GameData.traits()[a["group"]][a["key"]]
+			for e in a["effects"]:
+				if cond_ok(e.get("cond", {}), u, ctx):
+					list.append({"stat": str(e["stat"]), "value": float(e["value"]), "source": "trait",
+						"label": "%s %d：%s" % [tdef.get("name", a["key"]), int(a["count"]), a.get("text", "")]})
+		out.append(list)
+	return out
+
+
+## 把來源清單加總成修正值字典
+static func sum_sources(list: Array) -> Dictionary:
+	var m := empty()
+	for e in list:
+		var stat := str(e["stat"])
+		if not m.has(stat):
+			push_warning("未知的修正鍵：%s" % stat)
+		m[stat] = float(m.get(stat, 0.0)) + float(e["value"])
+	return m
+
+
+## 計算一方棋盤上每隻棋子的修正值（由來源清單加總，確保 UI 說明與實際數值一致）。
+## unit_ids：棋盤上每一隻的 id（可重複，順序對應回傳陣列）。civ_id：玩家文明（敵方傳 ""）；use_synergy：是否套用羈絆。
+static func for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool) -> Array:
+	var out: Array = []
+	for list in sources_for_lineup(unit_ids, civ_id, use_synergy):
+		out.append(sum_sources(list))
 	return out

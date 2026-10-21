@@ -9,7 +9,7 @@ extends RefCounted
 ##   （damage.source 為傷害來源：basic 普攻／skill 技能／item 裝備（V0.3 預留）；dtype 為屬性：physical／magic）
 ##   heal   {src, tgt, v, hp}              shield{src, tgt, v, shield, dur}
 ##   mana   {cid, v}                       cast  {cid, name, cells, color, tgt}
-##   status {cid, kind, dur}               cleanse{cid, kind}
+##   status {cid, kind, dur, value, src}   cleanse{cid, kind}
 ##   death  {cid}                          end   {cleared, time}
 
 const EPS := 0.0001
@@ -455,7 +455,7 @@ func add_status(tgt: CombatUnit, kind: String, value: float, dur: float, src_cid
 	var s := {"kind": kind, "value": value, "until": t + dur, "src": src_cid}
 	s.merge(extra)
 	tgt.statuses.append(s)
-	emit({"k": "status", "cid": tgt.cid, "kind": kind, "dur": dur})
+	emit({"k": "status", "cid": tgt.cid, "kind": kind, "dur": dur, "value": value, "src": src_cid})
 
 
 ## 控制效果（暈眩、定身、緩速、嘲諷）：base_dur 已含星級成長；再加上文明的施加／承受修正（各自最多 +0.2 秒）

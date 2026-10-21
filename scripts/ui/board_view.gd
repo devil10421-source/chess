@@ -8,6 +8,7 @@ signal enemy_selected(unit_id: String, star: int)
 signal move_to_board_requested(uid: int, cell: Vector2i)
 signal move_to_bench_requested(uid: int, index: int)
 signal sell_requested(uid: int)
+signal battle_unit_selected(cid: int)          # 戰鬥中點選棋子（-1 = 取消）
 
 const TOKEN_SCENE := preload("res://scenes/unit_token.tscn")
 const DRAG_THRESHOLD := 12.0
@@ -19,6 +20,10 @@ const DRAG_THRESHOLD := 12.0
 var hex_size := 36.0
 var bench_count := 12
 var interactive := true
+## 戰鬥中：只能點選查看（以戰鬥單位 cid 識別），不能移動或出售
+var battle_mode := false
+var _selected_cid := -1
+var _selected_enemy_cell := HexGrid.INVALID
 ## 回傳某畫面座標是否位於出售區（由 GameScreen 設定）
 var is_over_sell_zone: Callable = func(_p: Vector2) -> bool: return false
 
@@ -36,6 +41,12 @@ var _show_prep := true
 
 func _ready() -> void:
 	bench_count = Shop.bench_size()
+
+
+func _process(_delta: float) -> void:
+	# 選取高亮有呼吸動畫
+	if _selected_uid >= 0 or _selected_enemy_cell != HexGrid.INVALID:
+		queue_redraw()
 
 
 # ---------- 版面 ----------
@@ -179,6 +190,8 @@ func set_prep_visible(v: bool) -> void:
 
 func select(uid: int) -> void:
 	_selected_uid = uid
+	if uid >= 0:
+		_selected_enemy_cell = HexGrid.INVALID
 	for k in _prep_tokens.keys():
 		_prep_tokens[k].selected = k == uid
 	unit_selected.emit(uid)
@@ -187,6 +200,34 @@ func select(uid: int) -> void:
 
 func selected_uid() -> int:
 	return _selected_uid
+
+
+func select_enemy_cell(cell: Vector2i) -> void:
+	_selected_enemy_cell = cell
+	queue_redraw()
+
+
+func select_battle(cid: int) -> void:
+	_selected_cid = cid
+	battle_player.set_selected(cid)
+	queue_redraw()
+
+
+func selected_cid() -> int:
+	return _selected_cid
+
+
+## 取消進行中的拖曳（例如倒數結束自動開戰時），棋子回到原位
+func cancel_drag() -> void:
+	if _press_uid >= 0:
+		var tk: UnitToken = _prep_tokens.get(_press_uid)
+		if tk:
+			tk.z_index = 0
+	_press_uid = -1
+	_dragging = false
+	_hover_cell = HexGrid.INVALID
+	_hover_bench = -1
+	sync_prep()
 
 
 # ---------- 輸入 ----------
@@ -225,11 +266,22 @@ func _enemy_at(hit: Dictionary) -> Dictionary:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if battle_mode:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var cid := battle_player.cid_at(_local(event.position), hex_size * 0.8)
+			select_battle(cid)
+			battle_unit_selected.emit(cid)
+			get_viewport().set_input_as_handled()
+		return
 	if not interactive or _run == null:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var hit := _hit(event.position)
 		if hit.is_empty():
+			# 點到棋盤外的空白處：取消選取
+			if _selected_uid >= 0 or _selected_enemy_cell != HexGrid.INVALID:
+				_selected_enemy_cell = HexGrid.INVALID
+				select(-1)
 			return
 		get_viewport().set_input_as_handled()
 		var uid := _uid_at(hit)
@@ -240,13 +292,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var enemy := _enemy_at(hit)
 		if not enemy.is_empty():
+			select(-1)
+			_selected_enemy_cell = enemy["cell"]
 			enemy_selected.emit(enemy["id"], enemy["star"])
+			queue_redraw()
 			return
 		# 點到己方空格：若已選取棋子就移動過去；點敵方空格則取消選取
 		var own_side: bool = hit["where"] == "bench" or HexGrid.is_player_cell(hit["cell"])
 		if _selected_uid >= 0 and own_side:
 			_request_move(_selected_uid, hit)
 			return
+		_selected_enemy_cell = HexGrid.INVALID
 		select(-1)
 
 
@@ -289,7 +345,7 @@ func _input(event: InputEvent) -> void:
 				else:
 					_request_move(uid, hit)
 		else:
-			# 單純點擊：切換選取
+			# 單純點擊：選取這隻（點另一隻會直接切換；再點同一隻取消）
 			select(-1 if _selected_uid == uid else uid)
 		sync_prep()
 
@@ -326,6 +382,20 @@ func _draw() -> void:
 		draw_colored_polygon(pts, base)
 		pts.append(pts[0])
 		draw_polyline(pts, Color(1, 1, 1, 0.10), 1.5, true)
+	# 選取高亮：底座格子發光＋粗外框
+	var sel_center := Vector2.INF
+	if _show_prep and _selected_uid >= 0 and _run != null and not _dragging:
+		var f := _run.find_unit(_selected_uid)
+		if not f.is_empty():
+			sel_center = cell_center(f["cell"]) if f["where"] == "board" else bench_center(int(f["index"]))
+	elif _show_prep and _selected_enemy_cell != HexGrid.INVALID:
+		sel_center = cell_center(_selected_enemy_cell)
+	if sel_center != Vector2.INF:
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 160.0)
+		var hp := _hex_points(sel_center, hex_size * 0.96)
+		draw_colored_polygon(hp, Color(1.0, 0.86, 0.35, 0.28 + 0.15 * pulse))
+		hp.append(hp[0])
+		draw_polyline(hp, Color(1.0, 0.9, 0.45, 0.95), 3.0, true)
 	# 中線
 	var y := (cell_center(Vector2i(0, 3)).y + cell_center(Vector2i(0, 4)).y) * 0.5
 	draw_line(Vector2(0, y), Vector2(board_size().x, y), Color(1, 0.85, 0.4, 0.55), 2.0)

@@ -121,5 +121,6 @@ func snapshot() -> Dictionary:
 	return {
 		"cid": cid, "side": side, "uid": uid, "id": unit_id, "star": star,
 		"cell": cell, "hp": hp, "max_hp": max_hp, "mana": mana, "mana_max": mana_max,
-		"shield": shield_total(),
+		"shield": shield_total(), "atk": atk, "armor": armor, "mr": mr, "atk_speed": atk_speed,
+		"range": attack_range, "move_speed": move_speed, "mods": mods.duplicate(),
 	}

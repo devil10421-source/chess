@@ -46,6 +46,11 @@ func _initialize() -> void:
 		"test_oni_skill_dot",
 		"test_playback_clock",
 		"test_prep_timer",
+		"test_stat_breakdown",
+		"test_contribution_stats",
+		"test_leaderboard_rows",
+		"test_trait_detail",
+		"test_v01_save_compat",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -1074,3 +1079,164 @@ func test_prep_timer() -> void:
 	check(not tm.tick(1.0), "只觸發一次")
 	tm.start()
 	eq(tm.seconds_left(), 15, "每回合重新從 15 秒開始")
+
+
+# ================= V0.2 第三批：資訊透明 =================
+func _row(rows: Array, key: String) -> Dictionary:
+	for r in rows:
+		if r["key"] == key:
+			return r
+	return {}
+
+
+func test_stat_breakdown() -> void:
+	# 面板的最終數值必須與戰鬥實際使用的數值一致
+	var ids := ["ORC1", "ELF1", "HUM2", "CEN1"]
+	for civ in ["elf", "human", "orc", "centaur", "deer", "oni"]:
+		var sources := Modifiers.sources_for_lineup(ids, civ, true)
+		var mods := Modifiers.for_lineup(ids, civ, true)
+		for i in ids.size():
+			var rows := StatBreakdown.build(ids[i], 2, sources[i])
+			var fin := UnitStats.final_stats(ids[i], 2, mods[i])
+			eq(_row(rows, "hp")["value"], fin["hp"], "%s/%s 生命面板＝實際" % [civ, ids[i]])
+			eq(_row(rows, "armor")["value"], fin["armor"], "%s/%s 護甲面板＝實際" % [civ, ids[i]])
+			check(is_equal_approx(_row(rows, "move")["value"], fin["move_speed"]), "%s/%s 移速面板＝實際" % [civ, ids[i]])
+	# 來源可追溯：精靈文明的近戰 HP -10% 以紅字（sign = -1）列出
+	var elf_src: Array = Modifiers.sources_for_lineup(["ORC1"], "elf", true)[0]
+	var hp_row := _row(StatBreakdown.build("ORC1", 1, elf_src), "hp")
+	var found := false
+	for l in hp_row["lines"]:
+		if str(l["label"]).contains("精靈") and int(l["sign"]) == -1:
+			found = true
+	check(found, "生命來源列出精靈文明 -10%（紅字）")
+	# 普攻傷害 = 攻擊力 × (1 + 加成%)：半人馬文明機動型 +10%
+	var cen_src: Array = Modifiers.sources_for_lineup(["CEN2"], "centaur", true)[0]
+	var b := _row(StatBreakdown.build("CEN2", 1, cen_src), "basic")
+	check(is_equal_approx(b["value"], UnitStats.base_stats("CEN2", 1)["atk"] * 1.10), "普攻傷害含文明 +10%")
+	# 列的淨變化：人類文明普攻 -5% → 普攻傷害列為減少（紅）；同時有增有減時依淨值
+	var hum_src: Array = Modifiers.sources_for_lineup(["ORC1"], "human", true)[0]
+	check(float(_row(StatBreakdown.build("ORC1", 1, hum_src), "basic")["net"]) < 0.0, "人類普攻 -5% 的列淨值為負（紅字）")
+	var mix: Array = [{"stat": "basic_dmg_pct", "value": 10.0, "source": "civ", "label": "+"}, {"stat": "basic_dmg_pct", "value": -8.0, "source": "civ", "label": "-"}]
+	check(float(_row(StatBreakdown.build("ORC1", 1, mix), "basic")["net"]) > 0.0, "+10% 與 -8% 混合時依淨值顯示為增加（藍字）")
+	eq(_row(StatBreakdown.build("TUT1", 1, []), "mana")["text"], "無主動技能", "教學弱敵顯示無主動技能")
+	# 防禦列顯示減傷百分比
+	var arm := _row(StatBreakdown.build("HUM2", 1, []), "armor")
+	check(str(arm["text"]).contains("減傷"), "護甲列顯示減傷百分比")
+	# 戰鬥中狀態（破甲）列入明細
+	var arm2 := _row(StatBreakdown.build("HUM2", 1, [], [{"kind": "armor_down", "value": 15.0}]), "armor")
+	eq(arm2["value"], maxf(0.0, UnitStats.base_stats("HUM2", 1)["armor"] - 15.0), "破甲後的有效護甲")
+	# for_lineup 由來源加總，兩者一致
+	var direct := Modifiers.for_lineup(["ELF1", "ELF2", "HUM2"], "human", true)
+	var src := Modifiers.sources_for_lineup(["ELF1", "ELF2", "HUM2"], "human", true)
+	for i in 3:
+		eq(Modifiers.sum_sources(src[i]), direct[i], "來源加總＝修正值")
+
+
+func test_contribution_stats() -> void:
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty())
+	var b := sim.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	b.armor = 0.0
+	# 護盾：先給 50 護盾，打 30 → 吸收 30、HP 不變
+	sim.add_shield(b, b, 50.0, 10.0)
+	sim.deal_damage(a, b, 30.0, "physical", "skill", false)
+	eq(b.shield_absorbed, 30.0, "護盾只計實際吸收的 30（未消耗的 20 不算）")
+	eq(a.damage_dealt, 0.0, "被護盾吸收的不算有效 HP 傷害")
+	eq(b.damage_taken, 0.0, "護盾擋下時沒有承傷")
+	# 再打 40：護盾剩 20 吸收，HP 損失 20
+	sim.deal_damage(a, b, 40.0, "physical", "skill", false)
+	eq(b.shield_absorbed, 50.0, "護盾累計吸收 50")
+	eq(a.damage_dealt, 20.0, "有效傷害 20")
+	eq(b.damage_taken, 20.0, "承傷 20")
+	# 溢出擊殺：剩 HP 少於傷害時只計剩餘 HP
+	b.hp = 10.0
+	sim.deal_damage(a, b, 100.0, "physical", "skill", false)
+	eq(a.damage_dealt, 30.0, "擊殺只計剩餘 10 HP")
+	eq(a.overkill, 90.0, "溢出傷害另外記錄（除錯用）")
+	# 有效治療：超過最大生命的不算
+	var s2 := CombatSim.new(2)
+	var healer := s2.add_unit("HUM1", 1, Vector2i(3, 6), 0, Modifiers.empty())
+	var hurt := s2.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty())
+	hurt.hp = hurt.max_hp - 15.0
+	s2.heal(healer, hurt, 50.0)
+	eq(healer.healing_done, 15.0, "有效治療只計補到滿血的 15")
+	# 同名兩隻分開統計
+	var s3 := CombatSim.new(3)
+	s3.add_unit("ORC1", 2, Vector2i(2, 4), 0, Modifiers.empty())
+	s3.add_unit("ORC1", 2, Vector2i(4, 4), 0, Modifiers.empty())
+	s3.add_unit("HUM2", 2, Vector2i(3, 3), 1, Modifiers.empty())
+	var res := s3.run()
+	var orc_rows: Array = res["stats"].filter(func(x): return x["id"] == "ORC1")
+	eq(orc_rows.size(), 2, "同名兩隻各自一列")
+	check(orc_rows[0]["cid"] != orc_rows[1]["cid"], "以戰鬥單位 cid 區分")
+
+
+func test_leaderboard_rows() -> void:
+	var stats := [
+		{"cid": 1, "side": 0, "id": "ORC1", "star": 2, "damage": 300, "taken": 50, "shielded": 0, "healing": 0},
+		{"cid": 2, "side": 0, "id": "ORC1", "star": 1, "damage": 100, "taken": 150, "shielded": 0, "healing": 0},
+		{"cid": 3, "side": 0, "id": "HUM1", "star": 1, "damage": 0, "taken": 0, "shielded": 0, "healing": 80},
+		{"cid": 9, "side": 1, "id": "ELF1", "star": 1, "damage": 999, "taken": 0, "shielded": 0, "healing": 0},
+	]
+	var rows := Leaderboard.rows(stats, "damage")
+	eq(rows.size(), 3, "只列我方 3 隻")
+	eq(rows[0]["cid"], 1, "由高到低排序")
+	check(is_equal_approx(rows[0]["pct"], 75.0), "占比 300/400 = 75%")
+	check(is_equal_approx(rows[1]["pct"], 25.0), "占比 25%")
+	eq(rows[2]["pct"], 0.0, "0 傷害 0%")
+	check(is_equal_approx(rows[1]["ratio"], 100.0 / 300.0), "橫條長度相對第一名")
+	check(rows[0]["name"] != rows[1]["name"], "同名棋子加上編號區分")
+	eq(Leaderboard.rows(stats, "healing")[0]["cid"], 3, "治療排行")
+	eq(Leaderboard.rows(stats, "taken")[0]["cid"], 2, "承傷排行")
+	var sum := 0.0
+	for r in Leaderboard.rows(stats, "taken"):
+		sum += float(r["pct"])
+	check(is_equal_approx(sum, 100.0), "百分比總和 100%")
+	# 實際戰鬥資料：全隊有效傷害總和 ≤ 敵方損失的總 HP
+	var res := _demo_run(5).start_battle()
+	var dealt := Leaderboard.total(res["stats"], "damage", 0)
+	var enemy_taken := Leaderboard.total(res["stats"], "taken", 1)
+	check(is_equal_approx(dealt, enemy_taken), "我方有效傷害 = 敵方實際承傷（%d）" % int(dealt))
+
+
+func test_trait_detail() -> void:
+	var d := Synergy.detail("race", "elf", [{"id": "ELF1", "star": 2}, {"id": "ELF1", "star": 1}], [{"id": "ELF2", "star": 1}], "human")
+	eq(d["count"], 1, "同名重複上場仍只計 1 種")
+	var states := {}
+	for m in d["members"]:
+		states[m["id"]] = m["state"]
+	eq(states["ELF1"], "board", "ELF1 已上場")
+	eq(states["ELF2"], "bench", "ELF2 在候補")
+	eq(states["ELF3"], "none", "ELF3 尚未持有")
+	eq(states["ELF4"], "unavailable", "人類文明無法取得精靈頂尖棋子")
+	eq(d["members"].size(), 4, "列出所有精靈棋子")
+	var e := Synergy.detail("race", "elf", [], [], "elf")
+	for m in e["members"]:
+		if m["id"] == "ELF4":
+			eq(m["state"], "none", "精靈文明可取得 ELF4")
+	var board_stars: Array = d["members"][0]["stars"]
+	board_stars.sort()
+	eq(board_stars, [1, 2], "列出上場棋子的星級")
+
+
+## V0.1 存檔（version 1）必須能直接在 V0.2 讀取並繼續遊玩
+func test_v01_save_compat() -> void:
+	var v01 := {"version": 1, "civ_id": "oni", "round": 7, "hp": 31, "gold": 23, "xp": 14, "run_seed": "123456789",
+		"shop_rng_state": "987654321", "shop": ["ORC1", "", "ELF2", "HUM3", "ONI4"], "shop_locked": false, "free_rerolls": 0,
+		"bench": [{"uid": 5, "id": "CEN1", "star": 1}, null, null, null, null, null, null, null, null, null, null, null],
+		"board": [{"uid": 2, "id": "ONI1", "star": 2, "col": 3, "row": 4}, {"uid": 3, "id": "ONI2", "star": 1, "col": 3, "row": 6}],
+		"next_uid": 6, "prepared_round": 7, "finished": false, "outcome": "", "history": []}
+	var f := FileAccess.open(SaveSystem._path(), FileAccess.WRITE)
+	f.store_string(JSON.stringify(v01))
+	f.close()
+	var run := SaveSystem.load_run()
+	check(run != null, "V0.1 存檔可以讀取")
+	if run == null:
+		return
+	eq([run.civ_id, run.round_no, run.hp, run.gold, run.xp], ["oni", 7, 31, 23, 14], "V0.1 存檔內容正確")
+	eq(run.board_count(), 2, "V0.1 存檔的場上棋子")
+	eq(run.shop, ["ORC1", "", "ELF2", "HUM3", "ONI4"], "V0.1 存檔的商店內容")
+	var res := run.start_battle()
+	check(res.has("stats") and res["events"].size() > 0, "讀取後可以直接開戰（V0.2 規則）")
+	check(run.board_count() == 3, "V0.2 自動補位對舊存檔也有效")
+	SaveSystem.clear()
