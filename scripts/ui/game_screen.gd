@@ -47,6 +47,10 @@ const STATE_MARK := {
 @onready var close_detail_btn: Button = $RightPanel/Stack/DetailBox/Header/CloseDetail
 @onready var detail_body: VBoxContainer = $RightPanel/Stack/DetailBox/Scroll/Body
 @onready var sell_btn: Button = $RightPanel/Stack/DetailBox/SellButton
+@onready var bag_box: VBoxContainer = $RightPanel/Stack/BagBox
+@onready var bag_title: Label = $RightPanel/Stack/BagBox/Header/BagTitle
+@onready var bag_hint: Label = $RightPanel/Stack/BagBox/BagHint
+@onready var bag_list: VBoxContainer = $RightPanel/Stack/BagBox/Scroll/List
 @onready var bottom_bar: PanelContainer = $BottomBar
 @onready var res_box: HBoxContainer = $BottomBar/VBox/RowA/ResBox
 @onready var xp_bar: ProgressBar = $BottomBar/VBox/RowA/XpBox/XpBar
@@ -306,7 +310,7 @@ func _style() -> void:
 	UiStyle.style_button(sell_btn, Color(0.50, 0.20, 0.18))
 	UiStyle.style_button(bag_btn, Color(0.22, 0.19, 0.14), Color(0.85, 0.75, 0.55, 0.6), 15)
 	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
-	for b in [speed_btn, skip_btn, debug_btn, menu_btn, close_detail_btn]:
+	for b in [speed_btn, skip_btn, debug_btn, menu_btn, close_detail_btn, $RightPanel/Stack/BagBox/Header/CloseBag]:
 		UiStyle.style_button(b, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
 	for b in $MenuOverlay/Panel/VBox.get_children():
 		if b is Button:
@@ -349,6 +353,8 @@ func _connect() -> void:
 	sell_btn.pressed.connect(_on_sell_selected)
 	bag_btn.pressed.connect(_show_bag)
 	close_detail_btn.pressed.connect(_close_detail)
+	$RightPanel/Stack/BagBox/Header/CloseBag.pressed.connect(_close_bag)
+	board.tap_interceptor = _intercept_unit_tap
 	leader.collapse_toggled.connect(func(_c: bool): _apply_side_layout())
 	reward_dots.dot_pressed.connect(func(_r: int, text: String): _toast(text))
 	speed_btn.pressed.connect(_cycle_speed)
@@ -399,8 +405,10 @@ func _connect() -> void:
 # ---------- 版面 ----------
 ## 右側面板浮在戰場上方：收合時只剩右上角一個圖示；開關都不會影響棋盤
 func _apply_side_layout() -> void:
-	var detail := detail_box.visible
-	var small := leader.collapsed and not detail
+	var bag := bag_box.visible
+	var detail := detail_box.visible and not bag
+	detail_box.visible = detail_box.visible and not bag
+	var small := leader.collapsed and not detail and not bag
 	var ins := _safe_insets()
 	var base: Array = _base_offsets.get(right_panel, [right_panel.offset_left, right_panel.offset_top, right_panel.offset_right, right_panel.offset_bottom])
 	right_panel.offset_right = float(base[2]) - ins.z
@@ -412,7 +420,7 @@ func _apply_side_layout() -> void:
 	else:
 		right_panel.anchor_bottom = 1.0
 		right_panel.offset_bottom = float(base[3]) - ins.w
-	leader_host.visible = not detail
+	leader_host.visible = not detail and not bag
 
 
 func _layout_deferred() -> void:
@@ -583,6 +591,7 @@ func _set_bar_neutral() -> void:
 
 func _on_run_changed() -> void:
 	board.sync_prep()
+	_refresh_bag()
 	if phase == Phase.PREP:
 		_refresh()
 		SaveSystem.save_run(run)
@@ -597,6 +606,9 @@ func _on_start_battle(auto: bool) -> void:
 		return
 	board.cancel_drag()
 	item_overlay.visible = false
+	_pending_item = -1
+	_bag_target_uid = -1
+	_refresh_bag()
 	var placed := run.auto_fill_board()
 	if run.board_count() == 0 and not auto:
 		_toast("場上與候補區都沒有棋子，請先招募")
@@ -657,6 +669,8 @@ func _toast_report(rep: Dictionary) -> void:
 		_toast("鹿角人：遠征生命 +%d" % rep["deer_heal"], Color(0.55, 0.95, 0.6))
 	if rep["level_after"] != rep["level_before"]:
 		_toast("文明升到 Lv.%d！" % rep["level_after"], Color(0.6, 0.85, 1.0))
+	if bool(rep.get("remover", false)):
+		_toast("獲得 1 個%s（現有 %d 個）" % [GameData.remover_name(), run.removers], UiStyle.GOLD)
 	if rep["outcome"] == "victory":
 		_toast("遠征完成！", UiStyle.GOLD)
 	elif rep["outcome"] == "incomplete":
@@ -675,9 +689,8 @@ func _show_reward() -> void:
 		reward_cards.remove_child(c)
 		c.queue_free()
 	var pr := run.pending_reward
-	var tier := str(GameData.equipment().get("tiers", {}).get(pr["tier"], {}).get("name", ""))
 	var fac := str(GameData.equipment().get("factions", {}).get(pr["faction"], {}).get("name", ""))
-	reward_title.text = "第 %d 回合獎勵：%s（%s）" % [int(pr["round"]), fac, tier]
+	reward_title.text = "第 %d 回合獎勵：%s" % [int(pr["round"]), fac]
 	var choices: Array = pr["choices"]
 	for i in choices.size():
 		reward_cards.add_child(_item_card(str(choices[i]), "選擇", func(): _claim(i)))
@@ -694,21 +707,20 @@ func _claim(i: int) -> void:
 		_enter_prep()
 
 
+## 裝備卡片（固定格式）：名稱／基礎屬性／唯一特性・名稱：一句話描述
 func _item_card(id: String, action: String, on_press: Callable) -> Control:
 	var it := GameData.item(id)
-	var tinfo := Equipment.type_info(id)
-	var tier := Equipment.tier_info(id)
+	var col := Color(str(Equipment.type_info(id).get("color", "#fff")))
 	var p := PanelContainer.new()
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UiStyle.apply_panel(p, Color(0.12, 0.14, 0.19), Color(str(tier.get("color", "#888"))))
+	UiStyle.apply_panel(p, Color(0.12, 0.14, 0.19), col.darkened(0.2))
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
 	var h := HBoxContainer.new()
-	h.add_child(UiIcon.make(str(it.get("type", "weapon")), Color(str(tinfo.get("color", "#fff"))), 34))
+	h.add_child(UiIcon.make(str(it.get("type", "weapon")), col, 30))
 	var nm := Label.new()
 	nm.text = str(it.get("name", id))
 	nm.add_theme_font_size_override("font_size", 18)
-	nm.add_theme_color_override("font_color", Color(str(tier.get("color", "#fff"))))
 	h.add_child(nm)
 	v.add_child(h)
 	v.add_child(InfoView.make_rich(_item_text(id), 13))
@@ -724,30 +736,41 @@ func _item_card(id: String, action: String, on_press: Callable) -> Control:
 
 
 func _item_text(id: String) -> String:
-	var it := GameData.item(id)
-	var tinfo := Equipment.type_info(id)
-	var tier := Equipment.tier_info(id)
-	var fac := str(GameData.equipment().get("factions", {}).get(it.get("faction", ""), {}).get("name", ""))
-	var lines: Array = ["[color=#9aa3ad]%s・%s・%s[/color]" % [tier.get("name", ""), tinfo.get("name", ""), fac]]
-	for l in Equipment.stat_lines(id):
-		lines.append("[color=%s]%s[/color]" % [COLOR_UP, l])
-	if it.has("passive"):
-		lines.append("[color=#ffd34d]被動[/color]：%s" % it.get("desc", ""))
+	var lines: Array = ["[color=%s]%s[/color]" % [COLOR_UP, Equipment.stat_text(id)]]
+	var u := Equipment.unique_of(id)
+	if not u.is_empty():
+		lines.append("[b][color=#ffd34d]唯一特性・%s[/color][/b]：%s" % [u.get("name", ""), u.get("desc", "")])
 	return "\n".join(lines)
 
 
 # ---------- 裝備欄與背包 ----------
+## 背包開啟中、正在選裝備目標（點裝備後再點棋子）的背包索引；-1＝沒有
+var _pending_item := -1
+## 從棋子的空裝備欄打開背包時，直接裝到這隻棋子（-1＝一般背包）
+var _bag_target_uid := -1
+## 拖曳裝備：按下的背包索引、起點、是否已開始拖曳、拖曳圖示
+var _drag_item := -1
+var _drag_from := Vector2.ZERO
+var _dragging_item := false
+var _drag_consumed := false
+var _ghost: Control
+
+
+func _equip_allowed() -> bool:
+	return phase == Phase.PREP
+
+
 func _on_equip_slot(slot: int) -> void:
 	var items: Array = _current_items()
-	var editable := phase == Phase.PREP and _info_mode == "unit"
+	var editable := _equip_allowed() and _info_mode == "unit"
 	if slot < items.size():
 		_show_item_info(str(items[slot]), slot, editable)
 	elif not editable:
-		_toast("戰鬥中不能更換裝備" if phase == Phase.BATTLE else "只能在備戰時穿戴自己的棋子")
+		_toast("戰鬥中不能更換裝備" if phase == Phase.BATTLE else "只能在備戰時替自己的棋子裝備")
 	elif run.inventory.is_empty():
 		_toast("背包沒有裝備（裝備回合完成後可三選一）")
 	else:
-		_show_picker(slot)
+		_open_bag(int(_info_ref))
 
 
 func _current_items() -> Array:
@@ -771,47 +794,246 @@ func _open_item_overlay(title: String) -> void:
 	item_overlay.visible = true
 
 
-func _overlay_button(text: String, cb: Callable, primary: bool = false) -> void:
+func _overlay_button(text: String, cb: Callable, primary: bool = false, disabled: bool = false) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(110, 44)
 	UiStyle.style_button(b, Color(0.55, 0.36, 0.08) if primary else Color(0.18, 0.21, 0.28), UiStyle.GOLD if primary else Color(1, 1, 1, 0.15), 15)
+	b.disabled = disabled
 	b.pressed.connect(cb)
 	item_buttons.add_child(b)
+	return b
 
 
+## 已裝備的裝備：顯示資訊；裝上後鎖定，只能用「裝備卸除器」取下回背包
 func _show_item_info(id: String, slot: int, editable: bool) -> void:
 	_open_item_overlay(str(GameData.item(id).get("name", id)))
 	item_body.add_child(_item_card(id, "", Callable()))
 	if editable:
 		var uid := int(_info_ref)
-		_overlay_button("卸下", func():
-			_report(run.unequip(uid, slot))
-			item_overlay.visible = false)
-		if not run.inventory.is_empty():
-			_overlay_button("更換", func(): _show_picker(slot))
+		var hint := InfoView.make_rich("[color=#9aa3ad]裝備裝上後會鎖定。使用 1 個%s可取下這件並放回背包（星級與位置不變）。目前持有 %d 個。[/color]" % [GameData.remover_name(), run.removers], 13)
+		item_body.add_child(hint)
+		_overlay_button("使用卸除器（剩 %d）" % run.removers, func():
+			var r := run.use_remover(uid, slot)
+			if r == "":
+				_toast("已取下 %s，放回背包" % GameData.item(id).get("name", id))
+			_report(r)
+			item_overlay.visible = false, false, run.removers <= 0)
 	_overlay_button("關閉", func(): item_overlay.visible = false, true)
 
 
-## 從背包選一件穿到目前選取的棋子（slot 有裝備時互換）
-func _show_picker(slot: int) -> void:
-	var uid := int(_info_ref)
-	_open_item_overlay("選擇裝備（背包 %d 件）" % run.inventory.size())
-	for i in run.inventory.size():
-		var idx := i
-		item_body.add_child(_item_card(str(run.inventory[i]), "穿上", func():
-			_report(run.equip(uid, idx, slot))
-			item_overlay.visible = false))
-	_overlay_button("取消", func(): item_overlay.visible = false)
-
-
+## 背包（右側浮動面板，不擋棋盤）：拖曳裝備到棋子，或點裝備再點棋子
 func _show_bag() -> void:
-	_open_item_overlay("背包（%d 件）" % run.inventory.size())
+	if bag_box.visible:
+		_close_bag()
+	else:
+		_open_bag(-1)
+
+
+func _open_bag(target_uid: int) -> void:
+	_bag_target_uid = target_uid
+	_pending_item = -1
+	bag_box.visible = true
+	_apply_side_layout()
+	_refresh_bag()
+
+
+func _close_bag() -> void:
+	bag_box.visible = false
+	detail_box.visible = _info_mode != "none"
+	_pending_item = -1
+	_bag_target_uid = -1
+	_apply_side_layout()
+
+
+func is_bag_open() -> bool:
+	return bag_box.visible
+
+
+func _refresh_bag() -> void:
+	if not bag_box.visible:
+		return
+	bag_title.text = "背包（%d 件）　卸除器 ×%d" % [run.inventory.size(), run.removers]
+	if _bag_target_uid >= 0:
+		var f := run.find_unit(_bag_target_uid)
+		var nm := str(GameData.unit(str(f["unit"]["id"])).get("name", "")) if not f.is_empty() else ""
+		bag_hint.text = "點一件裝備，直接裝到「%s」。" % nm
+	elif not _equip_allowed():
+		bag_hint.text = "戰鬥中只能查看；備戰時才能裝備。"
+	elif _pending_item >= 0:
+		bag_hint.text = "已選取：點棋盤或候補區上的棋子即可裝備（再點一次裝備取消）。"
+	else:
+		bag_hint.text = "把裝備拖到棋子上；或先點裝備、再點棋子。裝上後鎖定，需要卸除器才能取下。"
+	for c in bag_list.get_children():
+		bag_list.remove_child(c)
+		c.queue_free()
 	if run.inventory.is_empty():
-		item_body.add_child(InfoView.make_rich("[color=#9aa3ad]目前沒有裝備。完成第 3、6、9、12、15、18、21 回合後可以三選一。\n選取棋子後，點資訊卡下方的空裝備欄即可穿上。[/color]", 14))
-	for id in run.inventory:
-		item_body.add_child(_item_card(str(id), "", Callable()))
-	_overlay_button("關閉", func(): item_overlay.visible = false, true)
+		var l := Label.new()
+		l.text = "目前沒有裝備。完成第 3、6、9、12、15、18、21 回合後可三選一。"
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.add_theme_font_size_override("font_size", 13)
+		l.add_theme_color_override("font_color", UiStyle.TEXT_DIM)
+		bag_list.add_child(l)
+	for i in run.inventory.size():
+		bag_list.add_child(_bag_row(i))
+
+
+func _bag_row(i: int) -> Button:
+	var id := str(run.inventory[i])
+	var it := GameData.item(id)
+	var col := Color(str(Equipment.type_info(id).get("color", "#fff")))
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(0, 58)
+	b.clip_text = true
+	var sel := i == _pending_item
+	UiStyle.style_button(b, Color(0.45, 0.32, 0.08) if sel else Color(0.13, 0.15, 0.20), UiStyle.GOLD if sel else col.darkened(0.3), 14)
+	var h := HBoxContainer.new()
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.offset_left = 8
+	h.offset_right = -6
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_theme_constant_override("separation", 8)
+	var ic := UiIcon.make(str(it.get("type", "weapon")), col, 28)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(ic)
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 0)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var n := Label.new()
+	n.text = str(it.get("name", id))
+	n.add_theme_font_size_override("font_size", 15)
+	n.clip_text = true
+	var s := Label.new()
+	s.text = Equipment.stat_text(id)
+	s.add_theme_font_size_override("font_size", 12)
+	s.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
+	s.clip_text = true
+	var u := Label.new()
+	u.text = "唯一・" + str(Equipment.unique_of(id).get("name", ""))
+	u.add_theme_font_size_override("font_size", 12)
+	u.add_theme_color_override("font_color", Color(1.0, 0.83, 0.3))
+	u.clip_text = true
+	for l in [n, s, u]:
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(l)
+	h.add_child(v)
+	b.add_child(h)
+	b.tooltip_text = "%s\n%s\n%s" % [it.get("name", id), Equipment.stat_text(id), Equipment.unique_line(id)]
+	b.button_down.connect(func(): _bag_press(i))
+	b.pressed.connect(func(): _bag_click(i))
+	b.set_meta("inv_index", i)
+	return b
+
+
+func bag_row_button(i: int) -> Button:
+	for c in bag_list.get_children():
+		if c is Button and int(c.get_meta("inv_index", -1)) == i:
+			return c
+	return null
+
+
+func _bag_press(i: int) -> void:
+	_drag_item = i
+	_drag_from = get_viewport().get_mouse_position()
+	_dragging_item = false
+	_drag_consumed = false
+
+
+## 點一下背包裝備：從空裝備欄打開時直接裝上；否則選取／取消選取，等待點棋子
+func _bag_click(i: int) -> void:
+	if _drag_consumed:
+		_drag_consumed = false
+		return
+	if not _equip_allowed():
+		_toast("戰鬥中不能更換裝備")
+		return
+	if _bag_target_uid >= 0:
+		var target := _bag_target_uid
+		if _try_equip(target, i):
+			_close_bag()
+			board.select(target)
+		return
+	_pending_item = -1 if _pending_item == i else i
+	_refresh_bag()
+
+
+## 「點裝備再點棋子」：正在選目標時，點到的棋子直接裝備（回傳 true 代表攔截這次點擊）
+func _intercept_unit_tap(uid: int) -> bool:
+	if _pending_item < 0 or not bag_box.visible or not _equip_allowed():
+		return false
+	var idx := _pending_item
+	_pending_item = -1
+	if _try_equip(uid, idx):
+		_close_bag()
+	else:
+		_refresh_bag()
+	return true
+
+
+func _try_equip(uid: int, inv_index: int) -> bool:
+	if inv_index < 0 or inv_index >= run.inventory.size():
+		return false
+	var id := str(run.inventory[inv_index])
+	var f := run.find_unit(uid)
+	var r := run.equip(uid, inv_index)
+	if r != "":
+		_toast(r)
+		return false
+	_toast("%s 裝備了 %s" % [GameData.unit(str(f["unit"]["id"])).get("name", ""), GameData.item(id).get("name", id)], UiStyle.GOLD)
+	return true
+
+
+## 拖曳裝備的過程（_input 中處理，經過其他面板也不會中斷）
+func _drag_input(event: InputEvent) -> bool:
+	if _drag_item < 0:
+		return false
+	if event is InputEventMouseMotion:
+		if not _dragging_item and event.position.distance_to(_drag_from) > 12.0 and _equip_allowed():
+			_dragging_item = true
+			_make_ghost(_drag_item)
+		if _dragging_item and _ghost:
+			_ghost.position = event.position - _ghost.size * 0.5
+			var uid := board.unit_at_screen(event.position)
+			board.select_hover_unit(uid)
+		return _dragging_item
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		var was := _dragging_item
+		var idx := _drag_item
+		_drag_item = -1
+		_dragging_item = false
+		board.select_hover_unit(-1)
+		if _ghost:
+			_ghost.queue_free()
+			_ghost = null
+		if was:
+			# 放開位置若剛好還在原本那一列上，按鈕會再發出 pressed：標記略過這一次
+			var row := bag_row_button(idx)
+			_drag_consumed = row != null and row.get_global_rect().has_point(event.position)
+			var uid := board.unit_at_screen(event.position)
+			if uid >= 0:
+				if _try_equip(uid, idx):
+					_close_bag()
+					board.select(uid)
+			else:
+				_toast("把裝備放到棋盤或候補區的棋子上")
+			get_viewport().set_input_as_handled()
+			return true
+	return false
+
+
+func _make_ghost(i: int) -> void:
+	var id := str(run.inventory[i])
+	var col := Color(str(Equipment.type_info(id).get("color", "#fff")))
+	var p := PanelContainer.new()
+	UiStyle.apply_panel(p, Color(0.1, 0.12, 0.16, 0.9), UiStyle.GOLD)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(UiIcon.make(str(GameData.item(id).get("type", "weapon")), col, 34))
+	p.z_index = 100
+	add_child(p)
+	p.reset_size()
+	_ghost = p
 
 
 # ---------- 操作 ----------
@@ -929,6 +1151,8 @@ func toast_texts() -> Array:
 func _set_info(mode: String, ref: Variant) -> void:
 	_info_mode = mode
 	_info_ref = ref
+	if mode != "none" and bag_box.visible and _pending_item < 0 and _bag_target_uid < 0:
+		bag_box.visible = false   # 背包開著時點棋子：改看棋子資訊
 	var show := mode != "none"
 	if show != detail_box.visible:
 		detail_box.visible = show
@@ -1281,6 +1505,8 @@ func _trait_text(group: String, key: String) -> String:
 
 
 func _input(event: InputEvent) -> void:
+	if _drag_input(event):
+		return
 	# 點擊浮動說明與羈絆清單以外的地方：關閉說明（不攔截事件）
 	if popover.visible and event is InputEventMouseButton and event.pressed:
 		var p: Vector2 = event.position

@@ -215,47 +215,95 @@ func _run() -> void:
 	check(not card.is_detail_open(), "點其他地方關閉明細，回到簡潔宮格")
 	check(g._info_mode == "unit", "關閉明細不會取消選取")
 
-	# ── 裝備：點空欄位 → 從背包穿上 ──
-	run.inventory = ["DM_PLATE", "CU_DAGGER"]
+	# ── 裝備（V0.4）：點空欄位 → 右側背包 → 點裝備直接穿上 ──
+	run.inventory = ["DM_PLATE", "CU_DAGGER", "OG_EYE"]
 	run.changed.emit()
 	await get_tree().process_frame
 	var white_armor := card.cell_color("armor")
+	var bpos: Vector2 = board.position
 	card.slot_button(0).pressed.emit()
 	await get_tree().process_frame
-	check(g.item_overlay.visible, "點空裝備欄 → 打開背包選擇")
-	var wear: Button = null
-	for c in g.item_body.get_children():
-		for b in c.find_children("*", "Button", true, false):
-			if (b as Button).text == "穿上":
-				wear = b
-				break
-		if wear:
-			break
-	if wear == null:
-		check(false, "背包選擇畫面有「穿上」按鈕")
+	check(g.is_bag_open(), "點空裝備欄 → 右側打開背包")
+	check(board.position == bpos, "背包浮在右側，不推動棋盤")
+	var row0: Button = g.bag_row_button(0)
+	if row0 == null:
+		check(false, "背包列出裝備")
 		get_tree().quit(1)
 		return
-	wear.pressed.emit()
+	row0.pressed.emit()
 	await wait(0.2)
-	check(RunState.unit_items(run.find_unit(uid)["unit"]) == ["DM_PLATE"], "穿上熔岩胸甲")
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == ["DM_PLATE"], "點裝備 → 穿到這隻棋子")
+	check(not g.is_bag_open(), "裝上後背包關閉、回到棋子資訊")
 	check(card.cell_color("armor") != white_armor and card.cell_color("armor").b > card.cell_color("armor").r, "裝備物防 → 物防數字變藍")
-	check(run.inventory == ["CU_DAGGER"], "背包少一件")
+	check(run.inventory == ["CU_DAGGER", "OG_EYE"], "背包少一件")
 	check((board._prep_tokens[uid].head_layout()["items"] as Array).size() == 1, "穿 1 件裝備：棋子下方只畫 1 個圖示")
 	await shot("card_equipped")
+	# 鎖定：已裝備的欄位只能用卸除器取下
 	card.slot_button(0).pressed.emit()
 	await get_tree().process_frame
-	var unequip: Button = null
-	for b in g.item_buttons.get_children():
-		if (b as Button).text == "卸下":
-			unequip = b
-	if unequip == null:
-		check(false, "裝備資訊有「卸下」按鈕")
-		get_tree().quit(1)
-		return
-	unequip.pressed.emit()
+	var rm_btn: Button = null
+	for bb in g.item_buttons.get_children():
+		if (bb as Button).text.begins_with("使用卸除器"):
+			rm_btn = bb
+	check(rm_btn != null and rm_btn.disabled, "沒有卸除器時不能取下（按鈕停用）")
+	check(not g.item_buttons.get_children().any(func(x): return (x as Button).text == "卸下" or (x as Button).text == "更換"), "沒有免費卸下或更換")
+	g.item_overlay.visible = false
+	run.removers = 1
+	card.slot_button(0).pressed.emit()
+	await get_tree().process_frame
+	for bb in g.item_buttons.get_children():
+		if (bb as Button).text.begins_with("使用卸除器"):
+			rm_btn = bb
+	rm_btn.pressed.emit()
 	await wait(0.1)
-	check(RunState.unit_items(run.find_unit(uid)["unit"]).is_empty() and run.inventory.size() == 2, "卸下回到背包")
-	run.equip(uid, 0)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]).is_empty() and run.inventory.size() == 3 and run.removers == 0, "使用卸除器：裝備回背包、卸除器 −1")
+	# 拖曳：從背包把裝備拖到棋子上
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	check(g.is_bag_open(), "按背包按鈕打開背包")
+	await shot("bag")
+	var drag_row: Button = g.bag_row_button(0)
+	var drag_id: String = run.inventory[0]
+	var tok_pos := screen_pos(board, board._prep_tokens[uid].position)
+	var from_pos := drag_row.get_global_rect().get_center()
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = from_pos
+	down.global_position = from_pos
+	get_tree().root.push_input(down, true)
+	await get_tree().process_frame
+	for i in range(1, 9):
+		var mv := InputEventMouseMotion.new()
+		mv.position = from_pos.lerp(tok_pos, i / 8.0)
+		mv.global_position = mv.position
+		mv.button_mask = MOUSE_BUTTON_MASK_LEFT
+		get_tree().root.push_input(mv, true)
+		await get_tree().process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = tok_pos
+	up.global_position = tok_pos
+	get_tree().root.push_input(up, true)
+	await wait(0.15)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == [drag_id], "拖曳裝備到棋子 → 穿上")
+	# 點裝備再點棋子（手機替代操作）
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	var tap_id: String = run.inventory[0]
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	check(g._pending_item == 0, "點一下裝備 → 進入選擇棋子")
+	await click_at(screen_pos(board, board.bench_center(bidx)))
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == [drag_id, tap_id], "再點棋子 → 穿上")
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	await click_at(screen_pos(board, board.bench_center(bidx)))
+	check(RunState.unit_items(run.find_unit(uid)["unit"]).size() == 2 and run.inventory.size() == 1, "兩格已滿時不能再穿、不覆蓋")
+	g._close_bag()
 
 	# ── 倒數顏色 ──
 	g.prep_timer.remaining = 15.0

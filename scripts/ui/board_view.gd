@@ -9,6 +9,9 @@ signal move_to_board_requested(uid: int, cell: Vector2i)
 signal move_to_bench_requested(uid: int, index: int)
 signal sell_requested(uid: int)
 signal battle_unit_selected(cid: int)          # 戰鬥中點選棋子（-1 = 取消）
+signal unit_tapped(uid: int)                    # 單純點擊己方棋子（不論是否切換選取；給「點裝備再點棋子」用）
+## 回傳 true 時，這次點擊被外部攔截（例如正在選擇裝備的目標），不改變選取
+var tap_interceptor: Callable = func(_uid: int) -> bool: return false
 
 const TOKEN_SCENE := preload("res://scenes/unit_token.tscn")
 const DRAG_THRESHOLD := 12.0
@@ -202,6 +205,17 @@ func select(uid: int) -> void:
 	queue_redraw()
 
 
+## 拖曳裝備經過的棋子（外框提示；-1 清除）
+var _hover_unit := -1
+
+
+func select_hover_unit(uid: int) -> void:
+	if uid == _hover_unit:
+		return
+	_hover_unit = uid
+	queue_redraw()
+
+
 func selected_uid() -> int:
 	return _selected_uid
 
@@ -248,6 +262,22 @@ func _hit(screen_pos: Vector2) -> Dictionary:
 	if c != HexGrid.INVALID:
 		return {"where": "board", "cell": c}
 	return {}
+
+
+## 畫面座標上的己方棋子（棋盤或候補區）；沒有回傳 -1。拖曳裝備時用來判斷放在哪隻棋子上
+func unit_at_screen(screen_pos: Vector2) -> int:
+	var hit := _hit(screen_pos)
+	var uid := _uid_at(hit)
+	if uid < 0 and not hit.is_empty() and hit["where"] == "board":
+		# 棋子圖形比格子大：再找半徑內最近的棋子
+		var p := _local(screen_pos)
+		var best := hex_size * 0.8
+		for t_uid in _prep_tokens.keys():
+			var tk: UnitToken = _prep_tokens[t_uid]
+			if tk.visible and tk.position.distance_to(p) < best:
+				best = tk.position.distance_to(p)
+				uid = int(t_uid)
+	return uid
 
 
 func _uid_at(hit: Dictionary) -> int:
@@ -367,7 +397,11 @@ func _input(event: InputEvent) -> void:
 					_request_move(uid, hit)
 		else:
 			# 單純點擊：選取這隻（點另一隻會直接切換；再點同一隻取消）
-			select(-1 if _selected_uid == uid else uid)
+			unit_tapped.emit(uid)
+			if tap_interceptor.call(uid):
+				select(uid)
+			else:
+				select(-1 if _selected_uid == uid else uid)
 		sync_prep()
 
 
@@ -411,6 +445,12 @@ func _draw() -> void:
 			sel_center = cell_center(f["cell"]) if f["where"] == "board" else bench_center(int(f["index"]))
 	elif _show_prep and _selected_enemy_cell != HexGrid.INVALID:
 		sel_center = cell_center(_selected_enemy_cell)
+	if _hover_unit >= 0 and _run != null:
+		var hf := _run.find_unit(_hover_unit)
+		if not hf.is_empty():
+			var hc := cell_center(hf["cell"]) if hf["where"] == "board" else bench_center(int(hf["index"]))
+			var hp2 := _hex_points(hc, hex_size * 0.96)
+			draw_colored_polygon(hp2, Color(0.45, 0.85, 1.0, 0.3))
 	if sel_center != Vector2.INF:
 		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 160.0)
 		var hp := _hex_points(sel_center, hex_size * 0.96)

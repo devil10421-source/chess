@@ -28,7 +28,9 @@ var outcome := ""              # "" / "victory" / "defeat" / "incomplete"
 var history: Array = []        # 每回合結算報告
 var inventory: Array = []      # 裝備背包（裝備 id）
 var rewards_claimed: Array = []  # 已領取裝備獎勵的回合
-var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, tier, choices: [id, id, id]}
+var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, drop, choices: [id, id, id]}
+var removers := 0                 # 裝備卸除器數量（V0.4）
+var removers_granted: Array = []  # 已發放卸除器的回合
 
 
 static func create(civ: String, seed_value: int) -> RunState:
@@ -207,7 +209,12 @@ func can_buy(slot: int) -> String:
 	return ""
 
 
-func buy(slot: int) -> String:
+## preferred_uid：玩家目前選取的棋子；購買觸發合成時，它優先成為合成主體（若沒有已上場的同名棋子）
+var merge_preferred_uid := -1
+
+
+func buy(slot: int, preferred_uid: int = -1) -> String:
+	merge_preferred_uid = preferred_uid
 	var reason := can_buy(slot)
 	if reason != "":
 		return reason
@@ -231,11 +238,21 @@ func _new_unit(id: String, star: int) -> Dictionary:
 	return u
 
 
-## 依「棋盤優先（格子順序）→ 候補（索引順序）」取前三隻同名同星合成；合成後的棋子留在第一隻的位置
-func _try_merge(id: String, star: int) -> void:
-	var max_star := int(GameData.cfg("star").get("max", 3))
-	if star >= max_star:
-		return
+## 合成主體的固定優先順序（V0.4）：① 已上場的棋子 ② 玩家選中的棋子 ③ 編號（uid）較小者。
+## 主體保留身份（uid）、位置與裝備；其他材料的裝備依同一順序補進空格，超過 2 件回背包。
+static func _merge_order(a: Dictionary, b: Dictionary, preferred: int) -> bool:
+	var ab := 0 if a["where"] == "board" else 1
+	var bb := 0 if b["where"] == "board" else 1
+	if ab != bb:
+		return ab < bb
+	var ap := 0 if int(a["unit"]["uid"]) == preferred else 1
+	var bp := 0 if int(b["unit"]["uid"]) == preferred else 1
+	if ap != bp:
+		return ap < bp
+	return int(a["unit"]["uid"]) < int(b["unit"]["uid"])
+
+
+func _merge_candidates(id: String, star: int) -> Array:
 	var found: Array = []
 	for c in _sorted_board_cells():
 		var u: Dictionary = board[c]
@@ -245,44 +262,41 @@ func _try_merge(id: String, star: int) -> void:
 		var u = bench[i]
 		if u != null and u["id"] == id and int(u["star"]) == star:
 			found.append({"where": "bench", "index": i, "unit": u})
+	var pref := merge_preferred_uid
+	found.sort_custom(func(a, b): return _merge_order(a, b, pref))
+	return found
+
+
+func _try_merge(id: String, star: int) -> void:
+	var max_star := int(GameData.cfg("star").get("max", 3))
+	if star >= max_star:
+		return
+	var found := _merge_candidates(id, star)
 	if found.size() < 3:
 		return
-	var keep: Dictionary = found[0]
+	_merge_into(found[0], [found[1], found[2]], star + 1)
+	_try_merge(id, star + 1)
+
+
+## 把 others 合進 keep（keep 留在原位、保留 uid 與裝備）
+func _merge_into(keep: Dictionary, others: Array, new_star: int) -> void:
 	var merged_items: Array = unit_items(keep["unit"]).duplicate()
-	for k in [1, 2]:
-		var f: Dictionary = found[k]
+	for f in others:
 		merged_items.append_array(unit_items(f["unit"]))
+		f["unit"]["items"] = []
 		if f["where"] == "board":
 			board.erase(f["cell"])
 		else:
 			bench[int(f["index"])] = null
-	keep["unit"]["star"] = star + 1
+	keep["unit"]["star"] = new_star
 	_settle_merged_items(keep["unit"], merged_items)
-	_try_merge(id, star + 1)
 
 
 func _merge_with_incoming(id: String) -> void:
-	var found: Array = []
-	for c in _sorted_board_cells():
-		var u: Dictionary = board[c]
-		if u["id"] == id and int(u["star"]) == 1:
-			found.append({"where": "board", "cell": c, "unit": u})
-	for i in bench.size():
-		var u = bench[i]
-		if u != null and u["id"] == id and int(u["star"]) == 1:
-			found.append({"where": "bench", "index": i, "unit": u})
+	var found := _merge_candidates(id, 1)
 	if found.size() < 2:
 		return
-	var keep: Dictionary = found[0]
-	var other: Dictionary = found[1]
-	var merged_items: Array = unit_items(keep["unit"]).duplicate()
-	merged_items.append_array(unit_items(other["unit"]))
-	if other["where"] == "board":
-		board.erase(other["cell"])
-	else:
-		bench[int(other["index"])] = null
-	keep["unit"]["star"] = 2
-	_settle_merged_items(keep["unit"], merged_items)
+	_merge_into(found[0], [found[1]], 2)
 	_try_merge(id, 2)
 
 
@@ -342,7 +356,7 @@ static func unit_items(u: Dictionary) -> Array:
 	return u["items"]
 
 
-## 合成後最多保留 2 件在棋子身上（保留棋子原有的優先），其餘返回背包，不會遺失或複製
+## 合成後最多保留 2 件在棋子身上（主體原有的優先，再依合成順序補空格），其餘返回背包，不會遺失或複製
 func _settle_merged_items(u: Dictionary, all_items: Array) -> void:
 	var slots := GameData.item_slots()
 	u["items"] = all_items.slice(0, slots)
@@ -350,8 +364,8 @@ func _settle_merged_items(u: Dictionary, all_items: Array) -> void:
 		inventory.append_array(all_items.slice(slots))
 
 
-## 把背包第 inv_index 件裝到棋子上；slot 有裝備時互換（舊的回背包）。免費。
-func equip(uid: int, inv_index: int, slot: int = -1) -> String:
+## 把背包第 inv_index 件裝到棋子上（V0.4：裝上後鎖定，不能直接免費卸下或覆蓋；欄位已滿時失敗）
+func equip(uid: int, inv_index: int) -> String:
 	if finished:
 		return "遠征已結束"
 	var f := find_unit(uid)
@@ -360,21 +374,20 @@ func equip(uid: int, inv_index: int, slot: int = -1) -> String:
 	if inv_index < 0 or inv_index >= inventory.size():
 		return "背包沒有這件裝備"
 	var items := unit_items(f["unit"])
-	var item_id: String = inventory[inv_index]
-	if slot >= 0 and slot < items.size():
-		inventory[inv_index] = items[slot]
-		items[slot] = item_id
-	elif items.size() < GameData.item_slots():
-		inventory.remove_at(inv_index)
-		items.append(item_id)
-	else:
-		return "裝備欄已滿（最多 %d 件）" % GameData.item_slots()
+	if items.size() >= GameData.item_slots():
+		return "裝備欄已滿（最多 %d 件），需要用%s取下" % [GameData.item_slots(), GameData.remover_name()]
+	items.append(inventory[inv_index])
+	inventory.remove_at(inv_index)
 	_notify()
 	return ""
 
 
-## 卸下裝備（免費）回到背包
-func unequip(uid: int, slot: int) -> String:
+## 使用裝備卸除器：消耗 1 個，把棋子第 slot 件裝備移回背包（星級、位置不變）
+func use_remover(uid: int, slot: int) -> String:
+	if finished:
+		return "遠征已結束"
+	if removers <= 0:
+		return "沒有%s（第 %s 回合可獲得）" % [GameData.remover_name(), "、".join(GameData.remover_rounds().map(func(x): return str(int(x))))]
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
@@ -383,6 +396,7 @@ func unequip(uid: int, slot: int) -> String:
 		return "這格沒有裝備"
 	inventory.append(items[slot])
 	items.remove_at(slot)
+	removers -= 1
 	_notify()
 	return ""
 
@@ -400,8 +414,17 @@ func _maybe_create_reward(round_done: int) -> void:
 	var cfg := GameData.reward_for_round(round_done)
 	if cfg.is_empty() or rewards_claimed.has(round_done) or not pending_reward.is_empty():
 		return
-	pending_reward = {"round": round_done, "faction": cfg["faction"], "tier": cfg["tier"],
-		"choices": Equipment.roll_choices(shop_rng, str(cfg["faction"]), str(cfg["tier"]))}
+	pending_reward = {"round": round_done, "faction": cfg["faction"], "drop": str(cfg.get("drop", "normal")),
+		"choices": Equipment.roll_choices(shop_rng, str(cfg["faction"]), str(cfg.get("drop", "normal")))}
+
+
+## 額外獎勵：完成指定回合時獲得 1 個裝備卸除器（每回合只發一次；不取代三選一）
+func _maybe_grant_remover(round_done: int) -> bool:
+	if removers_granted.has(round_done) or not GameData.remover_rounds().any(func(x): return int(x) == round_done):
+		return false
+	removers += 1
+	removers_granted.append(round_done)
+	return true
 
 
 func has_pending_reward() -> bool:
@@ -557,6 +580,7 @@ func settle(result: Dictionary) -> Dictionary:
 	# 裝備獎勵：完成裝備回合（存活）即可三選一，於下一回合備戰前選擇
 	_maybe_create_reward(round_no)
 	report["reward"] = not pending_reward.is_empty()
+	report["remover"] = _maybe_grant_remover(round_no)
 	# 7. 進入下一回合或結束
 	if round_no >= GameData.total_rounds():
 		finished = true
@@ -594,6 +618,7 @@ func to_dict() -> Dictionary:
 		"inventory": inventory.duplicate(), "rewards_claimed": rewards_claimed.duplicate(),
 		"pending_reward": pending_reward.duplicate(true),
 		"pool": pool_remaining(),   # 快照（讀檔時以持有狀態重新計算並核對）
+		"removers": removers, "removers_granted": removers_granted.duplicate(),
 	}
 
 
@@ -644,6 +669,9 @@ static func from_dict(d: Dictionary) -> RunState:
 		r.rewards_claimed.append(int(x))
 	var pr = d.get("pending_reward", {})
 	if typeof(pr) == TYPE_DICTIONARY and not pr.is_empty():
-		r.pending_reward = {"round": int(pr["round"]), "faction": str(pr["faction"]), "tier": str(pr["tier"]),
+		r.pending_reward = {"round": int(pr["round"]), "faction": str(pr["faction"]), "drop": str(pr.get("drop", pr.get("tier", "normal"))),
 			"choices": _items_from(pr.get("choices", []))}
+	r.removers = int(d.get("removers", 0))
+	for x in d.get("removers_granted", []):
+		r.removers_granted.append(int(x))
 	return r

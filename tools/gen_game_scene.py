@@ -70,6 +70,14 @@ btn("CloseDetail", "RightPanel/Stack/DetailBox/Header", "×", "Vector2(40, 32)")
 node("Scroll", "ScrollContainer", "RightPanel/Stack/DetailBox", {"layout_mode": 2, "size_flags_vertical": 3, "horizontal_scroll_mode": 0})
 node("Body", "VBoxContainer", "RightPanel/Stack/DetailBox/Scroll", {"layout_mode": 2, "size_flags_horizontal": 3})
 btn("SellButton", "RightPanel/Stack/DetailBox", "出售", "Vector2(0, 42)")
+# 背包（V0.4）：拖曳裝備到棋子，或點選裝備後再點棋子
+node("BagBox", "VBoxContainer", "RightPanel/Stack", {"visible": "false", "layout_mode": 2, "size_flags_vertical": 3})
+node("Header", "HBoxContainer", "RightPanel/Stack/BagBox", C)
+label("BagTitle", "RightPanel/Stack/BagBox/Header", "背包", {"size_flags_horizontal": 3, "theme_override_colors/font_color": GOLD, "clip_text": "true"})
+btn("CloseBag", "RightPanel/Stack/BagBox/Header", "×", "Vector2(40, 32)")
+label("BagHint", "RightPanel/Stack/BagBox", "", {"autowrap_mode": 3, "theme_override_font_sizes/font_size": 13, "theme_override_colors/font_color": "Color(0.62, 0.66, 0.74, 1)"})
+node("Scroll", "ScrollContainer", "RightPanel/Stack/BagBox", {"layout_mode": 2, "size_flags_vertical": 3, "horizontal_scroll_mode": 0})
+node("List", "VBoxContainer", "RightPanel/Stack/BagBox/Scroll", {"layout_mode": 2, "size_flags_horizontal": 3, "theme_override_constants/separation": 4})
 
 # ── 羈絆／文明說明（浮動，不參與版面）──
 node("TraitPopover", "PanelContainer", ".", {"visible": "false", "layout_mode": 0, "offset_left": 170.0, "offset_top": 60.0,

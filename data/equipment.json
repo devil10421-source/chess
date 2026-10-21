@@ -1,5 +1,5 @@
 {
-  "_note": "裝備資料（V0.3）。type：weapon 武器／armor 防具／trinket 飾品；tier：normal 普通／advanced 進階；faction：掉落勢力 cult 邪教／demon 惡魔／oldgod 古神。stats 為修正鍵（見 scripts/core/modifiers.gd），passive 為特殊被動（見 scripts/core/combat/item_passives.gd）。每隻棋子最多 2 件；沒有套裝與隨機詞綴。",
+  "_note": "裝備資料（V0.4）。沒有品質分級：每件＝固定屬性（stats，可正常累加）＋固定唯一特性（unique）。同一棋子身上相同 unique.id 的效果只生效一次（取效果最強的一件）；同名裝備可以重複掉落、同一棋子可穿兩件同名裝備。drop（normal／advanced）只用於各回合的掉落池，不在介面顯示。stats 為修正鍵（scripts/core/modifiers.gd），passive 為唯一特性的實作（scripts/core/combat/item_passives.gd）。",
   "types": {
     "weapon": {
       "name": "武器",
@@ -17,16 +17,6 @@
       "color": "#c27bff"
     }
   },
-  "tiers": {
-    "normal": {
-      "name": "普通",
-      "color": "#b8c0cc"
-    },
-    "advanced": {
-      "name": "進階",
-      "color": "#ffd24d"
-    }
-  },
   "factions": {
     "cult": {
       "name": "邪教遺物"
@@ -38,293 +28,379 @@
       "name": "古神聖物"
     }
   },
+  "reward_rounds": [
+    {
+      "round": 3,
+      "faction": "cult",
+      "drop": "normal"
+    },
+    {
+      "round": 6,
+      "faction": "cult",
+      "drop": "normal"
+    },
+    {
+      "round": 9,
+      "faction": "cult",
+      "drop": "normal"
+    },
+    {
+      "round": 12,
+      "faction": "demon",
+      "drop": "advanced"
+    },
+    {
+      "round": 15,
+      "faction": "demon",
+      "drop": "normal"
+    },
+    {
+      "round": 18,
+      "faction": "demon",
+      "drop": "advanced"
+    },
+    {
+      "round": 21,
+      "faction": "oldgod",
+      "drop": "advanced"
+    }
+  ],
+  "choices_per_reward": 3,
+  "slots_per_unit": 2,
+  "remover": {
+    "_note": "裝備卸除器：消耗 1 個，把指定棋子身上的一件裝備移回背包（不影響星級與位置）。rounds＝額外獲得的回合（不取代三選一）。第一輪測試配置。",
+    "name": "裝備卸除器",
+    "rounds": [
+      9,
+      18
+    ]
+  },
   "items": [
     {
       "id": "CU_DAGGER",
       "name": "獻祭匕首",
       "type": "weapon",
-      "tier": "normal",
       "faction": "cult",
+      "drop": "normal",
       "stats": {
         "atk_flat": 6
       },
+      "unique": {
+        "id": "sacrifice_blade",
+        "name": "獻祭之刃",
+        "desc": "普攻造成持續傷害，3 秒共 12 點物理傷害。"
+      },
       "passive": {
-        "kind": "on_hit_bleed",
+        "kind": "on_hit_dot",
+        "dtype": "physical",
         "total": 12,
         "dur": 3
-      },
-      "desc": "普攻造成持續傷害：3 秒內共 12 點物理傷害（同一攻擊者重複命中只刷新時間）。"
+      }
     },
     {
       "id": "CU_FANG",
       "name": "吸血獠牙",
       "type": "weapon",
-      "tier": "normal",
       "faction": "cult",
+      "drop": "normal",
       "stats": {
         "atk_speed_pct": 10
+      },
+      "unique": {
+        "id": "blood_thirst",
+        "name": "血之渴望",
+        "desc": "造成的有效傷害 15% 轉為治療自己。"
       },
       "passive": {
         "kind": "lifesteal",
         "pct": 15
-      },
-      "desc": "造成的有效傷害 15% 轉為自身治療。"
+      }
     },
     {
       "id": "CU_CODEX",
       "name": "血祭法典",
       "type": "trinket",
-      "tier": "normal",
       "faction": "cult",
+      "drop": "normal",
       "stats": {
         "skill_dmg_pct": 15
+      },
+      "unique": {
+        "id": "life_trade",
+        "name": "生命交換",
+        "desc": "開戰時失去 10% 最大生命。"
       },
       "passive": {
         "kind": "blood_pact",
         "hp_cost_pct": 10
-      },
-      "desc": "生命交換：開戰時失去 10% 最大生命。"
+      }
     },
     {
       "id": "CU_AMULET",
       "name": "詛咒護符",
       "type": "trinket",
-      "tier": "normal",
       "faction": "cult",
+      "drop": "normal",
       "stats": {
         "mr_flat": 12
+      },
+      "unique": {
+        "id": "weakening_curse",
+        "name": "衰弱詛咒",
+        "desc": "普攻使目標攻擊力 −10%（3 秒）。"
       },
       "passive": {
         "kind": "curse_on_hit",
         "pct": 10,
         "dur": 3
-      },
-      "desc": "普攻使目標攻擊力 -10%（3 秒，不疊加）。"
+      }
     },
     {
       "id": "CU_ROBE",
       "name": "祭司法袍",
       "type": "armor",
-      "tier": "normal",
       "faction": "cult",
+      "drop": "normal",
       "stats": {
         "hp_flat": 120,
         "heal_shield_pct": 10
       },
-      "desc": "生命 +120，給出的治療與護盾 +10%。"
+      "unique": {
+        "id": "ritual_ward",
+        "name": "祭儀庇護",
+        "desc": "開戰時獲得 60 護盾（4 秒）。"
+      },
+      "passive": {
+        "kind": "on_battle_shield",
+        "amount": 60,
+        "dur": 4
+      }
     },
     {
       "id": "DM_AXE",
       "name": "炎獄戰斧",
       "type": "weapon",
-      "tier": "normal",
       "faction": "demon",
+      "drop": "normal",
       "stats": {
         "atk_flat": 10
       },
+      "unique": {
+        "id": "inferno_combo",
+        "name": "炎獄連擊",
+        "desc": "普攻造成持續傷害，3 秒共 15 點魔法傷害。"
+      },
       "passive": {
-        "kind": "on_hit_burn",
+        "kind": "on_hit_dot",
+        "dtype": "magic",
         "total": 15,
         "dur": 3
-      },
-      "desc": "普攻造成持續傷害：3 秒內共 15 點法術傷害。"
+      }
     },
     {
       "id": "DM_PLATE",
       "name": "熔岩胸甲",
       "type": "armor",
-      "tier": "normal",
       "faction": "demon",
+      "drop": "normal",
       "stats": {
         "hp_flat": 150,
         "armor_flat": 15
       },
+      "unique": {
+        "id": "lava_backlash",
+        "name": "熔岩反噬",
+        "desc": "受到近戰普攻時，反彈該次傷害 25% 的魔法傷害。"
+      },
       "passive": {
         "kind": "thorns",
         "pct": 25
-      },
-      "desc": "受到近戰普攻時，反彈該次傷害的 25% 為法術傷害。"
+      }
     },
     {
       "id": "DM_RING",
       "name": "魔焰之戒",
       "type": "trinket",
-      "tier": "normal",
       "faction": "demon",
+      "drop": "normal",
       "stats": {
         "crit_chance_add": 15,
         "crit_dmg_add": 25
       },
-      "desc": "暴擊率 +15%，暴擊傷害 +25%。"
+      "unique": {
+        "id": "searing_crit",
+        "name": "灼心",
+        "desc": "暴擊時使目標重傷 3 秒。"
+      },
+      "passive": {
+        "kind": "on_crit_wound",
+        "dur": 3
+      }
     },
     {
       "id": "DM_HORN",
       "name": "狂暴獸角",
       "type": "weapon",
-      "tier": "normal",
       "faction": "demon",
+      "drop": "normal",
       "stats": {
         "atk_speed_pct": 20
+      },
+      "unique": {
+        "id": "berserk",
+        "name": "狂暴",
+        "desc": "生命低於 50% 時，直接傷害 +20%。"
       },
       "passive": {
         "kind": "berserk",
         "pct": 20,
         "threshold": 0.5
-      },
-      "desc": "攻速 +20%；生命低於 50% 時直接傷害 +20%。"
+      }
     },
     {
       "id": "DM_GREATAXE",
       "name": "深淵屠戮斧",
       "type": "weapon",
-      "tier": "advanced",
       "faction": "demon",
+      "drop": "advanced",
       "stats": {
         "atk_flat": 22,
-        "crit_chance_add": 10
+        "crit_chance_add": 10,
+        "phys_pen": 20
+      },
+      "unique": {
+        "id": "inferno_combo",
+        "name": "炎獄連擊",
+        "desc": "普攻造成持續傷害，3 秒共 30 點魔法傷害。"
       },
       "passive": {
-        "kind": "on_hit_burn",
+        "kind": "on_hit_dot",
+        "dtype": "magic",
         "total": 30,
         "dur": 3
-      },
-      "desc": "普攻造成持續傷害：3 秒內共 30 點法術傷害。"
+      }
     },
     {
       "id": "DM_BULWARK",
       "name": "惡魔壁壘",
       "type": "armor",
-      "tier": "advanced",
       "faction": "demon",
+      "drop": "advanced",
       "stats": {
         "hp_flat": 300,
         "armor_flat": 25,
         "mr_flat": 15
       },
+      "unique": {
+        "id": "lava_backlash",
+        "name": "熔岩反噬",
+        "desc": "受到近戰普攻時，反彈該次傷害 35% 的魔法傷害。"
+      },
       "passive": {
         "kind": "thorns",
         "pct": 35
-      },
-      "desc": "受到近戰普攻時，反彈該次傷害的 35% 為法術傷害。"
+      }
     },
     {
       "id": "DM_HEART",
       "name": "炎魔之心",
       "type": "trinket",
-      "tier": "advanced",
       "faction": "demon",
+      "drop": "advanced",
       "stats": {
         "skill_dmg_pct": 20
+      },
+      "unique": {
+        "id": "demon_heart",
+        "name": "魔焰護身",
+        "desc": "每次施放技能後獲得 120 護盾（4 秒）。"
       },
       "passive": {
         "kind": "on_cast_shield",
         "amount": 120,
         "dur": 4
-      },
-      "desc": "每次施放技能後獲得 120 護盾（4 秒）。"
+      }
     },
     {
       "id": "OG_MASK",
       "name": "低語面具",
       "type": "armor",
-      "tier": "advanced",
       "faction": "oldgod",
+      "drop": "advanced",
       "stats": {
         "hp_flat": 200,
         "start_mana": 25
       },
+      "unique": {
+        "id": "whisper",
+        "name": "低語",
+        "desc": "每次普攻額外 +5 魔力。"
+      },
       "passive": {
         "kind": "mana_on_hit",
         "amount": 5
-      },
-      "desc": "初始魔力 +25；每次普攻額外 +5 魔力。"
+      }
     },
     {
       "id": "OG_EYE",
       "name": "虛空之眼",
       "type": "trinket",
-      "tier": "advanced",
       "faction": "oldgod",
+      "drop": "advanced",
       "stats": {
-        "skill_dmg_pct": 25
+        "skill_dmg_pct": 25,
+        "magic_pen": 20
+      },
+      "unique": {
+        "id": "void_gaze",
+        "name": "凝視",
+        "desc": "技能的主要目標額外暈眩 0.6 秒。"
       },
       "passive": {
         "kind": "cast_stun",
         "dur": 0.6
-      },
-      "desc": "技能命中的主要目標額外暈眩 0.6 秒。"
+      }
     },
     {
       "id": "OG_STAFF",
       "name": "扭曲法杖",
       "type": "weapon",
-      "tier": "advanced",
       "faction": "oldgod",
+      "drop": "advanced",
       "stats": {
         "atk_flat": 12,
         "skill_dmg_pct": 15
+      },
+      "unique": {
+        "id": "void_bolt",
+        "name": "虛空彈",
+        "desc": "每第 3 次普攻額外造成 45 點魔法傷害。"
       },
       "passive": {
         "kind": "void_bolt",
         "every": 3,
         "damage": 45
-      },
-      "desc": "每第 3 次普攻額外造成 45 點法術傷害。"
+      }
     },
     {
       "id": "OG_SHELL",
       "name": "混沌甲殼",
       "type": "armor",
-      "tier": "advanced",
       "faction": "oldgod",
+      "drop": "advanced",
       "stats": {
         "hp_flat": 250,
         "mr_flat": 30
       },
+      "unique": {
+        "id": "chaos_slime",
+        "name": "混沌黏液",
+        "desc": "受到普攻時使攻擊者緩速 1.5 秒。"
+      },
       "passive": {
         "kind": "on_hit_slow",
         "dur": 1.5
-      },
-      "desc": "受到普攻時使攻擊者緩速（1.5 秒）。"
+      }
     }
-  ],
-  "reward_rounds": [
-    {
-      "round": 3,
-      "faction": "cult",
-      "tier": "normal"
-    },
-    {
-      "round": 6,
-      "faction": "cult",
-      "tier": "normal"
-    },
-    {
-      "round": 9,
-      "faction": "cult",
-      "tier": "normal"
-    },
-    {
-      "round": 12,
-      "faction": "demon",
-      "tier": "advanced"
-    },
-    {
-      "round": 15,
-      "faction": "demon",
-      "tier": "normal"
-    },
-    {
-      "round": 18,
-      "faction": "demon",
-      "tier": "advanced"
-    },
-    {
-      "round": 21,
-      "faction": "oldgod",
-      "tier": "advanced"
-    }
-  ],
-  "choices_per_reward": 3,
-  "slots_per_unit": 2
+  ]
 }

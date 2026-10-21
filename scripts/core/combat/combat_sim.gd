@@ -68,10 +68,7 @@ func add_unit(unit_id: String, star: int, cell: Vector2i, side: int, mods: Dicti
 	u.crit_chance = s["crit_chance"]
 	u.crit_mult = s["crit_mult"]
 	u.items = items.duplicate()
-	for item_id in items:
-		var p: Dictionary = GameData.item(str(item_id)).get("passive", {})
-		if not p.is_empty():
-			u.passives.append(p)
+	u.passives = ItemPassives.unique_passives(items)   # 相同唯一特性只生效一次
 	units.append(u)
 	occupancy[cell] = u.cid
 	return u
@@ -396,6 +393,8 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	var dmg := float(maxi(1, roundi(amount)))
 	src.raw_damage += dmg
 	var hp_damage := _apply_hit(src, tgt, dmg, {"crit": crit, "dtype": dtype, "source": source, "dot": is_dot, "parried": not parry.is_empty()}, true)
+	if crit:
+		ItemPassives.on_crit(self, src, tgt)
 	if tgt.alive and source == "basic":
 		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
 		ItemPassives.on_basic_taken(self, tgt, src, dmg)

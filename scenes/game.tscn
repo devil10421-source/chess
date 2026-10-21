@@ -218,6 +218,43 @@ custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = "出售"
 
+[node name="BagBox" type="VBoxContainer" parent="RightPanel/Stack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Header" type="HBoxContainer" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+
+[node name="BagTitle" type="Label" parent="RightPanel/Stack/BagBox/Header"]
+layout_mode = 2
+text = "背包"
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+clip_text = true
+
+[node name="CloseBag" type="Button" parent="RightPanel/Stack/BagBox/Header"]
+custom_minimum_size = Vector2(40, 32)
+layout_mode = 2
+text = "×"
+
+[node name="BagHint" type="Label" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
+
+[node name="Scroll" type="ScrollContainer" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="RightPanel/Stack/BagBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
 [node name="TraitPopover" type="PanelContainer" parent="."]
 visible = false
 layout_mode = 0

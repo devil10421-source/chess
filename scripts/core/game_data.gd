@@ -144,7 +144,7 @@ static func reward_rounds() -> Array:
 	return equipment().get("reward_rounds", [])
 
 
-## 該回合的裝備獎勵設定 {round, faction, tier}；不是獎勵回合回傳空字典
+## 該回合的裝備獎勵設定 {round, faction, drop}；不是獎勵回合回傳空字典
 static func reward_for_round(round_no: int) -> Dictionary:
 	for r in reward_rounds():
 		if int(r["round"]) == round_no:
@@ -154,6 +154,15 @@ static func reward_for_round(round_no: int) -> Dictionary:
 
 static func item_slots() -> int:
 	return int(equipment().get("slots_per_unit", 2))
+
+
+## 裝備卸除器（V0.4）：名稱與額外獲得的回合
+static func remover_rounds() -> Array:
+	return equipment().get("remover", {}).get("rounds", [])
+
+
+static func remover_name() -> String:
+	return str(equipment().get("remover", {}).get("name", "裝備卸除器"))
 
 
 static func has_unit(id: String) -> bool:

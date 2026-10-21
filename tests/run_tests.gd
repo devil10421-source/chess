@@ -72,6 +72,11 @@ func _initialize() -> void:
 		"test_neutral_data",
 		"test_neutral_rules",
 		"test_neutral_skills",
+		"test_equipment_v04",
+		"test_equipment_unique",
+		"test_equipment_remover_rounds",
+		"test_merge_keeps_deployed",
+		"test_item_conservation",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -1348,13 +1353,22 @@ func test_equipment_basic() -> void:
 	eq(run.equip(1, 0), "", "穿上第 1 件")
 	eq(run.equip(1, 0), "", "穿上第 2 件")
 	eq(_unit_with_items(run, 1), ["CU_DAGGER", "DM_PLATE"], "兩格裝備")
-	check(run.equip(1, 0) != "", "裝備欄已滿時不能再裝")
-	eq(run.equip(1, 0, 1), "", "指定欄位可直接更換")
-	eq(_unit_with_items(run, 1), ["CU_DAGGER", "OG_EYE"], "更換後的裝備")
-	eq(run.inventory, ["DM_PLATE"], "被換下的回到背包")
-	eq(run.unequip(1, 0), "", "免費卸下")
-	eq(run.inventory, ["DM_PLATE", "CU_DAGGER"], "卸下回到背包")
-	eq(run.gold, 5, "穿脫裝備不花錢")
+	check(run.equip(1, 0) != "", "裝備欄已滿時不能再裝（不會覆蓋）")
+	eq(_unit_with_items(run, 1), ["CU_DAGGER", "DM_PLATE"], "已滿時原裝備不變")
+	eq(run.inventory, ["OG_EYE"], "沒裝上的仍在背包")
+	# 裝上後鎖定：沒有卸除器不能取下
+	check(run.use_remover(1, 0) != "", "沒有卸除器不能取下")
+	eq(_unit_with_items(run, 1), ["CU_DAGGER", "DM_PLATE"], "裝備鎖定")
+	run.removers = 1
+	eq(run.use_remover(1, 0), "", "使用卸除器取下第 1 件")
+	eq(run.removers, 0, "卸除器消耗 1 個")
+	eq(_unit_with_items(run, 1), ["DM_PLATE"], "指定的裝備被取下")
+	eq(run.inventory, ["OG_EYE", "CU_DAGGER"], "取下的裝備回到背包")
+	eq(int(run.find_unit(1)["unit"]["star"]), 1, "星級不變")
+	eq(run.find_unit(1)["where"], "bench", "位置不變")
+	eq(run.gold, 5, "裝備與卸除不花錢")
+	run.inventory = ["DM_PLATE"]
+	run.find_unit(1)["unit"]["items"] = []
 	# 屬性套用：熔岩胸甲 生命 +150、物防 +15
 	run.equip(1, 0)
 	var lineup := [{"uid": 1, "id": "ORC1", "star": 1, "cell": Vector2i(3, 4), "items": _unit_with_items(run, 1)}]
@@ -1380,7 +1394,7 @@ func test_equipment_merge_and_sell() -> void:
 	run.buy(0)
 	eq(run.copies_of("ORC1", 2), 1, "合成二星")
 	var star2: Dictionary = run.all_units()[0]
-	eq(RunState.unit_items(star2), ["CU_DAGGER", "DM_PLATE"], "合成後保留最多兩件（原棋子優先）")
+	eq(RunState.unit_items(star2), ["CU_DAGGER", "DM_PLATE"], "合成後保留最多兩件（主體原有的優先）")
 	eq(run.inventory, ["OG_EYE"], "多出來的回到背包")
 	eq(run.all_items().size(), before, "合成後裝備總數不變（不遺失、不複製）")
 	run.sell(int(star2["uid"]))
@@ -1411,11 +1425,11 @@ func test_equipment_passives() -> void:
 	var c := s2.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CU_DAGGER"])
 	var d := s2.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
 	s2.basic_attack(c, d)
-	check(d.statuses.any(func(x): return x["kind"] == "dot" and x.get("source") == "item"), "獻祭匕首：普攻造成流血（裝備來源）")
+	check(d.statuses.any(func(x): return x["kind"] == "dot" and x.get("source") == "item"), "獻祭匕首：普攻造成持續傷害（裝備來源）")
 	# 裝備傷害不吃鬼人技能加成
 	var oni_mods: Dictionary = Modifiers.for_lineup(["ONI1"], "oni", false)[0]
 	var o := s2.add_unit("ONI1", 1, Vector2i(5, 4), 0, oni_mods, 0, ["CU_DAGGER"])
-	eq(s2.damage_bonus_pct(o, d, "physical", "item", true), 0.0, "裝備流血不吃鬼人技能 +12%")
+	eq(s2.damage_bonus_pct(o, d, "physical", "item", true), 0.0, "裝備持續傷害不吃鬼人技能 +12%")
 	# 反甲：受到近戰普攻時反彈法術傷害
 	var s3 := CombatSim.new(3)
 	var att := s3.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty())
@@ -1467,7 +1481,7 @@ func test_equipment_rewards() -> void:
 	check(ids[0] != ids[1] and ids[1] != ids[2] and ids[0] != ids[2], "三件不重複")
 	for id in ids:
 		eq(GameData.item(id)["faction"], "cult", "第 3 回合掉落邪教遺物")
-		eq(GameData.item(id)["tier"], "normal", "第 3 回合為普通裝備")
+		eq(GameData.item(id)["drop"], "normal", "第 3 回合從一般掉落池抽")
 	eq(run.claim_reward(1), "", "選擇第 2 件")
 	eq(run.inventory, [ids[1]], "加入背包")
 	check(run.claim_reward(0) != "", "同一回合不能重複領取")
@@ -1476,7 +1490,7 @@ func test_equipment_rewards() -> void:
 	run.round_no = 12
 	run.start_battle()
 	run.settle(_fake_result(false, [1]))
-	eq(run.pending_reward.get("tier"), "advanced", "第 12 回合為進階裝備（未全清也算完成）")
+	eq(run.pending_reward.get("drop"), "advanced", "第 12 回合從進階掉落池抽（未全清也算完成）")
 	eq(run.pending_reward.get("faction"), "demon", "第 12 回合掉落惡魔兵裝")
 	run.claim_reward(0)
 	var r24 := RunState.create("elf", 304)
@@ -1499,7 +1513,9 @@ func test_save_v2_and_migration() -> void:
 	run.next_uid = 3
 	run.inventory = ["CU_DAGGER"]
 	run.rewards_claimed = [3, 6]
-	run.pending_reward = {"round": 9, "faction": "cult", "tier": "normal", "choices": ["CU_FANG", "CU_AMULET", "CU_CODEX"]}
+	run.pending_reward = {"round": 9, "faction": "cult", "drop": "normal", "choices": ["CU_FANG", "CU_AMULET", "CU_CODEX"]}
+	run.removers = 2
+	run.removers_granted = [9]
 	check(SaveSystem.save_run(run), "存檔")
 	var loaded := SaveSystem.load_run()
 	check(loaded != null, "讀檔")
@@ -2252,3 +2268,187 @@ func test_neutral_skills() -> void:
 		if e["k"] == "cast":
 			casts[int(e["cid"])] = true
 	check(casts.size() >= 3, "實戰中中立英雄會施放技能（%d 名）" % casts.size())
+
+
+# ------------------------------------------------------------ V0.4 裝備
+func test_equipment_v04() -> void:
+	# 沒有品質分級：資料不再有 tier，UI 用的 tiers 設定已移除
+	check(not GameData.equipment().has("tiers"), "裝備沒有品質分級設定")
+	for it in GameData.items():
+		check(not it.has("tier"), "%s 沒有品質欄位" % it["id"])
+		check(not it.get("stats", {}).is_empty(), "%s 有固定屬性" % it["id"])
+		var u: Dictionary = it.get("unique", {})
+		check(u.has("id") and u.has("name") and u.has("desc"), "%s 有唯一特性（id／名稱／描述）" % it["id"])
+		check(Equipment.unique_line(str(it["id"])).begins_with("唯一特性・"), "%s 唯一特性固定格式" % it["id"])
+		check(ItemPassives.KINDS.has(str(it.get("passive", {}).get("kind", ""))), "%s 唯一特性已實作" % it["id"])
+	# 同一棋子可以穿兩件同名裝備
+	var run := RunState.create("orc", 401)
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": []}
+	run.next_uid = 2
+	run.inventory = ["DM_AXE", "DM_AXE"]
+	eq(run.equip(1, 0), "", "第 1 件炎獄戰斧")
+	eq(run.equip(1, 0), "", "第 2 件同名裝備")
+	eq(_unit_with_items(run, 1), ["DM_AXE", "DM_AXE"], "兩件同名裝備")
+	# 裝備不改變羈絆
+	var c1 := Synergy.count(["ORC1"])
+	run.board[Vector2i(3, 4)] = run.bench[0]
+	run.bench[0] = null
+	eq(run.synergy_counts(), c1, "裝備不改變羈絆計數")
+	# 穿透可由裝備提供
+	var mods: Dictionary = Modifiers.for_lineup(["ORC1"], "", false, [["DM_GREATAXE"]])[0]
+	eq(float(mods["phys_pen"]), 20.0, "深淵屠戮斧提供物理穿透 20%")
+	# 出售：價格不變、裝備回背包、不消耗卸除器
+	run.removers = 1
+	var g := run.gold
+	run.sell(1)
+	eq(run.gold, g + 1, "出售價格不變")
+	eq(run.inventory, ["DM_AXE", "DM_AXE"], "裝備回到背包")
+	eq(run.removers, 1, "出售不消耗卸除器")
+
+
+func test_equipment_unique() -> void:
+	# 兩件炎獄戰斧：攻擊力累加兩次，但「炎獄連擊」只觸發一份
+	var mods: Dictionary = Modifiers.for_lineup(["ORC1"], "", false, [["DM_AXE", "DM_AXE"]])[0]
+	eq(float(mods["atk_flat"]), 20.0, "同名裝備基礎屬性正常累加")
+	eq(ItemPassives.unique_passives(["DM_AXE", "DM_AXE"]).size(), 1, "相同唯一特性只生效一次")
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["DM_AXE", "DM_AXE"])
+	var b := sim.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	sim.basic_attack(a, b)
+	eq(b.statuses.filter(func(x): return x["kind"] == "dot").size(), 1, "兩件戰斧只造成一份持續傷害")
+	# 不同名稱、相同唯一特性 id：也只生效一次（保留效果較強者）
+	var ps := ItemPassives.unique_passives(["DM_AXE", "DM_GREATAXE"])
+	eq(ps.size(), 1, "炎獄戰斧＋深淵屠戮斧：炎獄連擊只生效一次")
+	eq(float(ps[0]["total"]), 30.0, "保留效果較強的一件")
+	eq(ItemPassives.unique_passives(["DM_PLATE", "DM_BULWARK"]).size(), 1, "熔岩反噬只生效一次")
+	# 不同唯一特性可以並存
+	eq(ItemPassives.unique_passives(["DM_AXE", "CU_FANG"]).size(), 2, "不同唯一特性並存")
+	# 灼心：暴擊造成重傷
+	var s2 := CombatSim.new(2)
+	var c := s2.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["DM_RING"])
+	var d := s2.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	c.crit_chance = 1.0
+	s2.basic_attack(c, d)
+	check(d.has_status("wound"), "魔焰之戒：暴擊時使目標重傷")
+	# 祭儀庇護：開戰護盾
+	var s3 := CombatSim.new(3)
+	var e := s3.add_unit("HUM2", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CU_ROBE"])
+	ItemPassives.on_battle_start(s3, e)
+	eq(e.shield_total(), 60.0, "祭司法袍：開戰獲得 60 護盾")
+	# 被動不會無限連鎖：雙方都穿反彈甲互打
+	var s4 := CombatSim.new(4)
+	var x := s4.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["DM_BULWARK", "OG_SHELL"])
+	var y := s4.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty(), 0, ["DM_BULWARK", "CU_FANG"])
+	var n0 := s4.events.size()
+	s4.basic_attack(x, y)
+	check(s4.events.size() - n0 < 15, "反彈、吸血、緩速不會互相無限觸發（%d 個事件）" % (s4.events.size() - n0))
+	var r := s4.run()
+	check(float(r["time"]) <= 45.001, "整場戰鬥正常結束")
+
+
+func test_equipment_remover_rounds() -> void:
+	eq(GameData.remover_rounds().map(func(x): return int(x)), [9, 18], "第 9、18 回合額外獲得卸除器")
+	var run := RunState.create("human", 402)
+	for rr in [8, 9, 18]:
+		run.round_no = rr
+		run.pending_reward = {}
+		run.start_battle()
+		var rep := run.settle(_fake_result(true))
+		eq(bool(rep["remover"]), rr in [9, 18], "第 %d 回合%s卸除器" % [rr, "獲得" if rr in [9, 18] else "沒有"])
+		if rr == 9:
+			check(not run.pending_reward.is_empty(), "卸除器不取代三選一")
+	eq(run.removers, 2, "兩個卸除器")
+	run.round_no = 9
+	run.start_battle()
+	run.settle(_fake_result(true))
+	eq(run.removers, 2, "同一回合不重複發放")
+	var d := run.to_dict()
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(d)))
+	eq([loaded.removers, loaded.removers_granted], [run.removers, run.removers_granted], "卸除器存讀檔一致")
+
+
+func test_merge_keeps_deployed() -> void:
+	# 已部署的棋子優先成為合成主體：保留身份、戰場位置與裝備
+	var run := RunState.create("orc", 403)
+	run.gold = 99
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CU_DAGGER", "CU_FANG"]}
+	run.board[Vector2i(5, 5)] = {"uid": 2, "id": "ORC1", "star": 1, "items": ["DM_PLATE"]}
+	run.next_uid = 3
+	run.shop = ["ORC1", "", "", "", ""]
+	run.buy(0)
+	var f := run.find_unit(2)
+	check(not f.is_empty() and f["where"] == "board" and f["cell"] == Vector2i(5, 5), "合成後保留已部署棋子的身份與位置")
+	eq(int(f["unit"]["star"]), 2, "二星")
+	eq(RunState.unit_items(f["unit"]), ["DM_PLATE", "CU_DAGGER"], "保留主體裝備，再依固定順序繼承空格")
+	eq(run.inventory, ["CU_FANG"], "超過兩格的裝備回背包")
+	check(run.find_unit(1).is_empty(), "材料棋子消失")
+	# 全部在候補區：玩家選中的棋子優先，其次編號較小者
+	var r2 := RunState.create("orc", 404)
+	r2.gold = 99
+	r2.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CU_DAGGER"]}
+	r2.bench[4] = {"uid": 2, "id": "ORC1", "star": 1, "items": ["DM_RING"]}
+	r2.next_uid = 3
+	r2.shop = ["ORC1", "", "", "", ""]
+	r2.buy(0, 2)
+	var f2 := r2.find_unit(2)
+	check(not f2.is_empty() and f2["index"] == 4, "全部在候補區：保留玩家選中的主體")
+	eq(RunState.unit_items(f2["unit"]), ["DM_RING", "CU_DAGGER"], "主體裝備優先")
+	var r3 := RunState.create("orc", 405)
+	r3.gold = 99
+	r3.bench[2] = {"uid": 7, "id": "ORC1", "star": 1, "items": []}
+	r3.bench[0] = {"uid": 9, "id": "ORC1", "star": 1, "items": []}
+	r3.next_uid = 10
+	r3.shop = ["ORC1", "", "", "", ""]
+	r3.buy(0)
+	check(not r3.find_unit(7).is_empty(), "沒有選中時以編號較小者為主體（固定、不隨機）")
+	# 多隻已部署：選中的優先，否則編號較小
+	var r4 := RunState.create("orc", 406)
+	r4.gold = 99
+	r4.board[Vector2i(1, 4)] = {"uid": 5, "id": "ORC1", "star": 1, "items": []}
+	r4.board[Vector2i(4, 6)] = {"uid": 3, "id": "ORC1", "star": 1, "items": []}
+	r4.next_uid = 6
+	r4.shop = ["ORC1", "", "", "", ""]
+	r4.buy(0, 5)
+	check(not r4.find_unit(5).is_empty() and r4.find_unit(5)["cell"] == Vector2i(1, 4), "兩隻都已部署：以玩家選中的為主體")
+
+
+## 裝備總量守恆：背包＋棋子身上，任何操作都不會遺失或複製
+func test_item_conservation() -> void:
+	var run := RunState.create("elf", 407)
+	run.gold = 9999
+	run.removers = 5
+	run.inventory = ["CU_DAGGER", "CU_FANG", "DM_AXE", "DM_AXE", "OG_EYE", "DM_PLATE", "CU_ROBE", "OG_SHELL"]
+	var total := run.all_items().size()
+	var rng := SeededRng.new(9)
+	for step in 400:
+		var op := rng.randi_range(0, 5)
+		var units := run.all_units()
+		match op:
+			0:
+				run.reroll()
+				for i in run.shop.size():
+					if run.can_buy(i) == "":
+						run.buy(i, int(units[0]["uid"]) if not units.is_empty() else -1)
+						break
+			1:
+				if not units.is_empty() and not run.inventory.is_empty():
+					run.equip(int(units[rng.randi_range(0, units.size() - 1)]["uid"]), rng.randi_range(0, run.inventory.size() - 1))
+			2:
+				if not units.is_empty():
+					var u: Dictionary = units[rng.randi_range(0, units.size() - 1)]
+					if not RunState.unit_items(u).is_empty():
+						run.use_remover(int(u["uid"]), 0)
+			3:
+				if units.size() > 6:
+					run.sell(int(units[rng.randi_range(0, units.size() - 1)]["uid"]))
+			4:
+				if not units.is_empty():
+					run.move_to_bench(int(units[0]["uid"]), rng.randi_range(0, 11))
+			5:
+				var d := run.to_dict()
+				run = RunState.from_dict(JSON.parse_string(JSON.stringify(d)))
+		if run.all_items().size() != total:
+			break
+	eq(run.all_items().size(), total, "400 次隨機操作（購買、合成、裝備、卸除、出售、存讀檔）後裝備總數不變")
+	check(run.all_units().all(func(u): return RunState.unit_items(u).size() <= 2), "每隻棋子最多 2 件")
+	_pool_ok(run, "同時卡池守恆")
