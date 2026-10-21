@@ -4,6 +4,8 @@
 
 **手機／瀏覽器直接玩**：<https://devil10421-source.github.io/chess/>（iPhone 用 Safari、Android 用 Chrome；把手機轉成橫向。可用「分享 → 加入主畫面」當成 App 開啟。每次推送到 main 會自動更新。）
 
+**Cloudflare Pages（新網址，設定中）**：`https://sixrealms-game.pages.dev/`（實際網址以 Cloudflare 核發為準；設定步驟見 [`docs/CLOUDFLARE_PAGES.md`](docs/CLOUDFLARE_PAGES.md)）。
+
 **直接玩（Windows）**：到 [Releases](https://github.com/devil10421-source/chess/releases) 下載最新的 `SixTribes_Windows_*.zip`，解壓後執行 `SixTribes.exe`，不需要安裝 Godot。
 
 單機 PVE 自走棋原型：六大文明、24 回合、TFT 式 7×8 錯位六角棋盤、34 種棋子（六族 24＋中立 10）、三星合成、商店／利息／文明等級、三層羈絆、文明 Buff／Debuff、遠征生命。
