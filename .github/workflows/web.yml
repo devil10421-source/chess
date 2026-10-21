@@ -1,11 +1,23 @@
-# 網頁版（手機瀏覽器可玩）：推送到 main 時匯出 Godot Web 版並部署到 GitHub Pages。
-# 第一次使用前：GitHub 專案 Settings → Pages → Source 選「GitHub Actions」。
-# 網址：https://devil10421-source.github.io/chess/
+# 網頁版（手機瀏覽器可玩）：同一次 Godot Web 匯出，部署到兩個地方。
+#
+# 1. GitHub Pages（舊網址，暫時保留）：只有 main 會部署。
+#    https://devil10421-source.github.io/chess/
+#    第一次使用前：GitHub 專案 Settings → Pages → Source 選「GitHub Actions」。
+#
+# 2. Cloudflare Pages（新網址，不含 GitHub 帳號名稱）：
+#    main                 → 正式網址   https://<專案名稱>.pages.dev/
+#    *-development 分支   → 預覽網址   https://<分支名稱>.<專案名稱>.pages.dev/（不會覆蓋正式網址）
+#    需要在 GitHub 專案 Settings → Secrets and variables → Actions 建立：
+#      Secret   CLOUDFLARE_API_TOKEN   （權限只要 Account → Cloudflare Pages → Edit）
+#      Secret   CLOUDFLARE_ACCOUNT_ID
+#      Variable CF_PAGES_PROJECT       （可省略，預設 sixrealms-game）
+#    沒有設定這兩個 Secret 時，Cloudflare 部署會略過（不會讓整個流程失敗）。
+#    Cloudflare Pages 單檔上限 25 MiB，index.wasm 約 39 MB，所以由 tools/prepare_cloudflare.py 切成分段再部署。
 name: 部署網頁版
 
 on:
   push:
-    branches: [main]
+    branches: [main, '*-development']
     paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
@@ -13,9 +25,10 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  deployments: write
 
 concurrency:
-  group: pages
+  group: web-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -39,19 +52,31 @@ jobs:
           unzip -q -j templates.tpz templates/version.txt templates/web_nothreads_release.zip templates/web_nothreads_debug.zip -d "$T"
           rm templates.tpz
 
-      - name: 匯出網頁版
+      - name: 匯出網頁版（單執行緒，不需要 SharedArrayBuffer）
         run: |
           "$GODOT" --headless --path . --import > /dev/null 2>&1 || true
           mkdir -p build/web
           "$GODOT" --headless --path . --export-release "Web" build/web/index.html
-          test -s build/web/index.wasm && test -s build/web/index.pck
+          test -s build/web/index.wasm && test -s build/web/index.pck && test -s build/web/index.js
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - name: 產生 Cloudflare Pages 版本（wasm 分段）
+        run: python3 tools/prepare_cloudflare.py build/web build/cloudflare
+
+      - name: 上傳 GitHub Pages 用的檔案
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
         with:
           path: build/web
 
-  deploy:
+      - name: 上傳 Cloudflare Pages 用的檔案
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-site
+          path: build/cloudflare
+          retention-days: 7
+
+  deploy-github-pages:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -60,3 +85,73 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  deploy-cloudflare:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT: ${{ vars.CF_PAGES_PROJECT || 'sixrealms-game' }}
+      BRANCH: ${{ github.ref_name }}
+    steps:
+      - name: 檢查 Cloudflare 設定
+        id: cfg
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::尚未設定 CLOUDFLARE_API_TOKEN／CLOUDFLARE_ACCOUNT_ID，略過 Cloudflare Pages 部署。"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 確認（必要時建立）Cloudflare Pages 專案
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects"
+          AUTH="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          code=$(curl -sS -o project.json -w "%{http_code}" -H "$AUTH" "$API/$PROJECT")
+          if [ "$code" = "404" ]; then
+            echo "建立 Cloudflare Pages 專案 $PROJECT（正式分支 main）"
+            code=$(curl -sS -o project.json -w "%{http_code}" -X POST -H "$AUTH" -H "Content-Type: application/json" \
+              --data "{\"name\":\"$PROJECT\",\"production_branch\":\"main\"}" "$API")
+          fi
+          if [ "$code" != "200" ]; then
+            echo "::error::Cloudflare API 回應 $code：$(cat project.json | head -c 600)"
+            echo "常見原因：API Token 權限不足（需要 Account → Cloudflare Pages → Edit）或 Account ID 錯誤。"
+            exit 1
+          fi
+          SUB=$(jq -r '.result.subdomain' project.json)
+          echo "Cloudflare 核發的網址：https://$SUB/"
+          if [ "$SUB" != "$PROJECT.pages.dev" ]; then
+            echo "::error::$PROJECT.pages.dev 已被其他人使用，Cloudflare 改發 $SUB。請決定要接受這個網址，或在 Settings → Variables 把 CF_PAGES_PROJECT 改成其他名稱。（要接受的話，把 Variable CF_PAGES_ACCEPT_SUBDOMAIN 設成 $SUB）"
+            if [ "${{ vars.CF_PAGES_ACCEPT_SUBDOMAIN }}" != "$SUB" ]; then exit 1; fi
+          fi
+          echo "SUBDOMAIN=$SUB" >> "$GITHUB_ENV"
+
+      - name: 下載 Cloudflare 版本
+        if: steps.cfg.outputs.ready == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: cloudflare-site
+          path: site
+
+      - name: 部署到 Cloudflare Pages（main＝正式、其他分支＝預覽）
+        if: steps.cfg.outputs.ready == 'true'
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: pages deploy site --project-name=${{ env.PROJECT }} --branch=${{ env.BRANCH }} --commit-hash=${{ github.sha }} --commit-dirty=true
+
+      - name: 部署結果
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          if [ "$BRANCH" = "main" ]; then
+            echo "### Cloudflare Pages 正式網址：https://$SUBDOMAIN/" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Cloudflare Pages 預覽網址（分支 $BRANCH）：${{ steps.deploy.outputs.deployment-url }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "本次部署：${{ steps.deploy.outputs.deployment-url }}" >> "$GITHUB_STEP_SUMMARY"
