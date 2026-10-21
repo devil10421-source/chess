@@ -5,8 +5,8 @@ extends RefCounted
 
 signal changed
 
-## 存檔版本：1 = V0.1/V0.2；2 = V0.3（裝備、背包、獎勵領取狀態）。讀取舊版會自動轉換。
-const SAVE_VERSION := 2
+## 存檔版本：1 = V0.1/V0.2；2 = V0.3（裝備、背包、獎勵領取狀態）；3 = V0.4（有限卡池快照、裝備卸除器）。讀取舊版會自動轉換。
+const SAVE_VERSION := 3
 
 var civ_id := ""
 var round_no := 1
@@ -148,8 +148,36 @@ func begin_round() -> void:
 		if int(r) == round_no:
 			free_rerolls += 1
 	if not shop_locked or shop.is_empty():
-		shop = Shop.roll(shop_rng, level(), civ_id, three_star_ids())
+		_reroll_shop()
 	_notify()
+
+
+## 重新擺商店：舊的商店棋子先回到卡池（清空即代表歸還），再依剩餘張數抽新的 5 格
+func _reroll_shop() -> void:
+	shop = []
+	shop = Shop.roll(shop_rng, level(), civ_id, three_star_ids(), pool_remaining())
+
+
+# ---------- 有限卡池（V0.4） ----------
+## 每種可招募棋子的剩餘張數＝供應量 − 商店上顯示的張數（預留）− 玩家持有的底層張數（1★=1、2★=3、3★=9）。
+## 不會小於 0（舊版存檔若持有超過供應量，視為 0）。
+func pool_remaining() -> Dictionary:
+	var out := Shop.initial_pool(civ_id)
+	var used := pool_used()
+	for id in out.keys():
+		out[id] = maxi(0, int(out[id]) - int(used.get(id, 0)))
+	return out
+
+
+## 已離開卡池的張數：商店預留＋玩家持有（棋盤、候補區）
+func pool_used() -> Dictionary:
+	var used := {}
+	for s in shop:
+		if str(s) != "":
+			used[str(s)] = int(used.get(str(s), 0)) + 1
+	for u in all_units():
+		used[str(u["id"])] = int(used.get(str(u["id"]), 0)) + Shop.copies_for_star(int(u["star"]))
+	return used
 
 
 ## 已擁有三星版本的棋子 id（商店不再抽出，也不能再購買）。出售該三星後即恢復。
@@ -267,7 +295,7 @@ func reroll() -> String:
 		gold -= Economy.reroll_cost()
 	else:
 		return "金幣不足"
-	shop = Shop.roll(shop_rng, level(), civ_id, three_star_ids())
+	_reroll_shop()
 	_notify()
 	return ""
 
@@ -565,6 +593,7 @@ func to_dict() -> Dictionary:
 		"finished": finished, "outcome": outcome, "history": history.duplicate(true),
 		"inventory": inventory.duplicate(), "rewards_claimed": rewards_claimed.duplicate(),
 		"pending_reward": pending_reward.duplicate(true),
+		"pool": pool_remaining(),   # 快照（讀檔時以持有狀態重新計算並核對）
 	}
 
 

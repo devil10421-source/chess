@@ -66,6 +66,9 @@ func _initialize() -> void:
 		"test_dot_unified",
 		"test_archer_retreat",
 		"test_no_armor_down_left",
+		"test_shop_odds_v04",
+		"test_card_pool",
+		"test_card_pool_weights",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -186,10 +189,12 @@ func test_shop_pool() -> void:
 	for c in GameData.civs():
 		var civ := str(c["id"])
 		var pool := Shop.full_pool(civ)
-		eq(pool.size(), 19, "%s 可抽棋子種類" % civ)
+		var n_low := GameData.units().filter(func(u): return int(u["cost"]) <= 3).size()
+		var n_neutral4 := GameData.units().filter(func(u): return int(u["cost"]) == 4 and GameData.is_neutral(str(u["id"]))).size()
+		eq(pool.size(), n_low + 1 + n_neutral4, "%s 可抽棋子種類（1～3 費全部＋本族 4 費＋中立 4 費）" % civ)
 		var fours := Shop.pool_for(civ, 4)
-		eq(fours.size(), 1, "%s 只有 1 種 4 費" % civ)
-		eq(GameData.unit(fours[0])["race"], c["race"], "%s 的 4 費必為本族" % civ)
+		eq(fours.filter(func(id): return not GameData.is_neutral(id)).size(), 1, "%s 只有 1 種本族 4 費" % civ)
+		check(fours.all(func(id): return GameData.unit(id)["race"] == c["race"] or GameData.is_neutral(id)), "%s 的 4 費只有本族與中立" % civ)
 		var rng := SeededRng.new(42)
 		var seen_four := false
 		for i in 3000:
@@ -197,7 +202,7 @@ func test_shop_pool() -> void:
 			check(pool.has(id), "抽到池外棋子 " + id)
 			if GameData.unit_cost(id) == 4:
 				seen_four = true
-				check(GameData.unit(id)["race"] == c["race"], "外族 4 費出現在商店")
+				check(GameData.unit(id)["race"] == c["race"] or GameData.is_neutral(id), "外族 4 費出現在商店")
 		check(seen_four, "%s 在 Lv.10 應能抽到本族 4 費" % civ)
 		for i in 500:
 			eq(GameData.unit_cost(Shop.roll_slot(rng, 1, civ)), 1, "Lv.1 只出 1 費")
@@ -226,14 +231,16 @@ func test_levels() -> void:
 	eq(Economy.level_for_xp(0), 1, "0 XP = Lv.1")
 	eq(Economy.level_for_xp(1), 1, "1 XP = Lv.1")
 	eq(Economy.level_for_xp(2), 2, "2 XP = Lv.2")
-	eq(Economy.level_for_xp(6), 3, "6 XP = Lv.3")
-	eq(Economy.level_for_xp(46), 7, "23 回合自然 XP 46 = Lv.7")
-	eq(Economy.level_for_xp(89), 9, "89 XP = Lv.9")
-	eq(Economy.level_for_xp(90), 10, "90 XP = Lv.10")
+	# V0.4 正式門檻：0／2／8／16／28／40／56／76／96／120
+	eq(Economy.xp_thresholds().map(func(x): return int(x)), [0, 2, 8, 16, 28, 40, 56, 76, 96, 120], "V0.4 累積 XP 門檻")
+	eq(Economy.level_for_xp(7), 2, "7 XP = Lv.2")
+	eq(Economy.level_for_xp(8), 3, "8 XP = Lv.3")
+	eq(Economy.level_for_xp(46), 6, "23 回合自然 XP 46 = Lv.6")
+	eq(Economy.level_for_xp(119), 9, "119 XP = Lv.9")
+	eq(Economy.level_for_xp(120), 10, "120 XP = Lv.10（累積 120）")
 	eq(Economy.level_for_xp(500), 10, "最高 Lv.10")
-	eq(90 - 46, 44, "企劃驗證例：差 44 XP")
 	var run := RunState.create("orc", 3)
-	run.gold = 100
+	run.gold = 200
 	for i in 30:
 		run.buy_xp()
 	eq(run.level(), 10, "買 XP 可到 Lv.10")
@@ -349,7 +356,7 @@ func test_board_limit_and_moves() -> void:
 	# 收回候補
 	eq(run.move_to_bench(b, 11), "", "收回候補")
 	eq(run.board_count(), 0, "場上 0 隻")
-	run.xp = 6
+	run.xp = 8
 	eq(run.board_limit(), 3, "Lv.3 上場 3 隻")
 
 
@@ -950,7 +957,7 @@ func test_three_star_exclusion() -> void:
 
 func test_auto_fill() -> void:
 	var run := RunState.create("human", 51)
-	run.xp = 20   # Lv.5
+	run.xp = 28   # Lv.5
 	var kept := {Vector2i(1, 4): 1, Vector2i(5, 5): 2, Vector2i(3, 7): 3}
 	for c in kept.keys():
 		run.board[c] = {"uid": kept[c], "id": "ORC1", "star": 1}
@@ -993,15 +1000,29 @@ func test_interest_ui_data() -> void:
 	eq(Economy.next_interest(25), {"next_gold": 30, "need": 5, "next_interest": 3}, "25 金：差 5 金到 +3")
 	eq(Economy.next_interest(30), {}, "30 金已達上限")
 	# XP 規劃（考慮溢出）
-	var p := Economy.xp_plan(30)   # Lv.6，本級 0/12
-	eq(p["level"], 6, "30 XP = Lv.6")
-	eq([p["cur"], p["need"], p["missing"]], [0, 12, 12], "Lv.6：0/12，還差 12")
-	eq([p["buys"], p["cost"]], [3, 12], "還需購買 3 次、12 金")
-	p = Economy.xp_plan(36)        # Lv.6，6/12
-	eq([p["cur"], p["need"], p["missing"], p["buys"], p["cost"]], [6, 12, 6, 2, 8], "企劃例：6/12 還差 6 → 2 次 8 金")
-	p = Economy.xp_plan(3)         # Lv.2，1/4 → 差 3 → 1 次（溢出 1）
+	var p := Economy.xp_plan(40)   # Lv.6，本級 0/16
+	eq(p["level"], 6, "40 XP = Lv.6")
+	eq([p["cur"], p["need"], p["missing"]], [0, 16, 16], "Lv.6：0/16，還差 16")
+	eq([p["buys"], p["cost"]], [4, 16], "還需購買 4 次、16 金")
+	p = Economy.xp_plan(46)        # Lv.6，6/16 → 差 10 → 3 次（溢出 2）
+	eq([p["cur"], p["need"], p["missing"], p["buys"], p["cost"]], [6, 16, 10, 3, 12], "6/16 還差 10 → 3 次 12 金")
+	p = Economy.xp_plan(5)         # Lv.2，3/6 → 差 3 → 1 次（溢出 1）
 	eq([p["missing"], p["buys"]], [3, 1], "溢出經驗：差 3 只需買 1 次")
-	check(Economy.xp_plan(90)["max"], "滿級")
+	p = Economy.xp_plan(117)       # Lv.9，21/24 → 差 3 → 1 次
+	eq([p["cur"], p["need"], p["buys"], p["cost"]], [21, 24, 1, 4], "Lv.9：21/24 → 1 次 4 金")
+	check(Economy.xp_plan(120)["max"], "滿級")
+	# 自然 XP、購買 XP 與進度條一致
+	var run := RunState.create("elf", 3)
+	run.gold = 200
+	var natural := 0
+	for i in 5:
+		run.buy_xp()
+		run.xp += Economy.natural_xp()
+		natural += Economy.natural_xp()
+		var plan := Economy.xp_plan(run.xp)
+		var th: Array = Economy.xp_thresholds()
+		eq(int(th[run.level() - 1]) + int(plan["cur"]), run.xp, "XP 條：本級進度＋門檻＝累積 XP（%d）" % run.xp)
+	eq(run.xp, 5 * Economy.xp_per_buy() + natural, "自然 XP 與購買 XP 累加正確")
 
 
 func test_oni_skill_dot() -> void:
@@ -1473,7 +1494,7 @@ func test_save_v2_and_migration() -> void:
 	check(loaded != null, "讀檔")
 	if loaded != null:
 		eq(JSON.stringify(loaded.to_dict()), JSON.stringify(run.to_dict()), "裝備、背包、領取狀態完整保存")
-		eq(int(loaded.to_dict()["version"]), 2, "存檔版本 2")
+		eq(int(loaded.to_dict()["version"]), RunState.SAVE_VERSION, "存檔為目前版本")
 	# V0.1／V0.2 的 version 1 存檔：自動補上空裝備
 	var v1 := run.to_dict()
 	v1["version"] = 1
@@ -1766,3 +1787,168 @@ func test_no_armor_down_left() -> void:
 		check(float(GameData.unit(id)["skill"]["params"].get("pen", 0)) > 0.0, "%s 改為自身穿透" % id)
 	var r := BattleSetup.build(_demo_run(11).board_lineup(), "human", 15, 11).run()
 	check(not r["events"].any(func(e): return e["k"] == "status" and e["kind"] == "armor_down"), "戰鬥中不再出現破甲狀態")
+
+
+# ------------------------------------------------------------ V0.4 經濟與有限卡池
+func test_shop_odds_v04() -> void:
+	var want := {1: [100, 0, 0, 0], 2: [85, 15, 0, 0], 3: [70, 30, 0, 0], 4: [55, 35, 10, 0], 5: [40, 40, 20, 0],
+		6: [25, 40, 35, 0], 7: [15, 35, 49, 1], 8: [10, 25, 62, 3], 9: [5, 20, 69, 6], 10: [5, 10, 75, 10]}
+	for lv in want.keys():
+		eq(Shop.odds_for_level(lv).map(func(x): return int(x)), want[lv], "Lv.%d 商店費用機率" % lv)
+	eq(Shop.supply(1), 22, "1 費每種 22 張")
+	eq(Shop.supply(2), 18, "2 費每種 18 張")
+	eq(Shop.supply(3), 14, "3 費每種 14 張")
+	eq(Shop.supply(4), 10, "4 費每種 10 張")
+
+
+## 卡池守恆：剩餘＋商店預留＋玩家持有（1★=1、2★=3、3★=9）＝供應量，且沒有負數
+func _pool_ok(run: RunState, msg: String) -> void:
+	var rem := run.pool_remaining()
+	var used := run.pool_used()
+	var ok := true
+	for id in rem.keys():
+		if int(rem[id]) < 0 or int(rem[id]) + int(used.get(id, 0)) != Shop.supply(GameData.unit_cost(id)):
+			ok = false
+			printerr("      卡池不一致 %s：剩 %d、用 %d" % [id, rem[id], used.get(id, 0)])
+	check(ok, msg)
+
+
+func test_card_pool() -> void:
+	var run := RunState.create("orc", 404)
+	var init := Shop.initial_pool("orc")
+	for id in init.keys():
+		eq(int(init[id]), Shop.supply(GameData.unit_cost(id)), "%s 初始張數" % id)
+	run.begin_round()
+	_pool_ok(run, "開局商店：剩餘＋商店預留＝供應量")
+	# 反覆刷新：不會超抽、不會產生負數
+	run.gold = 9999
+	run.xp = 120
+	for i in 200:
+		run.reroll()
+	_pool_ok(run, "刷新 200 次後卡池守恆")
+	# 購買不重複扣除；合成不增減底層張數
+	var r2 := RunState.create("orc", 7)
+	r2.gold = 999
+	r2.shop = ["ORC1", "ORC1", "ORC1", "HUM1", "HUM1"]
+	var before := r2.pool_remaining()
+	eq(int(before["ORC1"]), 22 - 3, "商店顯示的 3 張已預留")
+	r2.buy(0)
+	r2.buy(1)
+	eq(int(r2.pool_remaining()["ORC1"]), 19, "購買不再重複扣除")
+	r2.buy(2)   # 合成 2 星
+	eq(r2.copies_of("ORC1", 2), 1, "三隻合成二星")
+	eq(int(r2.pool_remaining()["ORC1"]), 19, "合成不額外產生或消滅張數（二星＝3 張）")
+	_pool_ok(r2, "購買與合成後卡池守恆")
+	# 出售依原始張數返還
+	var uid := int(r2.all_units().filter(func(u): return u["id"] == "ORC1")[0]["uid"])
+	r2.sell(uid)
+	eq(int(r2.pool_remaining()["ORC1"]), 22, "出售二星返還 3 張")
+	_pool_ok(r2, "出售後卡池守恆")
+	# 三星＝9 張；已三星不再刷出
+	var r3 := RunState.create("elf", 9)
+	r3.bench[0] = {"uid": 1, "id": "ELF1", "star": 3, "items": []}
+	r3.next_uid = 2
+	eq(int(r3.pool_remaining()["ELF1"]), 22 - 9, "三星代表 9 張")
+	r3.gold = 9999
+	var seen := false
+	for i in 300:
+		r3.reroll()
+		if r3.shop.has("ELF1"):
+			seen = true
+	check(not seen, "已三星的棋子不再刷出")
+	r3.sell(1)
+	eq(int(r3.pool_remaining()["ELF1"]), 22, "出售三星返還 9 張")
+	# 鎖定商店：保留的棋子持續預留，下一回合不刷新
+	var r4 := RunState.create("human", 12)
+	r4.begin_round()
+	var locked_shop := r4.shop.duplicate()
+	r4.toggle_lock()
+	r4.round_no = 2
+	r4.begin_round()
+	eq(r4.shop, locked_shop, "鎖定時下一回合不刷新")
+	_pool_ok(r4, "鎖定商店時卡池守恆")
+	# 存讀檔後一致
+	r2.gold = 999
+	for i in 5:
+		r2.reroll()
+		if r2.can_buy(0) == "":
+			r2.buy(0)
+	var d := r2.to_dict()
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(d)))
+	eq(loaded.pool_remaining(), r2.pool_remaining(), "讀檔後卡池一致")
+	var snap: Dictionary = d["pool"]
+	var same := true
+	for id in snap.keys():
+		if int(snap[id]) != int(loaded.pool_remaining().get(id, -1)):
+			same = false
+	check(same, "存檔中的卡池快照與讀檔重算一致")
+	_pool_ok(loaded, "讀檔後卡池守恆")
+	# 四費：每局只會出現本族專屬 4 費＋中立 4 費，各 10 張
+	var r5 := RunState.create("deer", 33)
+	r5.xp = 120
+	r5.gold = 99999
+	var fours := {}
+	for i in 600:
+		r5.reroll()
+		for id in r5.shop:
+			if str(id) != "" and GameData.unit_cost(str(id)) == 4:
+				fours[str(id)] = true
+	check(fours.keys().all(func(id): return GameData.unit(id)["race"] == "deer" or GameData.is_neutral(id)), "4 費只有本族與中立")
+	# 抽乾某一種 4 費：最多只能買到 10 張
+	var r6 := RunState.create("deer", 34)
+	r6.xp = 120
+	r6.gold = 999999
+	var bought := 0
+	for i in 3000:
+		for s2 in r6.shop.size():
+			if str(r6.shop[s2]) == "DEE4" and r6.can_buy(s2) == "":
+				r6.buy(s2)
+				bought += 1
+		# 把非三星的 DEE4 留著，其餘賣掉以免候補滿
+		for u in r6.all_units():
+			if u["id"] != "DEE4":
+				r6.sell(int(u["uid"]))
+		r6.reroll()
+	var held := 0
+	for u in r6.all_units():
+		if u["id"] == "DEE4":
+			held += Shop.copies_for_star(int(u["star"]))
+	check(held <= 10, "DEE4 持有張數不超過 10（%d）" % held)
+	_pool_ok(r6, "抽乾 4 費後卡池守恆")
+
+
+func test_card_pool_weights() -> void:
+	# 依剩餘張數加權：剩 20 張的棋子比剩 1 張的出現得多
+	var rng := SeededRng.new(5)
+	var pool := Shop.initial_pool("orc")
+	for id in Shop.pool_for("orc", 1):
+		pool[id] = 1
+	pool["ORC1"] = 20
+	var cnt := {}
+	for i in 2000:
+		var p2 := pool.duplicate()
+		var id := Shop.roll_slot(rng, 1, "orc", {}, p2)
+		cnt[id] = int(cnt.get(id, 0)) + 1
+	var others := 0
+	for k in cnt.keys():
+		if k != "ORC1":
+			others += int(cnt[k])
+	check(int(cnt.get("ORC1", 0)) > others, "剩餘多的棋子出現機率較高（ORC1 %d 次、其他 %d 次）" % [cnt.get("ORC1", 0), others])
+	# 該費用沒有庫存 → 改抽仍有庫存的費用，不會空白或死循環
+	var empty1 := Shop.initial_pool("orc")
+	for id in Shop.pool_for("orc", 1):
+		empty1[id] = 0
+	var got := Shop.roll_slot(rng, 1, "orc", {}, empty1)
+	check(got != "" and GameData.unit_cost(got) != 1, "Lv.1 一費抽乾時改抽其他費用（%s）" % got)
+	var all0 := Shop.initial_pool("orc")
+	for id in all0.keys():
+		all0[id] = 0
+	eq(Shop.roll(rng, 5, "orc", {}, all0), ["", "", "", "", ""], "全部抽乾時回傳空格")
+	# 抽到後扣 1，一次刷新不會超過剩餘張數
+	var two := Shop.initial_pool("orc")
+	for id in two.keys():
+		two[id] = 0
+	two["ORC1"] = 2
+	var row := Shop.roll(rng, 1, "orc", {}, two)
+	eq(row.count("ORC1"), 2, "剩 2 張時同一次刷新最多出現 2 張")
+	eq(int(two["ORC1"]), 0, "抽出後卡池扣除")

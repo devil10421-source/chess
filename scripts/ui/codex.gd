@@ -91,7 +91,8 @@ func _rules_text() -> String:
 	for lv in range(1, 11):
 		var o := Shop.odds_for_level(lv)
 		lines.append("Lv.%d：%d%%／%d%%／%d%%／%d%%" % [lv, o[0], o[1], o[2], o[3]])
-	lines.append("1～3 費可抽六族全部棋子；4 費只會出現你所選文明的頂尖棋子。")
+	lines.append("1～3 費可抽六族全部棋子與中立棋子；4 費只會出現你所選文明的專屬 4 費與 5 名中立 4 費（其他文明的 4 費不可招募）。")
+	lines.append("有限卡池：每種棋子 1 費 %d 張、2 費 %d 張、3 費 %d 張、4 費 %d 張。商店先依等級機率決定費用，再依剩餘張數加權抽棋子；商店上顯示的棋子已預留，二星＝3 張、三星＝9 張，出售時歸還。" % [Shop.supply(1), Shop.supply(2), Shop.supply(3), Shop.supply(4)])
 	lines.append("")
 	lines.append("[b][color=#ffd24d]升星[/color][/b]")
 	lines.append("三隻同名同星自動合成高一星（最高 3 星），合成後只佔一個位置。生命 1×／1.9×／3.3×、攻擊 1×／1.85×／3.33×、護甲魔抗 +0／+3／+7、技能固定量 1×／1.85×／3.33×；攻速、暴擊、射程不隨星級成長。")

@@ -102,6 +102,11 @@ static func _resolve_variant(u: Dictionary) -> Dictionary:
 	return merged
 
 
+## 中立陣營（V0.4）：所有文明都能招募；沒有種族羈絆、沒有文明效果，但吃玩家文明的全軍效果
+static func is_neutral(id: String) -> bool:
+	return str(unit(id).get("race", "")) == "neutral"
+
+
 static func is_special(id: String) -> bool:
 	var u := unit(id)
 	return u.has("stats") or u.has("phase")
