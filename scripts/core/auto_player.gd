@@ -12,6 +12,9 @@ static func power(id: String, star: int) -> float:
 
 
 static func play_prep(run: RunState) -> void:
+	# 裝備三選一：選第一件（bot 不做評估）
+	if run.has_pending_reward():
+		run.claim_reward(0)
 	run.begin_round()
 	var target: int = TARGET_LEVEL[clampi(run.round_no - 1, 0, TARGET_LEVEL.size() - 1)]
 	var keep := 0 if run.round_no <= 3 else mini(20, run.round_no * 2)
@@ -31,6 +34,17 @@ static func play_prep(run: RunState) -> void:
 			break
 	_sell_extras(run)
 	arrange(run)
+	_equip_items(run)
+
+
+## 把背包裝備穿到場上最強的棋子身上（每隻最多 2 件）
+static func _equip_items(run: RunState) -> void:
+	var lineup := run.board_lineup()
+	lineup.sort_custom(func(a, b) -> bool: return power(a["id"], int(a["star"])) > power(b["id"], int(b["star"])))
+	for p in lineup:
+		while not run.inventory.is_empty() and RunState.unit_items(run.find_unit(int(p["uid"]))["unit"]).size() < GameData.item_slots():
+			if run.equip(int(p["uid"]), 0) != "":
+				break
 
 
 static func _buy_best(run: RunState, keep: int) -> bool:

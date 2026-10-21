@@ -16,6 +16,13 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 	var tier: Dictionary = GameData.cfg("tiers").get(str(int(u.get("cost", 1))), {})
 	var cls: Dictionary = GameData.cfg("classes").get(str(u.get("class", "")), {})
 	var combat := GameData.cfg("combat")
+	var phase_hp := 1.0
+	var phase_atk := 1.0
+	if u.has("phase") and not u.has("stats"):
+		# 異界變體：沿用基礎棋子的稀有度與職業數值，再乘階段倍率（只乘一次，關卡本身不另外灌數值）
+		var ph := GameData.phase(str(u["phase"]))
+		phase_hp = float(ph.get("hp_mult", 1.0))
+		phase_atk = float(ph.get("atk_mult", 1.0))
 	if u.has("stats"):
 		# 特殊單位：直接使用資料中指定的屬性
 		var fixed: Dictionary = u["stats"]
@@ -27,8 +34,8 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 	var armor := roundf(float(tier.get("armor", 0)) * float(cls.get("armor", 1.0))) + _star_value("armor_add", star)
 	var mr := roundf(float(tier.get("mr", 0)) * float(cls.get("mr", 1.0))) + _star_value("mr_add", star)
 	return {
-		"hp": float(roundi(hp)),
-		"atk": snappedf(atk, 0.1),
+		"hp": float(roundi(hp * phase_hp)),
+		"atk": snappedf(atk * phase_atk, 0.1),
 		"armor": armor,
 		"mr": mr,
 		"atk_speed": float(tier.get("atk_speed", 0.8)) * float(cls.get("atk_speed", 1.0)),
@@ -40,10 +47,14 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 	}
 
 
-## 套用 Modifiers 後的戰鬥屬性（HP、護甲、魔抗、初始魔力、移速）
+## 套用 Modifiers 後的戰鬥屬性。固定值（裝備）先加，再乘百分比。
 static func final_stats(unit_id: String, star: int, mods: Dictionary) -> Dictionary:
 	var s := base_stats(unit_id, star)
-	s["hp"] = float(maxi(1, roundi(s["hp"] * (1.0 + float(mods.get("hp_pct", 0.0)) / 100.0))))
+	s["hp"] = float(maxi(1, roundi((s["hp"] + float(mods.get("hp_flat", 0.0))) * (1.0 + float(mods.get("hp_pct", 0.0)) / 100.0))))
+	s["atk"] = s["atk"] + float(mods.get("atk_flat", 0.0))
+	s["atk_speed"] = s["atk_speed"] * maxf(0.25, 1.0 + float(mods.get("atk_speed_pct", 0.0)) / 100.0)
+	s["crit_chance"] = clampf(s["crit_chance"] + float(mods.get("crit_chance_add", 0.0)) / 100.0, 0.0, 1.0)
+	s["crit_mult"] = s["crit_mult"] + float(mods.get("crit_dmg_add", 0.0)) / 100.0
 	s["armor"] = s["armor"] + float(mods.get("armor_flat", 0.0))
 	s["mr"] = s["mr"] + float(mods.get("mr_flat", 0.0))
 	s["start_mana"] = float(mods.get("start_mana", 0.0))

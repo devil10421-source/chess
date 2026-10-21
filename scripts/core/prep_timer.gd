@@ -1,10 +1,10 @@
 class_name PrepTimer
 extends RefCounted
-## 備戰倒數（每回合固定秒數，見 game_config.json → rounds.prep_seconds）。
+## 備戰倒數（每回合固定秒數，見 game_config.json → rounds.prep_seconds；V0.3 為 30 秒）。
 ## 由畫面在商店與棋盤初始化完成後 start()；暫停時不計時；歸零時 tick() 回傳 true 一次。
 
-var duration := 15.0
-var remaining := 15.0
+var duration := 30.0
+var remaining := 30.0
 var running := false
 var paused := false
 var _fired := false
@@ -38,6 +38,12 @@ func tick(delta: float) -> bool:
 	return false
 
 
+## 10～6 秒：黃色提醒
+func is_caution() -> bool:
+	return running and remaining <= float(GameData.cfg("rounds").get("prep_caution_seconds", 10))
+
+
+## 5～0 秒：紅色警示
 func is_warning() -> bool:
 	return running and remaining <= float(GameData.cfg("rounds").get("prep_warning_seconds", 5))
 

@@ -51,6 +51,15 @@ func _initialize() -> void:
 		"test_leaderboard_rows",
 		"test_trait_detail",
 		"test_v01_save_compat",
+		"test_race_traits_234",
+		"test_equipment_basic",
+		"test_equipment_merge_and_sell",
+		"test_equipment_passives",
+		"test_equipment_rewards",
+		"test_save_v2_and_migration",
+		"test_otherworld_enemies",
+		"test_live_stats_match",
+		"test_bench_during_battle",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -129,11 +138,8 @@ func test_data_integrity() -> void:
 			check(GameData.has_unit(str(e["id"])), "第 %d 關未知棋子 %s" % [r, e["id"]])
 			check(int(e["star"]) >= 1 and int(e["star"]) <= 3, "第 %d 關星級錯誤" % r)
 	for r in [6, 12, 18, 24]:
-		var has_boss := false
-		for e in GameData.stage(r)["units"]:
-			if GameData.unit_cost(str(e["id"])) == 4:
-				has_boss = true
-		check(has_boss, "首領關 %d 應有 4 費棋子" % r)
+		check(bool(GameData.stage(r).get("boss", false)), "第 %d 關標示為首領戰" % r)
+		check(str(GameData.stage(r).get("faction", "")) != "", "首領關 %d 由異界敵軍擔任" % r)
 
 
 func test_hex_grid() -> void:
@@ -1065,20 +1071,22 @@ func test_playback_clock() -> void:
 
 func test_prep_timer() -> void:
 	var tm := PrepTimer.new()
-	eq(tm.duration, 15.0, "備戰固定 15 秒")
+	eq(tm.duration, 30.0, "備戰固定 30 秒（V0.3）")
 	check(not tm.tick(1.0), "未開始不計時")
 	tm.start()
-	check(not tm.tick(9.0), "6 秒前不觸發")
-	check(not tm.is_warning(), "剩 6 秒尚未警示")
-	check(not tm.tick(1.5), "")
-	check(tm.is_warning(), "剩 5 秒內顯示警示")
+	check(not tm.tick(19.0), "11 秒前不觸發")
+	check(not tm.is_caution(), "剩 11 秒為一般顏色")
+	check(not tm.tick(1.0), "")
+	check(tm.is_caution() and not tm.is_warning(), "剩 10 秒轉黃色")
+	check(not tm.tick(5.0), "")
+	check(tm.is_warning(), "剩 5 秒轉紅色")
 	tm.paused = true
 	check(not tm.tick(100.0), "暫停時不計時")
 	tm.paused = false
-	check(tm.tick(4.6), "倒數結束時觸發自動開戰")
+	check(tm.tick(5.1), "倒數結束時觸發自動開戰")
 	check(not tm.tick(1.0), "只觸發一次")
 	tm.start()
-	eq(tm.seconds_left(), 15, "每回合重新從 15 秒開始")
+	eq(tm.seconds_left(), 30, "每回合重新從 30 秒開始")
 
 
 # ================= V0.2 第三批：資訊透明 =================
@@ -1240,3 +1248,320 @@ func test_v01_save_compat() -> void:
 	check(res.has("stats") and res["events"].size() > 0, "讀取後可以直接開戰（V0.2 規則）")
 	check(run.board_count() == 3, "V0.2 自動補位對舊存檔也有效")
 	SaveSystem.clear()
+
+
+# ================= V0.3 =================
+func test_race_traits_234() -> void:
+	eq(Synergy.tier_index("race", "elf", 2), 0, "種族 2 種 → 第 1 階")
+	eq(Synergy.tier_index("race", "elf", 3), 1, "種族 3 種 → 第 2 階")
+	eq(Synergy.tier_index("race", "elf", 4), 2, "種族 4 種 → 第 3 階")
+	eq(Synergy.tier_index("class", "warrior", 4), 1, "職業仍為 2/3")
+	var m := Modifiers.for_lineup(["ELF1", "ELF2", "ELF3", "ELF4"], "", true)
+	eq(float(m[1]["ranged_basic_pct"]), 12.0, "精靈 4 種：遠程普攻 +12%（取代低階、不累加）")
+	eq(float(m[1]["start_mana"]), 15.0, "精靈 4 種：初始魔力 +15")
+	var dup := Modifiers.for_lineup(["ELF1", "ELF1", "ELF2", "ELF3"], "", true)
+	eq(float(dup[2]["ranged_basic_pct"]), 8.0, "同名重複不增加計數（3 種 → +8%）")
+	var oni := Modifiers.for_lineup(["ONI1", "ONI2", "ONI3", "ONI4", "ORC1"], "", true)
+	eq(float(oni[0]["skill_dmg_pct"]), 20.0, "鬼人 4 種：技能傷害 +20%（含 DOT）")
+	eq(float(oni[4]["skill_dmg_pct"]), 0.0, "鬼人種族羈絆只作用於鬼人")
+	var both := Modifiers.for_lineup(["ONI1", "ONI2"], "oni", true)
+	eq(float(both[0]["skill_dmg_pct"]), 12.0 + 6.0, "鬼人文明 +12% 與種族 2 種 +6% 分開計算再加總")
+	var hum := Modifiers.for_lineup(["HUM1", "HUM2", "HUM3", "HUM4"], "", true)
+	eq(float(hum[0]["armor_flat"]), 14.0, "人類 4 種：物防 +14")
+	# 四費限制不變：非本文明只能湊到 3 種
+	for c in GameData.civs():
+		for race in ["elf", "human", "orc", "centaur", "deer", "oni"]:
+			var n := 0
+			for id in Shop.full_pool(str(c["id"])):
+				if GameData.unit(id)["race"] == race:
+					n += 1
+			eq(n, 4 if race == c["race"] else 3, "%s 文明可取得的 %s 棋子種類" % [c["id"], race])
+
+
+func _unit_with_items(run: RunState, uid: int) -> Array:
+	return RunState.unit_items(run.find_unit(uid)["unit"])
+
+
+func test_equipment_basic() -> void:
+	var run := RunState.create("orc", 300)
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": []}
+	run.next_uid = 2
+	run.inventory = ["CU_DAGGER", "DM_PLATE", "OG_EYE"]
+	eq(run.equip(1, 0), "", "穿上第 1 件")
+	eq(run.equip(1, 0), "", "穿上第 2 件")
+	eq(_unit_with_items(run, 1), ["CU_DAGGER", "DM_PLATE"], "兩格裝備")
+	check(run.equip(1, 0) != "", "裝備欄已滿時不能再裝")
+	eq(run.equip(1, 0, 1), "", "指定欄位可直接更換")
+	eq(_unit_with_items(run, 1), ["CU_DAGGER", "OG_EYE"], "更換後的裝備")
+	eq(run.inventory, ["DM_PLATE"], "被換下的回到背包")
+	eq(run.unequip(1, 0), "", "免費卸下")
+	eq(run.inventory, ["DM_PLATE", "CU_DAGGER"], "卸下回到背包")
+	eq(run.gold, 5, "穿脫裝備不花錢")
+	# 屬性套用：熔岩胸甲 生命 +150、物防 +15
+	run.equip(1, 0)
+	var lineup := [{"uid": 1, "id": "ORC1", "star": 1, "cell": Vector2i(3, 4), "items": _unit_with_items(run, 1)}]
+	var mods: Dictionary = Modifiers.for_lineup(["ORC1"], "", false, [lineup[0]["items"]])[0]
+	var st := UnitStats.final_stats("ORC1", 1, mods)
+	var base := UnitStats.base_stats("ORC1", 1)
+	eq(st["hp"], base["hp"] + 150.0, "裝備生命 +150 確實套用")
+	eq(st["armor"], base["armor"] + 15.0, "裝備物防 +15 確實套用")
+	var src: Array = Modifiers.sources_for_lineup(["ORC1"], "", false, [lineup[0]["items"]])[0]
+	check(src.any(func(e): return e["source"] == "item" and str(e["label"]).contains("熔岩胸甲")), "裝備效果列為「裝備」來源")
+	var sim := BattleSetup.build(lineup, "", 3, 1)
+	eq(sim.units[0].max_hp, st["hp"], "戰鬥中的生命包含裝備")
+
+
+func test_equipment_merge_and_sell() -> void:
+	var run := RunState.create("orc", 301)
+	run.gold = 100
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CU_DAGGER", "DM_PLATE"]}
+	run.bench[1] = {"uid": 2, "id": "ORC1", "star": 1, "items": ["OG_EYE"]}
+	run.next_uid = 3
+	var before := run.all_items().size()
+	run.shop = ["ORC1", "", "", "", ""]
+	run.buy(0)
+	eq(run.copies_of("ORC1", 2), 1, "合成二星")
+	var star2: Dictionary = run.all_units()[0]
+	eq(RunState.unit_items(star2), ["CU_DAGGER", "DM_PLATE"], "合成後保留最多兩件（原棋子優先）")
+	eq(run.inventory, ["OG_EYE"], "多出來的回到背包")
+	eq(run.all_items().size(), before, "合成後裝備總數不變（不遺失、不複製）")
+	run.sell(int(star2["uid"]))
+	eq(run.all_items().size(), before, "出售後裝備總數不變")
+	eq(run.inventory.size(), 3, "出售時身上裝備回到背包")
+	# 三隻二星 → 三星，各自帶裝備
+	var r2 := RunState.create("orc", 302)
+	for i in 3:
+		r2.bench[i] = {"uid": i + 1, "id": "HUM2", "star": 2, "items": ["CU_ROBE"] if i < 2 else ["DM_AXE", "DM_RING"]}
+	r2.next_uid = 9
+	r2._try_merge("HUM2", 2)
+	eq(r2.copies_of("HUM2", 3), 1, "三星合成")
+	eq(r2.all_items().size(), 4, "三星合成後 4 件裝備都還在")
+	eq(RunState.unit_items(r2.all_units()[0]).size(), 2, "棋子身上最多 2 件")
+
+
+func test_equipment_passives() -> void:
+	# 吸血：造成有效傷害的 15% 治療自己
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CU_FANG"])
+	var b := sim.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	a.hp = 50.0
+	b.armor = 0.0
+	sim.deal_damage(a, b, 100.0, "physical", "skill", false)
+	eq(a.hp, 50.0 + 15.0, "吸血 15%")
+	# 流血：普攻後目標身上有來源為裝備的持續傷害
+	var s2 := CombatSim.new(2)
+	var c := s2.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CU_DAGGER"])
+	var d := s2.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	s2.basic_attack(c, d)
+	check(d.statuses.any(func(x): return x["kind"] == "dot" and x.get("source") == "item"), "獻祭匕首：普攻造成流血（裝備來源）")
+	# 裝備傷害不吃鬼人技能加成
+	var oni_mods: Dictionary = Modifiers.for_lineup(["ONI1"], "oni", false)[0]
+	var o := s2.add_unit("ONI1", 1, Vector2i(5, 4), 0, oni_mods, 0, ["CU_DAGGER"])
+	eq(s2.damage_bonus_pct(o, d, "physical", "item", true), 0.0, "裝備流血不吃鬼人技能 +12%")
+	# 反甲：受到近戰普攻時反彈法術傷害
+	var s3 := CombatSim.new(3)
+	var att := s3.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	var tank := s3.add_unit("HUM2", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["DM_PLATE"])
+	var hp0 := att.hp
+	s3.basic_attack(att, tank)
+	check(att.hp < hp0, "熔岩胸甲：近戰普攻者受到反彈傷害")
+	# 生命交換：開戰時 -10% 最大生命
+	var s4 := CombatSim.new(4)
+	var bp := s4.add_unit("ONI2", 1, Vector2i(3, 6), 0, Modifiers.empty(), 0, ["CU_CODEX"])
+	s4.add_unit("HUM2", 1, Vector2i(3, 0), 1, Modifiers.empty())
+	var full := bp.max_hp
+	ItemPassives.on_battle_start(s4, bp)
+	eq(bp.hp, full - roundf(full * 0.1), "血祭法典：開戰失去 10% 生命")
+	# 施法護盾、施法暈眩
+	var s5 := CombatSim.new(5)
+	var caster := s5.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["DM_HEART", "OG_EYE"])
+	var foe := s5.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
+	caster.mana = caster.mana_max
+	caster.target_cid = foe.cid
+	s5._act(caster)
+	check(caster.shield_total() >= 120.0, "炎魔之心：施法後獲得護盾")
+	check(foe.has_status("stun"), "虛空之眼：技能主要目標暈眩")
+	# 每第 3 次普攻的法術追加
+	var s6 := CombatSim.new(6)
+	var st := s6.add_unit("CEN1", 1, Vector2i(3, 6), 0, Modifiers.empty(), 0, ["OG_STAFF"])
+	var dummy := s6.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
+	var n_before := s6.events.size()
+	for i in 3:
+		s6.basic_attack(st, dummy)
+	var item_hits := 0
+	for i in range(n_before, s6.events.size()):
+		if s6.events[i]["k"] == "damage" and s6.events[i]["source"] == "item":
+			item_hits += 1
+	eq(item_hits, 1, "扭曲法杖：3 次普攻觸發 1 次")
+	for it in GameData.items():
+		if it.has("passive"):
+			check(ItemPassives.KINDS.has(it["passive"]["kind"]), "被動已實作：%s" % it["id"])
+
+
+func test_equipment_rewards() -> void:
+	var run := RunState.create("elf", 303)
+	run.round_no = 3
+	run.start_battle()
+	var rep := run.settle(_fake_result(true))
+	check(rep["reward"], "第 3 回合完成後產生裝備獎勵")
+	eq(run.pending_reward["choices"].size(), 3, "三選一")
+	var ids: Array = run.pending_reward["choices"]
+	check(ids[0] != ids[1] and ids[1] != ids[2] and ids[0] != ids[2], "三件不重複")
+	for id in ids:
+		eq(GameData.item(id)["faction"], "cult", "第 3 回合掉落邪教遺物")
+		eq(GameData.item(id)["tier"], "normal", "第 3 回合為普通裝備")
+	eq(run.claim_reward(1), "", "選擇第 2 件")
+	eq(run.inventory, [ids[1]], "加入背包")
+	check(run.claim_reward(0) != "", "同一回合不能重複領取")
+	check(run.rewards_claimed.has(3), "記錄已領取")
+	# 第 12 回合：惡魔進階；第 24 回合：沒有裝備
+	run.round_no = 12
+	run.start_battle()
+	run.settle(_fake_result(false, [1]))
+	eq(run.pending_reward.get("tier"), "advanced", "第 12 回合為進階裝備（未全清也算完成）")
+	eq(run.pending_reward.get("faction"), "demon", "第 12 回合掉落惡魔兵裝")
+	run.claim_reward(0)
+	var r24 := RunState.create("elf", 304)
+	r24.round_no = 24
+	r24.start_battle()
+	r24.settle(_fake_result(true))
+	check(r24.pending_reward.is_empty(), "第 24 回合沒有裝備掉落")
+	var normal := RunState.create("elf", 305)
+	normal.round_no = 4
+	normal.start_battle()
+	normal.settle(_fake_result(true))
+	check(normal.pending_reward.is_empty(), "一般回合沒有裝備")
+	eq(GameData.reward_rounds().map(func(x): return int(x["round"])), [3, 6, 9, 12, 15, 18, 21], "七個裝備回合")
+
+
+func test_save_v2_and_migration() -> void:
+	var run := RunState.create("deer", 306)
+	run.bench[0] = {"uid": 1, "id": "DEE1", "star": 2, "items": ["CU_ROBE"]}
+	run.board[Vector2i(3, 6)] = {"uid": 2, "id": "DEE2", "star": 1, "items": ["OG_MASK", "DM_RING"]}
+	run.next_uid = 3
+	run.inventory = ["CU_DAGGER"]
+	run.rewards_claimed = [3, 6]
+	run.pending_reward = {"round": 9, "faction": "cult", "tier": "normal", "choices": ["CU_FANG", "CU_AMULET", "CU_CODEX"]}
+	check(SaveSystem.save_run(run), "存檔")
+	var loaded := SaveSystem.load_run()
+	check(loaded != null, "讀檔")
+	if loaded != null:
+		eq(JSON.stringify(loaded.to_dict()), JSON.stringify(run.to_dict()), "裝備、背包、領取狀態完整保存")
+		eq(int(loaded.to_dict()["version"]), 2, "存檔版本 2")
+	# V0.1／V0.2 的 version 1 存檔：自動補上空裝備
+	var v1 := run.to_dict()
+	v1["version"] = 1
+	v1.erase("inventory")
+	v1.erase("rewards_claimed")
+	v1.erase("pending_reward")
+	for b in v1["bench"]:
+		if b != null:
+			b.erase("items")
+	for b in v1["board"]:
+		b.erase("items")
+	var m := RunState.from_dict(v1)
+	check(m != null, "version 1 存檔可讀取")
+	if m != null:
+		eq(m.inventory, [], "舊存檔背包為空")
+		eq(m.all_items(), [], "舊存檔棋子沒有裝備")
+		eq(m.board_count(), 1, "舊存檔棋子保留")
+		check(m.equip(1, 0) != "", "空背包不能裝備（不會當機）")
+	SaveSystem.clear()
+
+
+func test_otherworld_enemies() -> void:
+	# 變體沿用基礎棋子並只乘一次階段倍率
+	var base := UnitStats.base_stats("ORC1", 1)
+	var imp := UnitStats.base_stats("DEMON_IMP", 1)
+	eq(imp["hp"], float(roundi(base["hp"] * 1.5)), "惡魔：生命 ×1.5")
+	check(is_equal_approx(imp["atk"], snappedf(base["atk"] * 1.35, 0.1)), "惡魔：攻擊 ×1.35")
+	var acolyte := UnitStats.base_stats("CULT_ACOLYTE", 2)
+	eq(acolyte["hp"], UnitStats.base_stats("ONI1", 2)["hp"], "邪教：倍率 1.0")
+	var spawn := UnitStats.base_stats("OG_SPAWN", 1)
+	eq(spawn["hp"], float(roundi(UnitStats.base_stats("DEE3", 1)["hp"] * 2.1)), "古神：生命 ×2.1")
+	eq(UnitStats.skill("CULT_ACOLYTE")["kind"], UnitStats.skill("ONI1")["kind"], "變體沿用基礎技能")
+	eq(UnitStats.base_stats("OG_AVATAR", 1)["hp"], float(GameData.unit("OG_AVATAR")["stats"]["hp"]), "古神化身使用固定屬性（不再乘階段倍率）")
+	# 關卡配置
+	var expect := {3: "cult", 6: "cult", 9: "cult", 12: "demon", 15: "demon", 18: "demon", 21: "oldgod", 24: "oldgod"}
+	for r in range(1, 25):
+		var st := GameData.stage(r)
+		if expect.has(r):
+			eq(str(st.get("faction", "")), expect[r], "第 %d 回合為 %s" % [r, expect[r]])
+			for e in st["units"]:
+				eq(str(GameData.unit(e["id"]).get("phase", "")), expect[r], "第 %d 回合敵軍屬於該勢力" % r)
+		else:
+			check(not st.has("faction"), "第 %d 回合為一般六族敵軍" % r)
+			for e in st["units"]:
+				check(not GameData.unit(e["id"]).has("phase"), "第 %d 回合不含異界敵軍" % r)
+	check(GameData.stage(24)["units"].any(func(e): return e["id"] == "OG_AVATAR"), "第 24 回合出現古神化身")
+	# 古神化身技能確實施放
+	var sim := CombatSim.new(9)
+	var avatar := sim.add_unit("OG_AVATAR", 1, Vector2i(3, 0), 1, Modifiers.empty())
+	for c in [Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 6)]:
+		sim.add_unit("HUM2", 1, c, 0, Modifiers.empty())
+	avatar.mana = avatar.mana_max
+	check(SkillRunner.cast(sim, avatar), "古神化身施放萬眼凝視")
+	check(sim.units.filter(func(x): return x.side == 0 and x.has_status("stun")).size() == 3, "全場暈眩")
+	# 三階段平均強度遞增（以 生命 × 每秒傷害 的平方根加總估算）
+	var power := {}
+	for r in expect.keys():
+		var p := 0.0
+		for e in GameData.stage(r)["units"]:
+			var s := UnitStats.base_stats(e["id"], int(e["star"]))
+			p += sqrt(s["hp"] * s["atk"] * s["atk_speed"])
+		power[r] = p
+	var cult: float = (power[3] + power[6] + power[9]) / 3.0
+	var demon: float = (power[12] + power[15] + power[18]) / 3.0
+	var old: float = (power[21] + power[24]) / 2.0
+	check(cult < demon and demon < old, "強度：邪教 %.0f < 惡魔 %.0f < 古神 %.0f" % [cult, demon, old])
+	check(not Shop.full_pool("elf").has("DEMON_IMP"), "異界敵軍不會出現在商店")
+
+
+func test_live_stats_match() -> void:
+	# 右側即時排行由事件累加，結束時必須等於戰鬥統計
+	for r in [5, 12, 18]:
+		var run := _demo_run(500 + r)
+		run.round_no = r
+		var res := run.start_battle()
+		var acc := {}
+		for e in res["events"]:
+			match e["k"]:
+				"damage":
+					var a: Dictionary = acc.get(e["src"], {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+					a["damage"] += float(e["hp_dmg"])
+					acc[e["src"]] = a
+					var t: Dictionary = acc.get(e["tgt"], {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+					t["taken"] += float(e["hp_dmg"])
+					acc[e["tgt"]] = t
+					for pair in e["absorb_by"]:
+						var p: Dictionary = acc.get(int(pair[0]), {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+						p["shielded"] += float(pair[1])
+						acc[int(pair[0])] = p
+				"heal":
+					var h: Dictionary = acc.get(e["src"], {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+					h["healing"] += float(e["v"])
+					acc[e["src"]] = h
+		var ok := true
+		for stt in res["stats"]:
+			var a: Dictionary = acc.get(stt["cid"], {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+			for k in ["damage", "taken", "shielded", "healing"]:
+				if roundi(a[k]) != int(stt[k]):
+					ok = false
+		check(ok, "第 %d 回合：事件累加的即時統計＝最終統計" % r)
+
+
+func test_bench_during_battle() -> void:
+	# 戰鬥在開戰時已算完；之後整理候補區不影響本場結果
+	var run := _demo_run(600)
+	run.bench[0] = {"uid": 50, "id": "CEN1", "star": 1, "items": []}
+	run.bench[1] = {"uid": 51, "id": "ELF1", "star": 1, "items": []}
+	run.next_uid = 60
+	run.xp = 6   # Lv.3（場上已有 4 隻，超過上限也不會補位）
+	var res := run.start_battle()
+	var snap := JSON.stringify(res["events"])
+	run.move_to_bench(50, 7)
+	run.move_to_bench(51, 0)
+	eq(JSON.stringify(res["events"]), snap, "整理候補區不改變本場戰鬥事件")
+	check(run.bench[7] != null and int(run.bench[7]["uid"]) == 50, "候補區排列已更新（影響下一回合）")
+	var rep := run.settle(res)
+	eq(rep["cleared"], res["cleared"], "結算使用開戰時的結果")

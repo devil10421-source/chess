@@ -23,6 +23,11 @@ const KEYS := [
 	"cc_received_pct",    # 受到的控制時間 %（上限同上）
 	"low_hp_direct_pct",  # 自身 HP 低於門檻時直接傷害 %
 	"execute_pct",        # 攻擊 HP 低於門檻的敵人時傷害 %
+	"hp_flat",            # 生命（固定值，裝備）
+	"atk_flat",           # 攻擊力（固定值，裝備）
+	"atk_speed_pct",      # 攻速 %
+	"crit_chance_add",    # 暴擊率（百分點）
+	"crit_dmg_add",       # 暴擊傷害（百分點）
 ]
 
 
@@ -73,7 +78,8 @@ static func civ_effects(civ_id: String) -> Array:
 
 ## 每隻棋子的修正來源（可追溯）：回傳陣列，每隻一個 [{stat, value, source, label}]
 ## source：civ（文明 Buff／Debuff）或 trait（羈絆）；label 為給玩家看的來源說明。
-static func sources_for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool) -> Array:
+## items_per_unit（可省略）：每隻棋子身上的裝備 id 陣列，順序對應 unit_ids；裝備效果以 source = "item" 列出。
+static func sources_for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool, items_per_unit: Array = []) -> Array:
 	var counts := Synergy.count(unit_ids)
 	var actives: Array = Synergy.active(counts) if use_synergy else []
 	var ctx := {"distinct_races": counts["race"].size()}
@@ -96,6 +102,13 @@ static func sources_for_lineup(unit_ids: Array, civ_id: String, use_synergy: boo
 				if cond_ok(e.get("cond", {}), u, ctx):
 					list.append({"stat": str(e["stat"]), "value": float(e["value"]), "source": "trait",
 						"label": "%s %d：%s" % [tdef.get("name", a["key"]), int(a["count"]), a.get("text", "")]})
+		var idx := out.size()
+		if idx < items_per_unit.size() and items_per_unit[idx] != null:
+			for item_id in items_per_unit[idx]:
+				var it := GameData.item(str(item_id))
+				for stat in it.get("stats", {}).keys():
+					list.append({"stat": str(stat), "value": float(it["stats"][stat]), "source": "item",
+						"label": "裝備：%s" % it.get("name", item_id)})
 		out.append(list)
 	return out
 
@@ -113,8 +126,8 @@ static func sum_sources(list: Array) -> Dictionary:
 
 ## 計算一方棋盤上每隻棋子的修正值（由來源清單加總，確保 UI 說明與實際數值一致）。
 ## unit_ids：棋盤上每一隻的 id（可重複，順序對應回傳陣列）。civ_id：玩家文明（敵方傳 ""）；use_synergy：是否套用羈絆。
-static func for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool) -> Array:
+static func for_lineup(unit_ids: Array, civ_id: String, use_synergy: bool, items_per_unit: Array = []) -> Array:
 	var out: Array = []
-	for list in sources_for_lineup(unit_ids, civ_id, use_synergy):
+	for list in sources_for_lineup(unit_ids, civ_id, use_synergy, items_per_unit):
 		out.append(sum_sources(list))
 	return out

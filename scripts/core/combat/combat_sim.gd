@@ -11,6 +11,7 @@ extends RefCounted
 ##   mana   {cid, v}                       cast  {cid, name, cells, color, tgt}
 ##   status {cid, kind, dur, value, src}   cleanse{cid, kind}
 ##   death  {cid}                          end   {cleared, time}
+##   item   {cid, kind, hp}（裝備被動，例如開戰時的生命交換）
 
 const EPS := 0.0001
 
@@ -33,7 +34,7 @@ func _init(seed_value: int) -> void:
 
 
 # ---------- 建立單位 ----------
-func add_unit(unit_id: String, star: int, cell: Vector2i, side: int, mods: Dictionary, uid: int = 0) -> CombatUnit:
+func add_unit(unit_id: String, star: int, cell: Vector2i, side: int, mods: Dictionary, uid: int = 0, items: Array = []) -> CombatUnit:
 	if occupancy.has(cell):
 		push_error("格子 %s 已有單位" % str(cell))
 		return null
@@ -61,6 +62,11 @@ func add_unit(unit_id: String, star: int, cell: Vector2i, side: int, mods: Dicti
 	u.mana = minf(s["start_mana"], u.mana_max)
 	u.crit_chance = s["crit_chance"]
 	u.crit_mult = s["crit_mult"]
+	u.items = items.duplicate()
+	for item_id in items:
+		var p: Dictionary = GameData.item(str(item_id)).get("passive", {})
+		if not p.is_empty():
+			u.passives.append(p)
 	units.append(u)
 	occupancy[cell] = u.cid
 	return u
@@ -99,6 +105,8 @@ func run() -> Dictionary:
 	var snaps: Array = []
 	for u in units:
 		snaps.append(u.snapshot())
+	for u in units:
+		ItemPassives.on_battle_start(self, u)
 	var steps := int(round(max_time / tick))
 	var finished := false
 	for i in steps + 1:
@@ -155,6 +163,7 @@ func _act(u: CombatUnit) -> void:
 			u.casts += 1
 			u.mana = maxf(0.0, u.mana - u.mana_max)
 			emit({"k": "mana", "cid": u.cid, "v": u.mana})
+			ItemPassives.on_cast(self, u)
 			u.ready_at = t + float(cfg.get("cast_time", 0.3))
 			return
 	# 2) 索敵（嘲諷只暫時覆蓋，不改變原本的鎖定）
@@ -331,6 +340,7 @@ func basic_attack(u: CombatUnit, tgt: CombatUnit) -> void:
 	emit({"k": "attack", "cid": u.cid, "tgt": tgt.cid, "ranged": not u.is_melee()})
 	deal_damage(u, tgt, u.effective_atk(), "physical", "basic", false)
 	gain_mana(u, float(cfg.get("mana_per_attack", 10)))
+	ItemPassives.on_basic_hit(self, u, tgt)
 
 
 func gain_mana(u: CombatUnit, amount: float) -> void:
@@ -362,6 +372,7 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	var dmg := float(maxi(1, roundi(amount)))
 	var absorbed := 0.0
 	var remaining := dmg
+	var absorb_by: Array = []
 	for sh in tgt.shields:
 		if remaining <= 0.0:
 			break
@@ -370,8 +381,9 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 		remaining -= take
 		absorbed += take
 		var provider := unit_by_cid(int(sh.get("src", tgt.cid)))
-		if provider != null:
+		if provider != null and take > 0.0:
 			provider.shield_absorbed += take
+			absorb_by.append([provider.cid, take])
 	tgt.shields = tgt.shields.filter(func(x): return float(x["amount"]) > 0.0)
 	var hp_before := tgt.hp
 	tgt.hp = maxf(0.0, tgt.hp - remaining)
@@ -381,11 +393,14 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	src.overkill += remaining - hp_damage
 	tgt.damage_taken += hp_damage
 	emit({"k": "damage", "src": src.cid, "tgt": tgt.cid, "v": dmg, "absorbed": absorbed, "hp": tgt.hp,
-		"shield": tgt.shield_total(), "crit": crit, "dtype": dtype, "source": source, "basic": source == "basic", "dot": is_dot})
+		"shield": tgt.shield_total(), "crit": crit, "dtype": dtype, "source": source, "basic": source == "basic", "dot": is_dot,
+		"hp_dmg": hp_damage, "absorb_by": absorb_by})
 	if tgt.hp <= 0.0:
 		kill(tgt)
 	elif source == "basic":
 		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
+		ItemPassives.on_basic_taken(self, tgt, src, dmg)
+	ItemPassives.on_damage_dealt(self, src, hp_damage)
 	return dmg
 
 
@@ -409,6 +424,7 @@ func damage_bonus_pct(src: CombatUnit, tgt: CombatUnit, dtype: String, source: S
 			pct += float(m.get("magic_direct_pct", 0.0))
 	if not is_dot:
 		pct += src.status_sum("dmg_up")
+		pct += ItemPassives.bonus_pct(src)
 		if src.hp_ratio() < float(cfg.get("low_hp_threshold", 0.5)):
 			pct += float(m.get("low_hp_direct_pct", 0.0))
 	if tgt.hp_ratio() < float(cfg.get("execute_threshold", 0.35)):

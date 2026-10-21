@@ -5,7 +5,8 @@ extends RefCounted
 
 signal changed
 
-const SAVE_VERSION := 1
+## 存檔版本：1 = V0.1/V0.2；2 = V0.3（裝備、背包、獎勵領取狀態）。讀取舊版會自動轉換。
+const SAVE_VERSION := 2
 
 var civ_id := ""
 var round_no := 1
@@ -25,6 +26,9 @@ var gold_at_battle_start := 0
 var finished := false
 var outcome := ""              # "" / "victory" / "defeat" / "incomplete"
 var history: Array = []        # 每回合結算報告
+var inventory: Array = []      # 裝備背包（裝備 id）
+var rewards_claimed: Array = []  # 已領取裝備獎勵的回合
+var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, tier, choices: [id, id, id]}
 
 
 static func create(civ: String, seed_value: int) -> RunState:
@@ -102,7 +106,7 @@ func board_lineup() -> Array:
 	var out: Array = []
 	for c in _sorted_board_cells():
 		var u: Dictionary = board[c]
-		out.append({"uid": u["uid"], "id": u["id"], "star": u["star"], "cell": c})
+		out.append({"uid": u["uid"], "id": u["id"], "star": u["star"], "cell": c, "items": unit_items(u).duplicate()})
 	return out
 
 
@@ -194,7 +198,7 @@ func buy(slot: int) -> String:
 
 
 func _new_unit(id: String, star: int) -> Dictionary:
-	var u := {"uid": next_uid, "id": id, "star": star}
+	var u := {"uid": next_uid, "id": id, "star": star, "items": []}
 	next_uid += 1
 	return u
 
@@ -216,13 +220,16 @@ func _try_merge(id: String, star: int) -> void:
 	if found.size() < 3:
 		return
 	var keep: Dictionary = found[0]
+	var merged_items: Array = unit_items(keep["unit"]).duplicate()
 	for k in [1, 2]:
 		var f: Dictionary = found[k]
+		merged_items.append_array(unit_items(f["unit"]))
 		if f["where"] == "board":
 			board.erase(f["cell"])
 		else:
 			bench[int(f["index"])] = null
 	keep["unit"]["star"] = star + 1
+	_settle_merged_items(keep["unit"], merged_items)
 	_try_merge(id, star + 1)
 
 
@@ -240,11 +247,14 @@ func _merge_with_incoming(id: String) -> void:
 		return
 	var keep: Dictionary = found[0]
 	var other: Dictionary = found[1]
+	var merged_items: Array = unit_items(keep["unit"]).duplicate()
+	merged_items.append_array(unit_items(other["unit"]))
 	if other["where"] == "board":
 		board.erase(other["cell"])
 	else:
 		bench[int(other["index"])] = null
 	keep["unit"]["star"] = 2
+	_settle_merged_items(keep["unit"], merged_items)
 	_try_merge(id, 2)
 
 
@@ -286,10 +296,104 @@ func sell(uid: int) -> String:
 		return "找不到棋子"
 	var u: Dictionary = f["unit"]
 	gold += UnitStats.sell_value(u["id"], int(u["star"]))
+	# 出售時裝備自動返回背包
+	inventory.append_array(unit_items(u))
+	u["items"] = []
 	if f["where"] == "bench":
 		bench[int(f["index"])] = null
 	else:
 		board.erase(f["cell"])
+	_notify()
+	return ""
+
+
+# ---------- 裝備（V0.3） ----------
+static func unit_items(u: Dictionary) -> Array:
+	if not u.has("items") or u["items"] == null:
+		u["items"] = []
+	return u["items"]
+
+
+## 合成後最多保留 2 件在棋子身上（保留棋子原有的優先），其餘返回背包，不會遺失或複製
+func _settle_merged_items(u: Dictionary, all_items: Array) -> void:
+	var slots := GameData.item_slots()
+	u["items"] = all_items.slice(0, slots)
+	if all_items.size() > slots:
+		inventory.append_array(all_items.slice(slots))
+
+
+## 把背包第 inv_index 件裝到棋子上；slot 有裝備時互換（舊的回背包）。免費。
+func equip(uid: int, inv_index: int, slot: int = -1) -> String:
+	if finished:
+		return "遠征已結束"
+	var f := find_unit(uid)
+	if f.is_empty():
+		return "找不到棋子"
+	if inv_index < 0 or inv_index >= inventory.size():
+		return "背包沒有這件裝備"
+	var items := unit_items(f["unit"])
+	var item_id: String = inventory[inv_index]
+	if slot >= 0 and slot < items.size():
+		inventory[inv_index] = items[slot]
+		items[slot] = item_id
+	elif items.size() < GameData.item_slots():
+		inventory.remove_at(inv_index)
+		items.append(item_id)
+	else:
+		return "裝備欄已滿（最多 %d 件）" % GameData.item_slots()
+	_notify()
+	return ""
+
+
+## 卸下裝備（免費）回到背包
+func unequip(uid: int, slot: int) -> String:
+	var f := find_unit(uid)
+	if f.is_empty():
+		return "找不到棋子"
+	var items := unit_items(f["unit"])
+	if slot < 0 or slot >= items.size():
+		return "這格沒有裝備"
+	inventory.append(items[slot])
+	items.remove_at(slot)
+	_notify()
+	return ""
+
+
+## 目前擁有的所有裝備（背包＋棋子身上），檢查不遺失、不複製用
+func all_items() -> Array:
+	var out: Array = inventory.duplicate()
+	for u in all_units():
+		out.append_array(unit_items(u))
+	return out
+
+
+## 戰後若剛完成裝備獎勵回合，產生三選一（每個獎勵回合只會產生一次）
+func _maybe_create_reward(round_done: int) -> void:
+	var cfg := GameData.reward_for_round(round_done)
+	if cfg.is_empty() or rewards_claimed.has(round_done) or not pending_reward.is_empty():
+		return
+	pending_reward = {"round": round_done, "faction": cfg["faction"], "tier": cfg["tier"],
+		"choices": Equipment.roll_choices(shop_rng, str(cfg["faction"]), str(cfg["tier"]))}
+
+
+func has_pending_reward() -> bool:
+	return not pending_reward.is_empty()
+
+
+## 選擇三選一中的第 index 件，加入背包
+func claim_reward(index: int) -> String:
+	if pending_reward.is_empty():
+		return "沒有可領取的獎勵"
+	var choices: Array = pending_reward["choices"]
+	if index < 0 or index >= choices.size():
+		return "無效的選擇"
+	var r := int(pending_reward["round"])
+	if rewards_claimed.has(r):
+		pending_reward = {}
+		return "這個回合的獎勵已領取"
+	inventory.append(choices[index])
+	rewards_claimed.append(r)
+	pending_reward = {}
 	_notify()
 	return ""
 
@@ -422,6 +526,9 @@ func settle(result: Dictionary) -> Dictionary:
 		report["xp_gain"] = Economy.natural_xp()
 	report["level_after"] = level()
 	report["hp_after"] = hp
+	# 裝備獎勵：完成裝備回合（存活）即可三選一，於下一回合備戰前選擇
+	_maybe_create_reward(round_no)
+	report["reward"] = not pending_reward.is_empty()
 	# 7. 進入下一回合或結束
 	if round_no >= GameData.total_rounds():
 		finished = true
@@ -436,7 +543,7 @@ func settle(result: Dictionary) -> Dictionary:
 
 # ---------- 存檔 ----------
 func _unit_to_dict(u: Dictionary) -> Dictionary:
-	return {"uid": int(u["uid"]), "id": str(u["id"]), "star": int(u["star"])}
+	return {"uid": int(u["uid"]), "id": str(u["id"]), "star": int(u["star"]), "items": unit_items(u).duplicate()}
 
 
 func to_dict() -> Dictionary:
@@ -456,11 +563,24 @@ func to_dict() -> Dictionary:
 		"shop": shop.duplicate(), "shop_locked": shop_locked, "free_rerolls": free_rerolls,
 		"bench": bench_out, "board": board_out, "next_uid": next_uid, "prepared_round": prepared_round,
 		"finished": finished, "outcome": outcome, "history": history.duplicate(true),
+		"inventory": inventory.duplicate(), "rewards_claimed": rewards_claimed.duplicate(),
+		"pending_reward": pending_reward.duplicate(true),
 	}
 
 
+static func _items_from(v: Variant) -> Array:
+	var out: Array = []
+	if typeof(v) == TYPE_ARRAY:
+		for x in v:
+			if GameData.has_item(str(x)):
+				out.append(str(x))
+	return out
+
+
+## 讀取存檔。version 1（V0.1/V0.2）沒有裝備資料，自動補上空背包與空裝備欄。
 static func from_dict(d: Dictionary) -> RunState:
-	if int(d.get("version", 0)) != SAVE_VERSION:
+	var ver := int(d.get("version", 0))
+	if ver < 1 or ver > SAVE_VERSION:
 		return null
 	var civ := str(d.get("civ_id", ""))
 	if GameData.civ(civ).is_empty():
@@ -480,14 +600,21 @@ static func from_dict(d: Dictionary) -> RunState:
 	for i in mini(bench_in.size(), r.bench.size()):
 		var b = bench_in[i]
 		if b != null and GameData.has_unit(str(b["id"])):
-			r.bench[i] = {"uid": int(b["uid"]), "id": str(b["id"]), "star": int(b["star"])}
+			r.bench[i] = {"uid": int(b["uid"]), "id": str(b["id"]), "star": int(b["star"]), "items": _items_from(b.get("items", []))}
 	for b in d.get("board", []):
 		var cell := Vector2i(int(b["col"]), int(b["row"]))
 		if HexGrid.is_player_cell(cell) and GameData.has_unit(str(b["id"])):
-			r.board[cell] = {"uid": int(b["uid"]), "id": str(b["id"]), "star": int(b["star"])}
+			r.board[cell] = {"uid": int(b["uid"]), "id": str(b["id"]), "star": int(b["star"]), "items": _items_from(b.get("items", []))}
 	r.next_uid = int(d.get("next_uid", 1))
 	r.prepared_round = int(d.get("prepared_round", 0))
 	r.finished = bool(d.get("finished", false))
 	r.outcome = str(d.get("outcome", ""))
 	r.history = d.get("history", [])
+	r.inventory = _items_from(d.get("inventory", []))
+	for x in d.get("rewards_claimed", []):
+		r.rewards_claimed.append(int(x))
+	var pr = d.get("pending_reward", {})
+	if typeof(pr) == TYPE_DICTIONARY and not pr.is_empty():
+		r.pending_reward = {"round": int(pr["round"]), "faction": str(pr["faction"]), "tier": str(pr["tier"]),
+			"choices": _items_from(pr.get("choices", []))}
 	return r

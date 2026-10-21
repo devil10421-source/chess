@@ -20,12 +20,14 @@ static func battle_seed(run_seed: int, round_no: int) -> int:
 static func build(player_units: Array, civ_id: String, round_no: int, seed_value: int) -> CombatSim:
 	var sim := CombatSim.new(seed_value)
 	var p_ids: Array = []
+	var p_items: Array = []
 	for p in player_units:
 		p_ids.append(p["id"])
-	var p_mods := Modifiers.for_lineup(p_ids, civ_id, true)
+		p_items.append(p.get("items", []))
+	var p_mods := Modifiers.for_lineup(p_ids, civ_id, true, p_items)
 	for i in player_units.size():
 		var p: Dictionary = player_units[i]
-		sim.add_unit(p["id"], int(p["star"]), p["cell"], 0, p_mods[i], int(p.get("uid", 0)))
+		sim.add_unit(p["id"], int(p["star"]), p["cell"], 0, p_mods[i], int(p.get("uid", 0)), p.get("items", []))
 	var enemies := stage_units(round_no)
 	var e_ids: Array = []
 	for e in enemies:

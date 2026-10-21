@@ -38,6 +38,10 @@ var front_rank := 0
 var stuck_since := -1.0
 ## 非死亡原因的換目標次數（測試用）
 var target_switches := 0
+## 裝備（V0.3）：身上的裝備 id 與其被動
+var items: Array = []
+var passives: Array = []
+var item_counter := 0
 ## 狀態：{kind, value, until, src, next_tick?, tick_amount?, dtype?, tag?}
 var statuses: Array = []
 ## 護盾：{amount, until}
@@ -122,5 +126,6 @@ func snapshot() -> Dictionary:
 		"cid": cid, "side": side, "uid": uid, "id": unit_id, "star": star,
 		"cell": cell, "hp": hp, "max_hp": max_hp, "mana": mana, "mana_max": mana_max,
 		"shield": shield_total(), "atk": atk, "armor": armor, "mr": mr, "atk_speed": atk_speed,
-		"range": attack_range, "move_speed": move_speed, "mods": mods.duplicate(),
+		"range": attack_range, "move_speed": move_speed, "mods": mods.duplicate(), "items": items.duplicate(),
+		"crit_chance": crit_chance, "crit_mult": crit_mult,
 	}

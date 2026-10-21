@@ -1,41 +1,477 @@
 {
-  "_note": "羈絆只計棋盤上「不同名稱」的棋子；達到較高門檻時以較高階取代較低階。效果只加成符合該標籤的棋子。group: race(種族) / type(類型) / class(職業)。",
+  "_note": "羈絆只計棋盤上「不同名稱」的棋子；達到較高門檻時以較高階取代較低階（不累加）。效果只加成符合該標籤的棋子。種族 2/3/4（V0.3）、職業 2/3、類型 2/4。",
   "race": {
-    "elf":     {"name": "精靈",   "tiers": [{"count": 2, "text": "此族遠程普攻 +5%", "effects": [{"stat": "ranged_basic_pct", "value": 5}]},
-                                           {"count": 3, "text": "此族遠程普攻 +8%，初始魔力 +8", "effects": [{"stat": "ranged_basic_pct", "value": 8}, {"stat": "start_mana", "value": 8}]}]},
-    "human":   {"name": "人類",   "tiers": [{"count": 2, "text": "此族護甲 +4", "effects": [{"stat": "armor_flat", "value": 4}]},
-                                           {"count": 3, "text": "此族護甲 +8", "effects": [{"stat": "armor_flat", "value": 8}]}]},
-    "orc":     {"name": "半獸人", "tiers": [{"count": 2, "text": "此族近戰普攻 +5%", "effects": [{"stat": "melee_basic_pct", "value": 5}]},
-                                           {"count": 3, "text": "此族近戰普攻 +10%", "effects": [{"stat": "melee_basic_pct", "value": 10}]}]},
-    "centaur": {"name": "半人馬", "tiers": [{"count": 2, "text": "此族移動速度 +8%", "effects": [{"stat": "move_speed_pct", "value": 8}]},
-                                           {"count": 3, "text": "此族移動速度 +15%", "effects": [{"stat": "move_speed_pct", "value": 15}]}]},
-    "deer":    {"name": "鹿角人", "tiers": [{"count": 2, "text": "此族治療與護盾 +6%", "effects": [{"stat": "heal_shield_pct", "value": 6}]},
-                                           {"count": 3, "text": "此族治療與護盾 +12%", "effects": [{"stat": "heal_shield_pct", "value": 12}]}]},
-    "oni":     {"name": "鬼人",   "tiers": [{"count": 2, "text": "此族法術直接傷害 +6%", "effects": [{"stat": "magic_direct_pct", "value": 6}]},
-                                           {"count": 3, "text": "此族法術直接傷害 +12%", "effects": [{"stat": "magic_direct_pct", "value": 12}]}]}
+    "elf": {
+      "name": "精靈",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族遠程普攻 +5%",
+          "effects": [
+            {
+              "stat": "ranged_basic_pct",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族遠程普攻 +8%，初始魔力 +8",
+          "effects": [
+            {
+              "stat": "ranged_basic_pct",
+              "value": 8
+            },
+            {
+              "stat": "start_mana",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族遠程普攻 +12%，初始魔力 +15",
+          "effects": [
+            {
+              "stat": "ranged_basic_pct",
+              "value": 12
+            },
+            {
+              "stat": "start_mana",
+              "value": 15
+            }
+          ]
+        }
+      ]
+    },
+    "human": {
+      "name": "人類",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族物防 +4",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族物防 +8",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族物防 +14",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 14
+            }
+          ]
+        }
+      ]
+    },
+    "orc": {
+      "name": "半獸人",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族近戰普攻 +5%",
+          "effects": [
+            {
+              "stat": "melee_basic_pct",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族近戰普攻 +10%",
+          "effects": [
+            {
+              "stat": "melee_basic_pct",
+              "value": 10
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族近戰普攻 +16%",
+          "effects": [
+            {
+              "stat": "melee_basic_pct",
+              "value": 16
+            }
+          ]
+        }
+      ]
+    },
+    "centaur": {
+      "name": "半人馬",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族移速 +8%",
+          "effects": [
+            {
+              "stat": "move_speed_pct",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族移速 +15%",
+          "effects": [
+            {
+              "stat": "move_speed_pct",
+              "value": 15
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族移速 +25%",
+          "effects": [
+            {
+              "stat": "move_speed_pct",
+              "value": 25
+            }
+          ]
+        }
+      ]
+    },
+    "deer": {
+      "name": "鹿角人",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族治療與護盾 +6%",
+          "effects": [
+            {
+              "stat": "heal_shield_pct",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族治療與護盾 +12%",
+          "effects": [
+            {
+              "stat": "heal_shield_pct",
+              "value": 12
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族治療與護盾 +20%",
+          "effects": [
+            {
+              "stat": "heal_shield_pct",
+              "value": 20
+            }
+          ]
+        }
+      ]
+    },
+    "oni": {
+      "name": "鬼人",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此族技能傷害 +6%（含技能持續傷害）",
+          "effects": [
+            {
+              "stat": "skill_dmg_pct",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此族技能傷害 +12%（含技能持續傷害）",
+          "effects": [
+            {
+              "stat": "skill_dmg_pct",
+              "value": 12
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此族技能傷害 +20%（含技能持續傷害）",
+          "effects": [
+            {
+              "stat": "skill_dmg_pct",
+              "value": 20
+            }
+          ]
+        }
+      ]
+    }
   },
   "class": {
-    "warrior":  {"name": "戰士", "tiers": [{"count": 2, "text": "此職業普攻 +5%", "effects": [{"stat": "basic_dmg_pct", "value": 5}]},
-                                          {"count": 3, "text": "此職業普攻 +10%", "effects": [{"stat": "basic_dmg_pct", "value": 10}]}]},
-    "guardian": {"name": "守衛", "tiers": [{"count": 2, "text": "此職業護甲 +5", "effects": [{"stat": "armor_flat", "value": 5}]},
-                                          {"count": 3, "text": "此職業護甲 +10", "effects": [{"stat": "armor_flat", "value": 10}]}]},
-    "archer":   {"name": "射手", "tiers": [{"count": 2, "text": "此職業普攻 +5%", "effects": [{"stat": "basic_dmg_pct", "value": 5}]},
-                                          {"count": 3, "text": "此職業普攻 +10%", "effects": [{"stat": "basic_dmg_pct", "value": 10}]}]},
-    "mage":     {"name": "法師", "tiers": [{"count": 2, "text": "此職業直接技能傷害 +6%", "effects": [{"stat": "skill_direct_pct", "value": 6}]},
-                                          {"count": 3, "text": "此職業直接技能傷害 +12%", "effects": [{"stat": "skill_direct_pct", "value": 12}]}]},
-    "assassin": {"name": "刺客", "tiers": [{"count": 2, "text": "此職業普攻 +6%", "effects": [{"stat": "basic_dmg_pct", "value": 6}]},
-                                          {"count": 3, "text": "此職業普攻 +12%", "effects": [{"stat": "basic_dmg_pct", "value": 12}]}]},
-    "priest":   {"name": "祭司", "tiers": [{"count": 2, "text": "此職業治療與護盾 +6%", "effects": [{"stat": "heal_shield_pct", "value": 6}]},
-                                          {"count": 3, "text": "此職業治療與護盾 +12%", "effects": [{"stat": "heal_shield_pct", "value": 12}]}]}
+    "warrior": {
+      "name": "戰士",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業普攻 +5%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業普攻 +10%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    },
+    "guardian": {
+      "name": "守衛",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業護甲 +5",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業護甲 +10",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    },
+    "archer": {
+      "name": "射手",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業普攻 +5%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業普攻 +10%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    },
+    "mage": {
+      "name": "法師",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業直接技能傷害 +6%",
+          "effects": [
+            {
+              "stat": "skill_direct_pct",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業直接技能傷害 +12%",
+          "effects": [
+            {
+              "stat": "skill_direct_pct",
+              "value": 12
+            }
+          ]
+        }
+      ]
+    },
+    "assassin": {
+      "name": "刺客",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業普攻 +6%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業普攻 +12%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 12
+            }
+          ]
+        }
+      ]
+    },
+    "priest": {
+      "name": "祭司",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此職業治療與護盾 +6%",
+          "effects": [
+            {
+              "stat": "heal_shield_pct",
+              "value": 6
+            }
+          ]
+        },
+        {
+          "count": 3,
+          "text": "此職業治療與護盾 +12%",
+          "effects": [
+            {
+              "stat": "heal_shield_pct",
+              "value": 12
+            }
+          ]
+        }
+      ]
+    }
   },
   "type": {
-    "vanguard": {"name": "前衛", "tiers": [{"count": 2, "text": "此類型護甲 +3", "effects": [{"stat": "armor_flat", "value": 3}]},
-                                          {"count": 4, "text": "此類型護甲 +6", "effects": [{"stat": "armor_flat", "value": 6}]}]},
-    "rear":     {"name": "後衛", "tiers": [{"count": 2, "text": "此類型普攻傷害 +3%", "effects": [{"stat": "basic_dmg_pct", "value": 3}]},
-                                          {"count": 4, "text": "此類型普攻傷害 +6%", "effects": [{"stat": "basic_dmg_pct", "value": 6}]}]},
-    "mobile":   {"name": "機動", "tiers": [{"count": 2, "text": "此類型移動速度 +5%", "effects": [{"stat": "move_speed_pct", "value": 5}]},
-                                          {"count": 4, "text": "此類型移動速度 +10%", "effects": [{"stat": "move_speed_pct", "value": 10}]}]},
-    "support":  {"name": "支援", "tiers": [{"count": 2, "text": "此類型初始魔力 +5", "effects": [{"stat": "start_mana", "value": 5}]},
-                                          {"count": 4, "text": "此類型初始魔力 +10", "effects": [{"stat": "start_mana", "value": 10}]}]}
+    "vanguard": {
+      "name": "前衛",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此類型護甲 +3",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此類型護甲 +6",
+          "effects": [
+            {
+              "stat": "armor_flat",
+              "value": 6
+            }
+          ]
+        }
+      ]
+    },
+    "rear": {
+      "name": "後衛",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此類型普攻傷害 +3%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此類型普攻傷害 +6%",
+          "effects": [
+            {
+              "stat": "basic_dmg_pct",
+              "value": 6
+            }
+          ]
+        }
+      ]
+    },
+    "mobile": {
+      "name": "機動",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此類型移動速度 +5%",
+          "effects": [
+            {
+              "stat": "move_speed_pct",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此類型移動速度 +10%",
+          "effects": [
+            {
+              "stat": "move_speed_pct",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    },
+    "support": {
+      "name": "支援",
+      "tiers": [
+        {
+          "count": 2,
+          "text": "此類型初始魔力 +5",
+          "effects": [
+            {
+              "stat": "start_mana",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "count": 4,
+          "text": "此類型初始魔力 +10",
+          "effects": [
+            {
+              "stat": "start_mana",
+              "value": 10
+            }
+          ]
+        }
+      ]
+    }
   }
 }

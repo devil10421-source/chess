@@ -12,6 +12,7 @@ static var _stage_map: Dictionary = {}
 
 static func reload() -> void:
 	_cache.clear()
+	_item_map.clear()
 	_unit_map.clear()
 	_civ_map.clear()
 	_stage_map.clear()
@@ -77,12 +78,77 @@ static func unit(id: String) -> Dictionary:
 		for u in units():
 			_unit_map[u["id"]] = u
 		for u in special_units():
-			_unit_map[u["id"]] = u
+			_unit_map[u["id"]] = _resolve_variant(u)
 	return _unit_map.get(id, {})
 
 
+## 異界變體：以 base 指定的基礎棋子為底（沿用其職業、費用、技能、外觀），再覆寫變體自己的欄位。
+## 這樣新增腐化變體只需要寫差異，不必重寫整隻棋子。
+static func _resolve_variant(u: Dictionary) -> Dictionary:
+	if not u.has("base"):
+		return u
+	var base_id := str(u["base"])
+	var base: Dictionary = {}
+	for b in units():
+		if b["id"] == base_id:
+			base = b
+	if base.is_empty():
+		push_error("異界變體 %s 的 base %s 不存在" % [u.get("id", "?"), base_id])
+		return u
+	var merged: Dictionary = base.duplicate(true)
+	for k in u.keys():
+		merged[k] = u[k]
+	merged["base_unit"] = base_id
+	return merged
+
+
 static func is_special(id: String) -> bool:
-	return unit(id).has("stats")
+	var u := unit(id)
+	return u.has("stats") or u.has("phase")
+
+
+# ---------- 異界勢力（V0.3） ----------
+static func phase(key: String) -> Dictionary:
+	return cfg("otherworld").get("phases", {}).get(key, {})
+
+
+# ---------- 裝備（V0.3） ----------
+static var _item_map: Dictionary = {}
+
+
+static func equipment() -> Dictionary:
+	return _load("equipment")
+
+
+static func items() -> Array:
+	return equipment().get("items", [])
+
+
+static func item(id: String) -> Dictionary:
+	if _item_map.is_empty():
+		for it in items():
+			_item_map[it["id"]] = it
+	return _item_map.get(id, {})
+
+
+static func has_item(id: String) -> bool:
+	return not item(id).is_empty()
+
+
+static func reward_rounds() -> Array:
+	return equipment().get("reward_rounds", [])
+
+
+## 該回合的裝備獎勵設定 {round, faction, tier}；不是獎勵回合回傳空字典
+static func reward_for_round(round_no: int) -> Dictionary:
+	for r in reward_rounds():
+		if int(r["round"]) == round_no:
+			return r
+	return {}
+
+
+static func item_slots() -> int:
+	return int(equipment().get("slots_per_unit", 2))
 
 
 static func has_unit(id: String) -> bool:

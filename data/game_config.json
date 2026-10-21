@@ -6,7 +6,8 @@
     "chapter_length": 6,
     "boss_rounds": [6, 12, 18, 24],
     "_prep_note": "每回合備戰秒數（倒數結束自動開戰；可提前按開始戰鬥）",
-    "prep_seconds": 15,
+    "prep_seconds": 30,
+    "prep_caution_seconds": 10,
     "prep_warning_seconds": 5
   },
   "economy": {
@@ -126,12 +127,20 @@
     "front_weight": 2,
     "stuck_retarget_time": 1.5
   },
+  "otherworld": {
+    "_note": "異界入侵三階段倍率：只套用在以基礎棋子為底的異界變體（units.json 的 special_units 有 base 欄位者）；指定固定屬性的首領不再乘倍率。關卡本身沒有額外倍率，避免重複疊加。",
+    "phases": {
+      "cult": {"name": "邪教", "hp_mult": 1.0, "atk_mult": 1.0, "color": "#7d5aa6"},
+      "demon": {"name": "惡魔", "hp_mult": 1.5, "atk_mult": 1.35, "color": "#c23b2e"},
+      "oldgod": {"name": "古神", "hp_mult": 2.1, "atk_mult": 1.7, "color": "#2f8f8a"}
+    }
+  },
   "enemy": {
     "use_synergies": false
   },
   "labels": {
-    "races": {"elf": "精靈", "human": "人類", "orc": "半獸人", "centaur": "半人馬", "deer": "鹿角人", "oni": "鬼人", "neutral": "中立"},
+    "races": {"elf": "精靈", "human": "人類", "orc": "半獸人", "centaur": "半人馬", "deer": "鹿角人", "oni": "鬼人", "neutral": "中立", "cult": "邪教", "demon": "惡魔", "oldgod": "古神"},
     "types": {"vanguard": "前衛", "rear": "後衛", "mobile": "機動", "support": "支援"},
-    "race_colors": {"neutral": "#8a8070", "elf": "#4fbf6a", "human": "#d9c27a", "orc": "#c0563a", "centaur": "#b9864a", "deer": "#5fa7a0", "oni": "#9a3d7c"}
+    "race_colors": {"neutral": "#8a8070", "cult": "#7d5aa6", "demon": "#b0302a", "oldgod": "#1f7f7a", "elf": "#4fbf6a", "human": "#d9c27a", "orc": "#c0563a", "centaur": "#b9864a", "deer": "#5fa7a0", "oni": "#9a3d7c"}
   }
 }

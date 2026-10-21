@@ -1,64 +1,755 @@
 {
-  "_note": "24 種基礎棋子。技能參數慣例：dmg/dmg2/heal/shield/hot/dot = 稀有度技能預算(1~4費: 24/40/65/95)的倍數，再乘星級技能倍率；cc = 控制秒數(依星級規則微幅成長)；atk_pct = 攻擊力百分比(不再乘星級固定倍率)；其餘 dur/pct/armor/radius/count 不隨星級成長。dtype: physical 物理 / magic 法術。mana_max 省略時用 game_config.combat.mana_max。",
-  "units": [
-    {"id": "ELF1", "name": "枝盾哨衛", "short": "枝盾", "race": "elf", "cost": 1, "type": "vanguard", "class": "guardian", "range": 1, "mana_max": 50,
-     "skill": {"kind": "self_shield", "name": "樹皮護盾", "desc": "自身獲得 {shield} 護盾，持續 {dur} 秒。", "params": {"shield": 2.2, "dur": 4}}},
-    {"id": "ELF2", "name": "林地射手", "short": "林射", "race": "elf", "cost": 2, "type": "rear", "class": "archer", "range": 3,
-     "skill": {"kind": "mark_prey", "name": "獵物標記", "desc": "射擊目標造成 {dmg} 物理傷害並標記 {dur} 秒；自身對被標記者普攻傷害 +{pct}%。", "params": {"dmg": 1.0, "dur": 4, "pct": 40, "dtype": "physical"}}},
-    {"id": "ELF3", "name": "星紋術士", "short": "星紋", "race": "elf", "cost": 3, "type": "support", "class": "mage", "range": 3,
-     "skill": {"kind": "area_cc", "name": "星光束縛", "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並緩速 {pct}%（{cc} 秒）。", "params": {"dmg": 0.9, "radius": 1, "cc": 2.0, "cc_kind": "slow", "pct": 35, "dtype": "magic"}}},
-    {"id": "ELF4", "name": "月冠裁決者", "short": "月冠", "race": "elf", "cost": 4, "type": "mobile", "class": "assassin", "range": 1, "mana_max": 50,
-     "skill": {"kind": "dash_strike", "name": "月刃追獵", "desc": "突入最遠的敵人（後排）身旁，造成 {dmg} 物理傷害。", "params": {"dmg": 1.7, "pick": "farthest", "dtype": "physical"}}},
-
-    {"id": "HUM1", "name": "行旅醫士", "short": "醫士", "race": "human", "cost": 1, "type": "support", "class": "priest", "range": 3, "mana_max": 50,
-     "skill": {"kind": "heal_lowest", "name": "戰地包紮", "desc": "治療生命比例最低的友軍 {heal}。", "params": {"heal": 2.2}}},
-    {"id": "HUM2", "name": "王國盾衛", "short": "盾衛", "race": "human", "cost": 2, "type": "vanguard", "class": "guardian", "range": 1,
-     "skill": {"kind": "shield_taunt", "name": "堅守陣線", "desc": "自身獲得 {shield} 護盾（{dur} 秒），並嘲諷 {radius} 格內的敵人 {cc} 秒。", "params": {"shield": 2.0, "dur": 4, "radius": 2, "cc": 2.0}}},
-    {"id": "HUM3", "name": "夜梟密探", "short": "夜梟", "race": "human", "cost": 3, "type": "mobile", "class": "assassin", "range": 1, "mana_max": 50,
-     "skill": {"kind": "dash_strike", "name": "弱點奇襲", "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害並使其護甲 -{armor}（{dur} 秒）。", "params": {"dmg": 1.2, "pick": "lowest_hp", "armor": 15, "dur": 4, "dtype": "physical"}}},
-    {"id": "HUM4", "name": "王國大元帥", "short": "元帥", "race": "human", "cost": 4, "type": "support", "class": "guardian", "range": 1,
-     "skill": {"kind": "rally", "name": "軍團號令", "desc": "自身與 {radius} 格內友軍護甲 +{armor}、攻擊力 +{pct}%（{dur} 秒），自身獲得 {shield} 護盾。", "params": {"armor": 15, "pct": 20, "dur": 5, "radius": 2, "shield": 1.0}}},
-
-    {"id": "ORC1", "name": "裂骨鬥士", "short": "裂骨", "race": "orc", "cost": 1, "type": "vanguard", "class": "warrior", "range": 1,
-     "skill": {"kind": "strike", "name": "裂骨重擊", "desc": "對目標造成 {dmg} 物理傷害。", "params": {"dmg": 2.2, "dtype": "physical"}}},
-    {"id": "ORC2", "name": "狂戰士", "short": "狂戰", "race": "orc", "cost": 2, "type": "mobile", "class": "warrior", "range": 1,
-     "skill": {"kind": "blood_rage", "name": "血怒", "desc": "{dur} 秒內直接傷害 +{pct}%；施放時生命低於 50% 改為 +{pct2}%。並回復 {heal} 生命。", "params": {"pct": 25, "pct2": 50, "dur": 5, "heal": 0.6}}},
-    {"id": "ORC3", "name": "戰矛獵手", "short": "戰矛", "race": "orc", "cost": 3, "type": "rear", "class": "archer", "range": 3,
-     "skill": {"kind": "strike", "name": "裂甲投矛", "desc": "投矛造成 {dmg} 物理傷害並使目標護甲 -{armor}（{dur} 秒）。", "params": {"dmg": 1.1, "armor": 15, "dur": 4, "dtype": "physical"}}},
-    {"id": "ORC4", "name": "赤牙戰王", "short": "戰王", "race": "orc", "cost": 4, "type": "vanguard", "class": "warrior", "range": 1,
-     "skill": {"kind": "warlord_roar", "name": "戰王怒吼", "desc": "自身攻擊力 +{pct}% 並回復 {heal}（{dur} 秒）；{radius} 格內近戰友軍直接傷害 +{pct2}%。", "params": {"pct": 40, "pct2": 15, "dur": 5, "radius": 2, "heal": 1.0}}},
-
-    {"id": "CEN1", "name": "草原弓手", "short": "草弓", "race": "centaur", "cost": 1, "type": "rear", "class": "archer", "range": 3, "mana_max": 40,
-     "skill": {"kind": "rapid_shot", "name": "迅捷連射", "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害。", "params": {"dmg": 1.0, "atk_pct": 100, "dtype": "physical"}}},
-    {"id": "CEN2", "name": "衝鋒騎兵", "short": "騎兵", "race": "centaur", "cost": 2, "type": "mobile", "class": "warrior", "range": 1,
-     "skill": {"kind": "dash_strike", "name": "破陣衝鋒", "desc": "衝向最近的敵人（前排），造成 {dmg} 物理撞擊傷害。", "params": {"dmg": 1.6, "pick": "nearest", "dtype": "physical"}}},
-    {"id": "CEN3", "name": "鐵蹄衛士", "short": "鐵蹄", "race": "centaur", "cost": 3, "type": "vanguard", "class": "guardian", "range": 1,
-     "skill": {"kind": "brace", "name": "迎擊姿態", "desc": "{dur} 秒內承受的物理傷害 -{pct}%，並回復 {heal}。", "params": {"pct": 45, "dur": 4, "heal": 0.8}}},
-    {"id": "CEN4", "name": "風暴騎主", "short": "風暴", "race": "centaur", "cost": 4, "type": "mobile", "class": "warrior", "range": 1,
-     "skill": {"kind": "thunder_charge", "name": "雷蹄奔襲", "desc": "朝目標衝鋒，沿途 1 格內的敵人受到 {dmg} 法術傷害並暈眩 {cc} 秒。", "params": {"dmg": 1.0, "cc": 1.0, "dtype": "magic"}}},
-
-    {"id": "DEE1", "name": "苔甲護林者", "short": "苔甲", "race": "deer", "cost": 1, "type": "vanguard", "class": "guardian", "range": 1,
-     "skill": {"kind": "living_bark", "name": "活木之甲", "desc": "自身護甲 +{armor}（{dur} 秒）並回復 {heal}。", "params": {"armor": 20, "dur": 4, "heal": 1.8}}},
-    {"id": "DEE2", "name": "自然醫者", "short": "醫者", "race": "deer", "cost": 2, "type": "support", "class": "priest", "range": 3,
-     "skill": {"kind": "rejuvenate", "name": "回春術", "desc": "對生命比例最低的 {count} 名友軍施加持續治療，各共回復 {hot}（約 {dur} 秒）。", "params": {"hot": 2.0, "dur": 4, "count": 2}}},
-    {"id": "DEE3", "name": "花語術士", "short": "花語", "race": "deer", "cost": 3, "type": "rear", "class": "mage", "range": 3,
-     "skill": {"kind": "area_cc", "name": "藤蔓禁錮", "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害並定身 {cc} 秒。", "params": {"dmg": 0.8, "radius": 1, "cc": 1.5, "cc_kind": "root", "dtype": "magic"}}},
-    {"id": "DEE4", "name": "古林聖使", "short": "聖使", "race": "deer", "cost": 4, "type": "support", "class": "priest", "range": 3,
-     "skill": {"kind": "forest_prayer", "name": "森林祝禱", "desc": "治療 {radius} 格內所有友軍 {heal}，並各去除一項負面效果。", "params": {"heal": 1.3, "radius": 3}}},
-
-    {"id": "ONI1", "name": "鬼面刀客", "short": "刀客", "race": "oni", "cost": 1, "type": "vanguard", "class": "warrior", "range": 1,
-     "skill": {"kind": "bleed_strike", "name": "血刃斬", "desc": "造成 {dmg} 物理傷害，並使目標流血共 {dot}（{dur} 秒）。", "params": {"dmg": 1.3, "dot": 1.0, "dur": 3, "dtype": "physical"}}},
-    {"id": "ONI2", "name": "咒術師", "short": "咒術", "race": "oni", "cost": 2, "type": "rear", "class": "mage", "range": 3,
-     "skill": {"kind": "curse", "name": "噬魂咒", "desc": "造成 {dmg} 法術傷害，並使目標攻擊力 -{pct}%（{dur} 秒）。", "params": {"dmg": 1.5, "pct": 30, "dur": 4, "dtype": "magic"}}},
-    {"id": "ONI3", "name": "赤霧行者", "short": "赤霧", "race": "oni", "cost": 3, "type": "mobile", "class": "assassin", "range": 1, "mana_max": 50,
-     "skill": {"kind": "shadow_step", "name": "影步", "desc": "瞬移至最遠的敵人身旁造成 {dmg} 物理傷害；若擊殺，再追擊生命最低的敵人造成 {dmg2}。", "params": {"dmg": 1.4, "dmg2": 0.8, "dtype": "physical"}}},
-    {"id": "ONI4", "name": "業火鬼王", "short": "鬼王", "race": "oni", "cost": 4, "type": "rear", "class": "mage", "range": 3,
-     "skill": {"kind": "hellfire", "name": "業火降臨", "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。", "params": {"dmg": 0.9, "radius": 2, "dot": 0.7, "dur": 4, "dtype": "magic"}}}
-  ],
-  "_special_note": "特殊單位：不屬於 24 種基礎棋子，不會出現在商店、圖鑑與羈絆。stats 直接指定一星屬性（不套用稀有度與職業修正）。",
-  "special_units": [
-    {"id": "TUT1", "name": "稻草兵", "short": "稻草", "race": "neutral", "cost": 1, "type": "vanguard", "class": "dummy", "range": 1, "mana_max": 9999,
-     "stats": {"hp": 35, "atk": 3, "atk_speed": 0.5, "armor": 0, "mr": 0},
-     "skill": {"kind": "none", "name": "（無主動技能）", "desc": "第一回合的教學用弱敵，沒有主動技能。", "params": {}}}
-  ]
+ "_note": "24 種基礎棋子。技能參數慣例：dmg/dmg2/heal/shield/hot/dot = 稀有度技能預算(1~4費: 24/40/65/95)的倍數，再乘星級技能倍率；cc = 控制秒數(依星級規則微幅成長)；atk_pct = 攻擊力百分比(不再乘星級固定倍率)；其餘 dur/pct/armor/radius/count 不隨星級成長。dtype: physical 物理 / magic 法術。mana_max 省略時用 game_config.combat.mana_max。",
+ "units": [
+  {
+   "id": "ELF1",
+   "name": "枝盾哨衛",
+   "short": "枝盾",
+   "race": "elf",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "mana_max": 50,
+   "skill": {
+    "kind": "self_shield",
+    "name": "樹皮護盾",
+    "desc": "自身獲得 {shield} 護盾，持續 {dur} 秒。",
+    "params": {
+     "shield": 2.2,
+     "dur": 4
+    }
+   }
+  },
+  {
+   "id": "ELF2",
+   "name": "林地射手",
+   "short": "林射",
+   "race": "elf",
+   "cost": 2,
+   "type": "rear",
+   "class": "archer",
+   "range": 3,
+   "skill": {
+    "kind": "mark_prey",
+    "name": "獵物標記",
+    "desc": "射擊目標造成 {dmg} 物理傷害並標記 {dur} 秒；自身對被標記者普攻傷害 +{pct}%。",
+    "params": {
+     "dmg": 1.0,
+     "dur": 4,
+     "pct": 40,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "ELF3",
+   "name": "星紋術士",
+   "short": "星紋",
+   "race": "elf",
+   "cost": 3,
+   "type": "support",
+   "class": "mage",
+   "range": 3,
+   "skill": {
+    "kind": "area_cc",
+    "name": "星光束縛",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並緩速 {pct}%（{cc} 秒）。",
+    "params": {
+     "dmg": 0.9,
+     "radius": 1,
+     "cc": 2.0,
+     "cc_kind": "slow",
+     "pct": 35,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "ELF4",
+   "name": "月冠裁決者",
+   "short": "月冠",
+   "race": "elf",
+   "cost": 4,
+   "type": "mobile",
+   "class": "assassin",
+   "range": 1,
+   "mana_max": 50,
+   "skill": {
+    "kind": "dash_strike",
+    "name": "月刃追獵",
+    "desc": "突入最遠的敵人（後排）身旁，造成 {dmg} 物理傷害。",
+    "params": {
+     "dmg": 1.7,
+     "pick": "farthest",
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "HUM1",
+   "name": "行旅醫士",
+   "short": "醫士",
+   "race": "human",
+   "cost": 1,
+   "type": "support",
+   "class": "priest",
+   "range": 3,
+   "mana_max": 50,
+   "skill": {
+    "kind": "heal_lowest",
+    "name": "戰地包紮",
+    "desc": "治療生命比例最低的友軍 {heal}。",
+    "params": {
+     "heal": 2.2
+    }
+   }
+  },
+  {
+   "id": "HUM2",
+   "name": "王國盾衛",
+   "short": "盾衛",
+   "race": "human",
+   "cost": 2,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "skill": {
+    "kind": "shield_taunt",
+    "name": "堅守陣線",
+    "desc": "自身獲得 {shield} 護盾（{dur} 秒），並嘲諷 {radius} 格內的敵人 {cc} 秒。",
+    "params": {
+     "shield": 2.0,
+     "dur": 4,
+     "radius": 2,
+     "cc": 2.0
+    }
+   }
+  },
+  {
+   "id": "HUM3",
+   "name": "夜梟密探",
+   "short": "夜梟",
+   "race": "human",
+   "cost": 3,
+   "type": "mobile",
+   "class": "assassin",
+   "range": 1,
+   "mana_max": 50,
+   "skill": {
+    "kind": "dash_strike",
+    "name": "弱點奇襲",
+    "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害並使其護甲 -{armor}（{dur} 秒）。",
+    "params": {
+     "dmg": 1.2,
+     "pick": "lowest_hp",
+     "armor": 15,
+     "dur": 4,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "HUM4",
+   "name": "王國大元帥",
+   "short": "元帥",
+   "race": "human",
+   "cost": 4,
+   "type": "support",
+   "class": "guardian",
+   "range": 1,
+   "skill": {
+    "kind": "rally",
+    "name": "軍團號令",
+    "desc": "自身與 {radius} 格內友軍護甲 +{armor}、攻擊力 +{pct}%（{dur} 秒），自身獲得 {shield} 護盾。",
+    "params": {
+     "armor": 15,
+     "pct": 20,
+     "dur": 5,
+     "radius": 2,
+     "shield": 1.0
+    }
+   }
+  },
+  {
+   "id": "ORC1",
+   "name": "裂骨鬥士",
+   "short": "裂骨",
+   "race": "orc",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "strike",
+    "name": "裂骨重擊",
+    "desc": "對目標造成 {dmg} 物理傷害。",
+    "params": {
+     "dmg": 2.2,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "ORC2",
+   "name": "狂戰士",
+   "short": "狂戰",
+   "race": "orc",
+   "cost": 2,
+   "type": "mobile",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "blood_rage",
+    "name": "血怒",
+    "desc": "{dur} 秒內直接傷害 +{pct}%；施放時生命低於 50% 改為 +{pct2}%。並回復 {heal} 生命。",
+    "params": {
+     "pct": 25,
+     "pct2": 50,
+     "dur": 5,
+     "heal": 0.6
+    }
+   }
+  },
+  {
+   "id": "ORC3",
+   "name": "戰矛獵手",
+   "short": "戰矛",
+   "race": "orc",
+   "cost": 3,
+   "type": "rear",
+   "class": "archer",
+   "range": 3,
+   "skill": {
+    "kind": "strike",
+    "name": "裂甲投矛",
+    "desc": "投矛造成 {dmg} 物理傷害並使目標護甲 -{armor}（{dur} 秒）。",
+    "params": {
+     "dmg": 1.1,
+     "armor": 15,
+     "dur": 4,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "ORC4",
+   "name": "赤牙戰王",
+   "short": "戰王",
+   "race": "orc",
+   "cost": 4,
+   "type": "vanguard",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "warlord_roar",
+    "name": "戰王怒吼",
+    "desc": "自身攻擊力 +{pct}% 並回復 {heal}（{dur} 秒）；{radius} 格內近戰友軍直接傷害 +{pct2}%。",
+    "params": {
+     "pct": 40,
+     "pct2": 15,
+     "dur": 5,
+     "radius": 2,
+     "heal": 1.0
+    }
+   }
+  },
+  {
+   "id": "CEN1",
+   "name": "草原弓手",
+   "short": "草弓",
+   "race": "centaur",
+   "cost": 1,
+   "type": "rear",
+   "class": "archer",
+   "range": 3,
+   "mana_max": 40,
+   "skill": {
+    "kind": "rapid_shot",
+    "name": "迅捷連射",
+    "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害。",
+    "params": {
+     "dmg": 1.0,
+     "atk_pct": 100,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "CEN2",
+   "name": "衝鋒騎兵",
+   "short": "騎兵",
+   "race": "centaur",
+   "cost": 2,
+   "type": "mobile",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "dash_strike",
+    "name": "破陣衝鋒",
+    "desc": "衝向最近的敵人（前排），造成 {dmg} 物理撞擊傷害。",
+    "params": {
+     "dmg": 1.6,
+     "pick": "nearest",
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "CEN3",
+   "name": "鐵蹄衛士",
+   "short": "鐵蹄",
+   "race": "centaur",
+   "cost": 3,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "skill": {
+    "kind": "brace",
+    "name": "迎擊姿態",
+    "desc": "{dur} 秒內承受的物理傷害 -{pct}%，並回復 {heal}。",
+    "params": {
+     "pct": 45,
+     "dur": 4,
+     "heal": 0.8
+    }
+   }
+  },
+  {
+   "id": "CEN4",
+   "name": "風暴騎主",
+   "short": "風暴",
+   "race": "centaur",
+   "cost": 4,
+   "type": "mobile",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "thunder_charge",
+    "name": "雷蹄奔襲",
+    "desc": "朝目標衝鋒，沿途 1 格內的敵人受到 {dmg} 法術傷害並暈眩 {cc} 秒。",
+    "params": {
+     "dmg": 1.0,
+     "cc": 1.0,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "DEE1",
+   "name": "苔甲護林者",
+   "short": "苔甲",
+   "race": "deer",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "skill": {
+    "kind": "living_bark",
+    "name": "活木之甲",
+    "desc": "自身護甲 +{armor}（{dur} 秒）並回復 {heal}。",
+    "params": {
+     "armor": 20,
+     "dur": 4,
+     "heal": 1.8
+    }
+   }
+  },
+  {
+   "id": "DEE2",
+   "name": "自然醫者",
+   "short": "醫者",
+   "race": "deer",
+   "cost": 2,
+   "type": "support",
+   "class": "priest",
+   "range": 3,
+   "skill": {
+    "kind": "rejuvenate",
+    "name": "回春術",
+    "desc": "對生命比例最低的 {count} 名友軍施加持續治療，各共回復 {hot}（約 {dur} 秒）。",
+    "params": {
+     "hot": 2.0,
+     "dur": 4,
+     "count": 2
+    }
+   }
+  },
+  {
+   "id": "DEE3",
+   "name": "花語術士",
+   "short": "花語",
+   "race": "deer",
+   "cost": 3,
+   "type": "rear",
+   "class": "mage",
+   "range": 3,
+   "skill": {
+    "kind": "area_cc",
+    "name": "藤蔓禁錮",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害並定身 {cc} 秒。",
+    "params": {
+     "dmg": 0.8,
+     "radius": 1,
+     "cc": 1.5,
+     "cc_kind": "root",
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "DEE4",
+   "name": "古林聖使",
+   "short": "聖使",
+   "race": "deer",
+   "cost": 4,
+   "type": "support",
+   "class": "priest",
+   "range": 3,
+   "skill": {
+    "kind": "forest_prayer",
+    "name": "森林祝禱",
+    "desc": "治療 {radius} 格內所有友軍 {heal}，並各去除一項負面效果。",
+    "params": {
+     "heal": 1.3,
+     "radius": 3
+    }
+   }
+  },
+  {
+   "id": "ONI1",
+   "name": "鬼面刀客",
+   "short": "刀客",
+   "race": "oni",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "warrior",
+   "range": 1,
+   "skill": {
+    "kind": "bleed_strike",
+    "name": "血刃斬",
+    "desc": "造成 {dmg} 物理傷害，並使目標流血共 {dot}（{dur} 秒）。",
+    "params": {
+     "dmg": 1.3,
+     "dot": 1.0,
+     "dur": 3,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "ONI2",
+   "name": "咒術師",
+   "short": "咒術",
+   "race": "oni",
+   "cost": 2,
+   "type": "rear",
+   "class": "mage",
+   "range": 3,
+   "skill": {
+    "kind": "curse",
+    "name": "噬魂咒",
+    "desc": "造成 {dmg} 法術傷害，並使目標攻擊力 -{pct}%（{dur} 秒）。",
+    "params": {
+     "dmg": 1.5,
+     "pct": 30,
+     "dur": 4,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "ONI3",
+   "name": "赤霧行者",
+   "short": "赤霧",
+   "race": "oni",
+   "cost": 3,
+   "type": "mobile",
+   "class": "assassin",
+   "range": 1,
+   "mana_max": 50,
+   "skill": {
+    "kind": "shadow_step",
+    "name": "影步",
+    "desc": "瞬移至最遠的敵人身旁造成 {dmg} 物理傷害；若擊殺，再追擊生命最低的敵人造成 {dmg2}。",
+    "params": {
+     "dmg": 1.4,
+     "dmg2": 0.8,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "ONI4",
+   "name": "業火鬼王",
+   "short": "鬼王",
+   "race": "oni",
+   "cost": 4,
+   "type": "rear",
+   "class": "mage",
+   "range": 3,
+   "skill": {
+    "kind": "hellfire",
+    "name": "業火降臨",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "params": {
+     "dmg": 0.9,
+     "radius": 2,
+     "dot": 0.7,
+     "dur": 4,
+     "dtype": "magic"
+    }
+   }
+  }
+ ],
+ "_special_note": "特殊單位：不屬於 24 種基礎棋子，不會出現在商店、圖鑑與羈絆。stats：直接指定一星屬性。base：異界變體，沿用基礎棋子的職業／費用／技能／外觀，只寫差異；phase（cult/demon/oldgod）決定階段倍率（game_config.json → otherworld）。",
+ "special_units": [
+  {
+   "id": "TUT1",
+   "name": "稻草兵",
+   "short": "稻草",
+   "race": "neutral",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "dummy",
+   "range": 1,
+   "mana_max": 9999,
+   "stats": {
+    "hp": 35,
+    "atk": 3,
+    "atk_speed": 0.5,
+    "armor": 0,
+    "mr": 0
+   },
+   "skill": {
+    "kind": "none",
+    "name": "（無主動技能）",
+    "desc": "第一回合的教學用弱敵，沒有主動技能。",
+    "params": {}
+   }
+  },
+  {
+   "id": "CULT_ACOLYTE",
+   "name": "邪教信徒",
+   "short": "信徒",
+   "base": "ONI1",
+   "phase": "cult",
+   "race": "cult"
+  },
+  {
+   "id": "CULT_ARCHER",
+   "name": "腐化草原弓手",
+   "short": "腐弓",
+   "base": "CEN1",
+   "phase": "cult",
+   "race": "cult"
+  },
+  {
+   "id": "CULT_SHIELD",
+   "name": "邪教盾衛",
+   "short": "邪盾",
+   "base": "HUM2",
+   "phase": "cult",
+   "race": "cult"
+  },
+  {
+   "id": "CULT_CURSER",
+   "name": "邪教咒師",
+   "short": "咒師",
+   "base": "ONI2",
+   "phase": "cult",
+   "race": "cult"
+  },
+  {
+   "id": "CULT_PRIEST",
+   "name": "邪教祭司",
+   "short": "祭司",
+   "base": "DEE2",
+   "phase": "cult",
+   "race": "cult"
+  },
+  {
+   "id": "CULT_HIGHPRIEST",
+   "name": "邪教祭司長",
+   "short": "祭長",
+   "base": "HUM4",
+   "phase": "cult",
+   "race": "cult",
+   "skill": {
+    "kind": "rally",
+    "name": "邪祭號令",
+    "desc": "自身與 {radius} 格內友軍護甲 +{armor}、攻擊力 +{pct}%（{dur} 秒），自身獲得 {shield} 護盾。",
+    "params": {
+     "armor": 10,
+     "pct": 20,
+     "dur": 5,
+     "radius": 2,
+     "shield": 1.0
+    }
+   }
+  },
+  {
+   "id": "CULT_BISHOP",
+   "name": "邪教主教",
+   "short": "主教",
+   "base": "DEE4",
+   "phase": "cult",
+   "race": "cult",
+   "skill": {
+    "kind": "forest_prayer",
+    "name": "血之祝禱",
+    "desc": "治療 {radius} 格內所有友軍 {heal}，並各去除一項負面效果。",
+    "params": {
+     "heal": 1.1,
+     "radius": 3
+    }
+   }
+  },
+  {
+   "id": "DEMON_IMP",
+   "name": "低階惡魔",
+   "short": "小魔",
+   "base": "ORC1",
+   "phase": "demon",
+   "race": "demon"
+  },
+  {
+   "id": "DEMON_BLADE",
+   "name": "惡魔鬼面刀客",
+   "short": "魔刀",
+   "base": "ONI1",
+   "phase": "demon",
+   "race": "demon"
+  },
+  {
+   "id": "DEMON_BERSERKER",
+   "name": "深淵狂戰士",
+   "short": "深狂",
+   "base": "ORC2",
+   "phase": "demon",
+   "race": "demon"
+  },
+  {
+   "id": "DEMON_FIRE",
+   "name": "炎魔術士",
+   "short": "炎魔",
+   "base": "ONI2",
+   "phase": "demon",
+   "race": "demon",
+   "skill": {
+    "kind": "hellfire",
+    "name": "炎爆",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "params": {
+     "dmg": 1.0,
+     "radius": 1,
+     "dot": 0.8,
+     "dur": 3,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "DEMON_GENERAL",
+   "name": "深淵戰將",
+   "short": "戰將",
+   "base": "CEN4",
+   "phase": "demon",
+   "race": "demon"
+  },
+  {
+   "id": "DEMON_LORD",
+   "name": "惡魔領主",
+   "short": "魔王",
+   "base": "ORC4",
+   "phase": "demon",
+   "race": "demon"
+  },
+  {
+   "id": "OG_SPAWN",
+   "name": "古神眷族",
+   "short": "眷族",
+   "base": "DEE3",
+   "phase": "oldgod",
+   "race": "oldgod"
+  },
+  {
+   "id": "OG_WATCHER",
+   "name": "虛空凝視者",
+   "short": "凝視",
+   "base": "ELF3",
+   "phase": "oldgod",
+   "race": "oldgod"
+  },
+  {
+   "id": "OG_HUSK",
+   "name": "腐朽花語術士",
+   "short": "腐花",
+   "base": "DEE3",
+   "phase": "oldgod",
+   "race": "oldgod",
+   "skill": {
+    "kind": "hellfire",
+    "name": "腐朽孢子",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並侵蝕共 {dot}（{dur} 秒）。",
+    "params": {
+     "dmg": 0.6,
+     "radius": 1,
+     "dot": 1.0,
+     "dur": 4,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "OG_TENTACLE",
+   "name": "深淵觸手",
+   "short": "觸手",
+   "base": "CEN3",
+   "phase": "oldgod",
+   "race": "oldgod"
+  },
+  {
+   "id": "OG_STALKER",
+   "name": "扭曲行者",
+   "short": "扭曲",
+   "base": "ONI3",
+   "phase": "oldgod",
+   "race": "oldgod"
+  },
+  {
+   "id": "OG_AVATAR",
+   "name": "古神化身",
+   "short": "古神",
+   "race": "oldgod",
+   "phase": "oldgod",
+   "cost": 4,
+   "type": "support",
+   "class": "mage",
+   "range": 3,
+   "mana_max": 70,
+   "boss": true,
+   "stats": {
+    "hp": 2200,
+    "atk": 46,
+    "atk_speed": 0.7,
+    "armor": 35,
+    "mr": 45
+   },
+   "skill": {
+    "kind": "eldritch_pulse",
+    "name": "萬眼凝視",
+    "desc": "對全場敵人造成 {dmg} 法術傷害並暈眩 {cc} 秒，施加侵蝕共 {dot}（{dur} 秒）與護甲 -{armor}；自身獲得 {shield} 護盾。",
+    "params": {
+     "dmg": 0.8,
+     "cc": 1.0,
+     "dot": 0.8,
+     "dur": 4,
+     "armor": 10,
+     "shield": 3.0,
+     "dtype": "magic"
+    }
+   }
+  }
+ ]
 }

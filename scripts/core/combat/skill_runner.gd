@@ -5,7 +5,7 @@ extends RefCounted
 
 const KINDS := ["self_shield", "mark_prey", "area_cc", "dash_strike", "heal_lowest", "shield_taunt", "rally",
 	"strike", "blood_rage", "warlord_roar", "rapid_shot", "brace", "thunder_charge", "living_bark",
-	"rejuvenate", "forest_prayer", "bleed_strike", "curse", "shadow_step", "hellfire"]
+	"rejuvenate", "forest_prayer", "bleed_strike", "curse", "shadow_step", "hellfire", "eldritch_pulse"]
 
 const COLORS := {
 	"physical": "#ffb347", "magic": "#c27bff", "heal": "#59e38b", "shield": "#cfe8ff", "buff": "#ffd34d", "cc": "#7fd6ff",
@@ -290,6 +290,24 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
 					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic")
+			return true
+
+		"eldritch_pulse":
+			# 古神化身（最終首領）：全場法術傷害＋暈眩＋侵蝕＋破甲，自身護盾
+			var foes := sim.enemies_of(u)
+			if foes.is_empty():
+				return false
+			var cells: Array = []
+			for e in foes:
+				cells.append(e.cell)
+			_cast_event(sim, u, COLORS["magic"], cells)
+			for e in foes:
+				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
+				if e.alive:
+					sim.apply_cc(u, e, "stun", _cc(u))
+					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic")
+					sim.add_status(e, "armor_down", float(_p(u, "armor", 10)), float(_p(u, "dur", 4)), u.cid)
+			sim.add_shield(u, u, _amt(u, "shield"), float(_p(u, "dur", 4)))
 			return true
 
 	push_warning("未實作的技能種類：%s（%s）" % [kind, u.unit_id])
