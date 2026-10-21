@@ -41,6 +41,7 @@ func _init() -> void:
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_portrait_token = TOKEN_SCENE.instantiate()
 	_portrait_token.position = Vector2(26, 28)
+	_portrait_token.show_head = false
 	portrait.add_child(_portrait_token)
 	head.add_child(portrait)
 	var names := VBoxContainer.new()

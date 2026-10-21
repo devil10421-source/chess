@@ -2,6 +2,7 @@ class_name LeaderPanel
 extends VBoxContainer
 ## 右側可收合的戰鬥貢獻面板（V0.3）：傷害輸出／承受傷害／護盾吸收／有效治療。
 ## 戰鬥中顯示即時統計；戰鬥結束後保留上一場，直到下一場開始。
+## V0.4：面板浮在戰場上方（不參與棋盤版面）；收合時只剩一個圖示按鈕。
 
 signal collapse_toggled(collapsed: bool)
 
@@ -12,6 +13,7 @@ var metric := "damage"
 var collapsed := false
 var _title: Label
 var _toggle: Button
+var _toggle_icon: UiIcon
 var _tabs: Dictionary = {}
 var _tab_row: HBoxContainer
 var _list: VBoxContainer
@@ -29,9 +31,13 @@ func _init() -> void:
 	_title.add_theme_color_override("font_color", UiStyle.GOLD)
 	_title.clip_text = true
 	_toggle = Button.new()
-	_toggle.custom_minimum_size = Vector2(40, 32)
-	_toggle.text = "▶"
+	_toggle.custom_minimum_size = Vector2(40, 34)
+	_toggle.tooltip_text = "戰鬥貢獻（展開／收合）"
 	UiStyle.style_button(_toggle, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
+	_toggle_icon = UiIcon.make("chart", Color(1.0, 0.85, 0.45), 20)
+	_toggle_icon.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_toggle_icon.position -= Vector2(10, 10)
+	_toggle.add_child(_toggle_icon)
 	_toggle.pressed.connect(func(): set_collapsed(not collapsed))
 	head.add_child(_title)
 	head.add_child(_toggle)
@@ -68,7 +74,8 @@ func set_collapsed(v: bool) -> void:
 	_title.visible = not v
 	_tab_row.visible = not v
 	_scroll.visible = not v
-	_toggle.text = "◀" if v else "▶"
+	_toggle.text = ""
+	_toggle_icon.visible = true
 	collapse_toggled.emit(v)
 
 

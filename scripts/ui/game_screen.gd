@@ -1,15 +1,17 @@
 extends Control
-## 遊戲主畫面（V0.3，手機橫向優先）。
-## 上：回合 X/24＋七個裝備節點、30 秒備戰倒數條。左：文明（置頂、點擊展開）＋羈絆。
-## 右：可收合的戰鬥貢獻面板；選取棋子／羈絆時改顯示詳細資訊卡。下：資源列、XP 條（與商店同寬）、商店。
+## 遊戲主畫面（V0.4，手機橫向優先）。
+## 上：回合 X/24＋七個裝備節點、30 秒備戰倒數條。左：精簡羈絆清單（文明置頂；滑鼠懸停或點擊才顯示浮動說明）。
+## 右：浮在戰場上的戰鬥貢獻面板（收合時只剩圖示）；選取棋子時改顯示棋子資訊卡。下：資源列、XP 條（與商店同寬）、商店。
+## 棋盤的位置與大小只由上下兩條與左側清單的固定寬度決定，右側面板開關不會推動棋盤。
 ## 每回合不再彈出結算畫面：戰後以不擋操作的提示顯示收入、生命與升級；裝備回合結束後先三選一再進入備戰。
 ## 電腦快捷鍵：D 刷新、F 買經驗、E 出售、空白鍵 開戰、Esc 選單。
 
 enum Phase { PREP, BATTLE, AFTER, REWARD }
 
-const LEFT_W := 190.0
 const RIGHT_W := 280.0
-const COLLAPSED_W := 56.0
+const COLLAPSED_W := 64.0
+const COLLAPSED_H := 54.0
+const POPOVER_W := 330.0
 const COLOR_UP := "#5aa9ff"
 const COLOR_DOWN := "#ff6b6b"
 const STATE_MARK := {
@@ -32,12 +34,12 @@ const STATE_MARK := {
 @onready var debug_btn: Button = $TopBar/HBox/DebugButton
 @onready var menu_btn: Button = $TopBar/HBox/MenuBtn
 @onready var left_panel: PanelContainer = $LeftPanel
-@onready var left_title: Label = $LeftPanel/VBox/Header/Title
-@onready var left_toggle: Button = $LeftPanel/VBox/Header/Toggle
-@onready var left_scroll: ScrollContainer = $LeftPanel/VBox/Scroll
-@onready var civ_btn: Button = $LeftPanel/VBox/Scroll/List/CivButton
-@onready var civ_detail: RichTextLabel = $LeftPanel/VBox/Scroll/List/CivDetail
-@onready var trait_list: VBoxContainer = $LeftPanel/VBox/Scroll/List/TraitList
+@onready var left_scroll: ScrollContainer = $LeftPanel/Scroll
+@onready var civ_btn: Button = $LeftPanel/Scroll/List/CivButton
+@onready var trait_list: VBoxContainer = $LeftPanel/Scroll/List/TraitList
+@onready var popover: PanelContainer = $TraitPopover
+@onready var popover_scroll: ScrollContainer = $TraitPopover/Scroll
+@onready var popover_text: RichTextLabel = $TraitPopover/Scroll/Text
 @onready var right_panel: PanelContainer = $RightPanel
 @onready var leader_host: VBoxContainer = $RightPanel/Stack/LeaderHost
 @onready var detail_box: VBoxContainer = $RightPanel/Stack/DetailBox
@@ -78,9 +80,13 @@ var card: UnitCard
 var _detail_text: RichTextLabel
 var _shop_buttons: Array[Button] = []
 var _last_result: Dictionary = {}
-var _left_collapsed := false
-var _civ_open := false
-## 右側詳細資訊目前顯示的對象：none / unit（備戰棋子 uid）/ enemy（敵方預覽）/ battle（戰鬥中 cid）/ trait（羈絆）
+## 浮動說明（羈絆／文明）：key＝"civ" 或 "group:key"；pinned＝點擊固定（手機點擊、電腦點擊），否則為滑鼠懸停
+var _pop_key := ""
+var _pop_pinned := false
+var _pop_anchor_y := 0.0
+## 版面初始位移（套用手機安全區時以此為基準）
+var _base_offsets: Dictionary = {}
+## 右側詳細資訊目前顯示的對象：none / unit（備戰棋子 uid）/ enemy（敵方預覽）/ battle（戰鬥中 cid）
 var _info_mode := "none"
 var _info_ref: Variant = null
 var _info_refresh := 0.0
@@ -114,7 +120,10 @@ func _ready() -> void:
 	detail_body.add_child(card)
 	_detail_text = InfoView.make_rich("", 14)
 	detail_body.add_child(_detail_text)
+	for c in [top_bar, left_panel, right_panel, bottom_bar]:
+		_base_offsets[c] = [c.offset_left, c.offset_top, c.offset_right, c.offset_bottom]
 	_build_bottom()
+	_build_civ_row()
 	_style()
 	_connect()
 	get_viewport().size_changed.connect(_layout)
@@ -137,7 +146,7 @@ func _build_bottom() -> void:
 	_interest_label.add_theme_color_override("font_color", Color(1, 0.85, 0.5, 0.85))
 	res_box.add_child(_interest_label)
 	_sep()
-	_civ_badge = UiIcon.make("civ", civ_col, 20)
+	_civ_badge = UiIcon.make(_civ_icon(), civ_col, 20)
 	res_box.add_child(_civ_badge)
 	_lv_label = Label.new()
 	_lv_label.add_theme_font_size_override("font_size", 17)
@@ -163,7 +172,7 @@ func _build_bottom() -> void:
 	pad.custom_minimum_size = Vector2(6, 0)
 	xp_right.add_child(pad)
 	_decorate(reroll_btn, "refresh", Color(0.85, 0.92, 1.0), "刷新 2")
-	_decorate(civup_btn, "civ", civ_col, "+4 XP")
+	_decorate(civup_btn, _civ_icon(), civ_col, "+4 XP", 28)
 	_decorate(start_btn, "play", Color(1.0, 0.95, 0.8), "開戰")
 	_decorate(lock_btn, "unlock", Color(0.85, 0.88, 0.95), "鎖定")
 	_decorate(bag_btn, "bag", Color(0.85, 0.75, 0.55), "背包 0")
@@ -188,18 +197,18 @@ func _sep() -> void:
 
 
 ## 在按鈕中放「圖示＋文字」（文字之後由 _btn_text 更新）
-func _decorate(b: Button, kind: String, tint: Color, text: String) -> void:
+func _decorate(b: Button, kind: String, tint: Color, text: String, icon_size: float = 22.0) -> void:
 	b.text = ""
 	var h := HBoxContainer.new()
 	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	h.alignment = BoxContainer.ALIGNMENT_CENTER
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_theme_constant_override("separation", 6)
-	var ic := UiIcon.make(kind, tint, 22)
+	var ic := UiIcon.make(kind, tint, icon_size)
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 16)
+	l.add_theme_font_size_override("font_size", 15)
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(ic)
 	h.add_child(l)
@@ -222,13 +231,73 @@ func btn_label(b: Button) -> String:
 	return (it["label"] as Label).text if not it.is_empty() else b.text
 
 
+## 文明徽章圖示（精靈葉、人類王冠、半獸人獠牙、半人馬馬蹄、鹿角人鹿角、鬼人鬼角）
+func _civ_icon() -> String:
+	return "civ_" + run.civ_id
+
+
+## 羈絆清單第一列：文明（圖示＋名稱；說明改用浮動視窗）
+func _build_civ_row() -> void:
+	civ_btn.text = ""
+	_row_content(civ_btn, _civ_icon(), _civ_color(), "", "%s文明" % GameData.civ(run.civ_id).get("name", ""), Color.WHITE)
+	civ_btn.mouse_entered.connect(func(): _hover_pop("civ", civ_btn, true))
+	civ_btn.mouse_exited.connect(func(): _hover_pop("civ", civ_btn, false))
+	civ_btn.pressed.connect(func(): _press_pop("civ", civ_btn))
+
+
+## 羈絆列的內容：[圖示] 進度 名稱
+func _row_content(b: Button, icon: String, tint: Color, progress: String, name_text: String, text_col: Color) -> void:
+	for c in b.get_children():
+		b.remove_child(c)
+		c.queue_free()
+	var h := HBoxContainer.new()
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.offset_left = 6
+	h.offset_right = -4
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_theme_constant_override("separation", 5)
+	var ic := UiIcon.make(icon, tint, 22)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(ic)
+	if progress != "":
+		var pl := Label.new()
+		pl.text = progress
+		pl.add_theme_font_size_override("font_size", 14)
+		pl.add_theme_color_override("font_color", text_col)
+		pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		h.add_child(pl)
+	var nl := Label.new()
+	nl.text = name_text
+	nl.clip_text = true
+	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nl.add_theme_font_size_override("font_size", 14)
+	nl.add_theme_color_override("font_color", text_col)
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	h.add_child(nl)
+	b.add_child(h)
+
+
 func _civ_color() -> Color:
 	return Color(str(GameData.civ(run.civ_id).get("color", "#888888")))
 
 
 func _style() -> void:
-	for p in [top_bar, left_panel, right_panel, bottom_bar, $MenuOverlay/Panel, debug_panel, $ItemOverlay/Panel]:
+	for p in [left_panel, right_panel, $MenuOverlay/Panel, debug_panel, $ItemOverlay/Panel]:
 		UiStyle.apply_panel(p)
+	for p in [top_bar, bottom_bar]:
+		var sb := UiStyle.panel_box()
+		sb.content_margin_top = 4 if p == top_bar else 6
+		sb.content_margin_bottom = 4 if p == top_bar else 6
+		sb.content_margin_left = 8
+		sb.content_margin_right = 8
+		p.add_theme_stylebox_override("panel", sb)
+	var lp := UiStyle.panel_box(Color(0.10, 0.12, 0.16, 0.82))
+	lp.content_margin_left = 4
+	lp.content_margin_right = 4
+	lp.content_margin_top = 4
+	lp.content_margin_bottom = 4
+	left_panel.add_theme_stylebox_override("panel", lp)
+	UiStyle.apply_panel(popover, Color(0.08, 0.10, 0.14, 0.97), UiStyle.GOLD)
 	UiStyle.apply_panel($RewardOverlay/Panel, Color(0.10, 0.12, 0.17, 0.98), UiStyle.GOLD)
 	UiStyle.style_button(reroll_btn, Color(0.16, 0.30, 0.52))
 	UiStyle.style_button(civup_btn, _civ_color().darkened(0.55), _civ_color())
@@ -237,7 +306,7 @@ func _style() -> void:
 	UiStyle.style_button(sell_btn, Color(0.50, 0.20, 0.18))
 	UiStyle.style_button(bag_btn, Color(0.22, 0.19, 0.14), Color(0.85, 0.75, 0.55, 0.6), 15)
 	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
-	for b in [speed_btn, skip_btn, debug_btn, menu_btn, left_toggle, close_detail_btn]:
+	for b in [speed_btn, skip_btn, debug_btn, menu_btn, close_detail_btn]:
 		UiStyle.style_button(b, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
 	for b in $MenuOverlay/Panel/VBox.get_children():
 		if b is Button:
@@ -280,12 +349,6 @@ func _connect() -> void:
 	sell_btn.pressed.connect(_on_sell_selected)
 	bag_btn.pressed.connect(_show_bag)
 	close_detail_btn.pressed.connect(_close_detail)
-	left_toggle.pressed.connect(func():
-		_left_collapsed = not _left_collapsed
-		_apply_side_layout())
-	civ_btn.pressed.connect(func():
-		_civ_open = not _civ_open
-		_refresh_civ())
 	leader.collapse_toggled.connect(func(_c: bool): _apply_side_layout())
 	reward_dots.dot_pressed.connect(func(_r: int, text: String): _toast(text))
 	speed_btn.pressed.connect(_cycle_speed)
@@ -334,17 +397,22 @@ func _connect() -> void:
 
 
 # ---------- 版面 ----------
+## 右側面板浮在戰場上方：收合時只剩右上角一個圖示；開關都不會影響棋盤
 func _apply_side_layout() -> void:
-	var lw := COLLAPSED_W if _left_collapsed else LEFT_W
-	left_panel.offset_right = 6.0 + lw
-	left_scroll.visible = not _left_collapsed
-	left_title.visible = not _left_collapsed
-	left_toggle.text = "▶" if _left_collapsed else "◀"
 	var detail := detail_box.visible
-	var rw := COLLAPSED_W if (leader.collapsed and not detail) else RIGHT_W
-	right_panel.offset_left = -6.0 - rw
+	var small := leader.collapsed and not detail
+	var ins := _safe_insets()
+	var base: Array = _base_offsets.get(right_panel, [right_panel.offset_left, right_panel.offset_top, right_panel.offset_right, right_panel.offset_bottom])
+	right_panel.offset_right = float(base[2]) - ins.z
+	right_panel.offset_left = right_panel.offset_right - (COLLAPSED_W if small else RIGHT_W)
+	right_panel.offset_top = float(base[1]) + ins.y
+	if small:
+		right_panel.anchor_bottom = 0.0
+		right_panel.offset_bottom = right_panel.offset_top + COLLAPSED_H
+	else:
+		right_panel.anchor_bottom = 1.0
+		right_panel.offset_bottom = float(base[3]) - ins.w
 	leader_host.visible = not detail
-	_layout_deferred()
 
 
 func _layout_deferred() -> void:
@@ -352,16 +420,51 @@ func _layout_deferred() -> void:
 	_layout()
 
 
+## 手機安全區（瀏海、圓角、手勢列）：回傳 (左, 上, 右, 下) 需要內縮的距離（畫面座標）
+func _safe_insets() -> Vector4:
+	if not OS.has_feature("mobile"):
+		return Vector4.ZERO
+	var win := Vector2(DisplayServer.window_get_size())
+	if win.x <= 0.0 or win.y <= 0.0:
+		return Vector4.ZERO
+	var safe := Rect2(DisplayServer.get_display_safe_area())
+	var k := get_viewport_rect().size / win
+	return Vector4(maxf(0.0, safe.position.x) * k.x, maxf(0.0, safe.position.y) * k.y,
+		maxf(0.0, win.x - safe.end.x) * k.x, maxf(0.0, win.y - safe.end.y) * k.y)
+
+
+func _apply_safe_area() -> void:
+	var ins := _safe_insets()
+	for c in [top_bar, left_panel, bottom_bar]:
+		var o: Array = _base_offsets[c]
+		c.offset_left = float(o[0]) + ins.x
+		c.offset_top = float(o[1]) + (-ins.w if c == bottom_bar else ins.y)
+		c.offset_right = float(o[2]) + (ins.x if c == left_panel else -ins.z)
+		c.offset_bottom = float(o[3]) + (ins.y if c == top_bar else -ins.w)
+	_apply_side_layout()
+
+
+## 棋盤可用區：上下兩條之間；左右以左側清單寬度對稱保留，使棋盤固定置中（右側面板不參與）
+func board_rect() -> Rect2:
+	var vs := get_viewport_rect().size
+	var left := left_panel.offset_right + 8.0
+	var right := vs.x - left
+	# 用實際範圍（面板內容可能比設定的位移高）
+	var top := maxf(top_bar.offset_bottom, top_bar.get_global_rect().end.y) + 4.0
+	var bottom := minf(vs.y + bottom_bar.offset_top, bottom_bar.get_global_rect().position.y) - 4.0
+	return Rect2(left, top, maxf(100.0, right - left), maxf(100.0, bottom - top))
+
+
 func _layout() -> void:
 	if not is_inside_tree():
 		return
-	var left := left_panel.get_global_rect().end.x + 8.0
-	var right := right_panel.get_global_rect().position.x - 8.0
-	var top := top_bar.get_global_rect().end.y + 6.0
-	var bottom := bottom_bar.get_global_rect().position.y - 6.0
+	_apply_safe_area()
 	_sync_bottom_columns()
-	board.fit(Rect2(left, top, maxf(100.0, right - left), maxf(100.0, bottom - top)))
-	big_countdown.position.y = top + (bottom - top) * 0.35
+	var r := board_rect()
+	board.fit(r)
+	big_countdown.position.y = r.position.y + r.size.y * 0.35
+	if popover.visible:
+		_place_popover()
 
 
 ## 底部兩列使用相同的左右欄寬，讓 XP 條與五格商店完全等寬
@@ -851,8 +954,6 @@ func _refresh_info() -> void:
 			_info_enemy(_info_ref)
 		"battle":
 			_info_battle(int(_info_ref))
-		"trait":
-			_info_trait(_info_ref)
 
 
 func _info_prep_unit(uid: int) -> void:
@@ -930,42 +1031,6 @@ func _info_battle(cid: int) -> void:
 		"note": ("已陣亡。" if not battle_player.is_alive(cid) else "") + ("狀態：" + "、".join(st_names) if not st_names.is_empty() else "目前沒有增益或負面狀態")})
 
 
-func _info_trait(ref: Dictionary) -> void:
-	var board_units: Array = []
-	for p in run.board_lineup():
-		board_units.append({"id": p["id"], "star": p["star"]})
-	var bench_units: Array = []
-	for b in run.bench:
-		if b != null:
-			bench_units.append({"id": b["id"], "star": b["star"]})
-	var d := Synergy.detail(str(ref["group"]), str(ref["key"]), board_units, bench_units, run.civ_id)
-	var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[d["group"]]
-	detail_title.text = "羈絆：%s（%s）" % [d["name"], group_name]
-	var lines: Array = []
-	var tier := int(d["tier"])
-	lines.append("[color=#ffd24d]已啟動第 %d 階（上場 %d 種）[/color]" % [tier + 1, d["count"]] if tier >= 0 else "[color=#9aa3ad]未啟動（上場 %d 種）[/color]" % d["count"])
-	var th: Array = d["thresholds"]
-	var next_need := -1
-	for t in th:
-		if int(d["count"]) < int(t):
-			next_need = int(t)
-			break
-	lines.append("下一階：需要 %d 種，還差 %d 種" % [next_need, next_need - int(d["count"])] if next_need > 0 else "已達最高階")
-	lines.append("")
-	for i in th.size():
-		lines.append("%s[b]%d 種[/b]：%s[/color]" % ["[color=#ffd24d]" if i == tier else "[color=#9aa3ad]", th[i], d["texts"][i]])
-	lines.append("")
-	lines.append("[b]成員[/b]　[color=#8a90a0]（只計已上場且不同名稱）[/color]")
-	for m in d["members"]:
-		var stars := ""
-		if not m["stars"].is_empty():
-			stars = "　" + "、".join(m["stars"].map(func(s): return "★".repeat(int(s))))
-		var nm := "[s]%s[/s]" % m["name"] if m["state"] == "unavailable" else str(m["name"])
-		lines.append("%s　%s %d 費%s" % [STATE_MARK[m["state"]], nm, m["cost"], stars])
-	_detail_text.visible = true
-	_detail_text.text = "\n".join(lines)
-
-
 # ---------- 畫面更新 ----------
 func _refresh() -> void:
 	_refresh_top()
@@ -1017,7 +1082,7 @@ func _refresh_shop() -> void:
 		if id == "":
 			b.text = "（已招募）"
 			b.disabled = true
-			UiStyle.style_button(b, Color(0.12, 0.13, 0.17), Color(1, 1, 1, 0.05), 14)
+			UiStyle.style_button(b, Color(0.12, 0.13, 0.17), Color(1, 1, 1, 0.05), 13)
 			continue
 		var u := GameData.unit(id)
 		var cost := int(u["cost"])
@@ -1028,7 +1093,7 @@ func _refresh_shop() -> void:
 		b.text = "%s\n%s・%s\n%s・%d 金%s" % [u["name"], GameData.race_name(u["race"]), GameData.type_name(u["type"]),
 			GameData.class_name_of(u["class"]), cost, mark]
 		var col := GameData.tier_color(cost)
-		UiStyle.style_button(b, col.darkened(0.62), col, 14)
+		UiStyle.style_button(b, col.darkened(0.62), col, 13)
 		b.disabled = not prep or run.can_buy(i) != ""
 	var cost_text := "免費 ×%d" % run.free_rerolls if run.free_rerolls > 0 else "刷新 %d" % Economy.reroll_cost()
 	_btn_text(reroll_btn, cost_text)
@@ -1045,49 +1110,182 @@ func _refresh_shop() -> void:
 	_btn_text(start_btn, "戰鬥中" if phase == Phase.BATTLE else "開戰")
 
 
-## 文明（羈絆清單第一項）：平常只顯示名稱，點擊展開 2 Buff（藍）＋2 Debuff（紅）
+## 文明列不再常駐顯示 Buff／Debuff（改由浮動說明顯示）
 func _refresh_civ() -> void:
-	var c := GameData.civ(run.civ_id)
-	civ_btn.text = "  %s文明 %s" % [c.get("name", ""), "▼" if _civ_open else "▶"]
-	var lines: Array = []
-	for bf in c.get("buffs", []):
-		lines.append("[color=%s]▲ %s[/color]" % [COLOR_UP, bf["text"]])
-	for df in c.get("debuffs", []):
-		lines.append("[color=%s]▼ %s[/color]" % [COLOR_DOWN, df["text"]])
-	civ_detail.text = "\n".join(lines)
-	civ_detail.visible = _civ_open
+	if popover.visible:
+		popover_text.text = _pop_text(_pop_key)
 
 
+## 精簡羈絆清單：[圖示] 目前/下一門檻 名稱；已啟動高亮、未啟動降低對比
 func _refresh_traits() -> void:
 	for c in trait_list.get_children():
 		trait_list.remove_child(c)
 		c.queue_free()
 	var summary := Synergy.summary(run.synergy_counts())
 	if summary.is_empty():
-		trait_list.add_child(InfoView.make_rich("[color=#9aa3ad]把棋子放上棋盤即可啟動羈絆（同名只計 1 種）。[/color]", 13))
+		var l := Label.new()
+		l.text = "放棋子上場\n啟動羈絆"
+		l.add_theme_font_size_override("font_size", 12)
+		l.add_theme_color_override("font_color", UiStyle.TEXT_DIM)
+		trait_list.add_child(l)
 	for s in summary:
-		var th: Array = s["thresholds"]
-		var active := int(s["tier"]) >= 0
-		var next := ""
-		for t in th:
-			if int(s["count"]) < int(t):
-				next = "/%d" % int(t)
-				break
-		var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[s["group"]]
 		var b := Button.new()
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(0, 36)
+		b.custom_minimum_size = Vector2(0, 34)
 		b.clip_text = true
-		b.text = "%s %s・%d%s" % [s["name"], group_name, s["count"], next if next != "" else "（滿）"]
-		if active:
-			UiStyle.style_button(b, Color(0.45, 0.32, 0.08), UiStyle.GOLD, 14)
-		else:
-			UiStyle.style_button(b, Color(0.15, 0.17, 0.22), Color(1, 1, 1, 0.08), 14)
-			b.add_theme_color_override("font_color", Color(0.65, 0.68, 0.75))
+		var active := int(s["tier"]) >= 0
 		var g: String = s["group"]
 		var k: String = s["key"]
-		b.pressed.connect(func(): _set_info("trait", {"group": g, "key": k}))
+		var key := "%s:%s" % [g, k]
+		var col := Color.WHITE if active else Color(0.6, 0.63, 0.7)
+		var icon_col := UiStyle.GOLD if active else Color(0.55, 0.58, 0.65)
+		if g == "race":
+			icon_col = GameData.race_color(k) if active else GameData.race_color(k).darkened(0.35)
+		_row_content(b, UiIcon.trait_kind(g, k), icon_col, trait_progress(s), str(s["name"]), col)
+		if active:
+			UiStyle.style_button(b, Color(0.36, 0.26, 0.07), UiStyle.GOLD, 14)
+		else:
+			UiStyle.style_button(b, Color(0.12, 0.14, 0.18, 0.9), Color(1, 1, 1, 0.06), 14)
+		b.mouse_entered.connect(func(): _hover_pop(key, b, true))
+		b.mouse_exited.connect(func(): _hover_pop(key, b, false))
+		b.pressed.connect(func(): _press_pop(key, b))
+		b.set_meta("pop_key", key)
 		trait_list.add_child(b)
+	if popover.visible and _pop_key != "civ":
+		popover_text.text = _pop_text(_pop_key)
+
+
+## 羈絆進度文字：目前種數／下一個門檻（已達最高階時顯示目前／最高門檻）
+static func trait_progress(s: Dictionary) -> String:
+	var th: Array = s["thresholds"]
+	var n := int(s["count"])
+	for t in th:
+		if n < int(t):
+			return "%d/%d" % [n, int(t)]
+	return "%d/%d" % [n, int(th[th.size() - 1])]
+
+
+func trait_row(key: String) -> Button:
+	if key == "civ":
+		return civ_btn
+	for c in trait_list.get_children():
+		if c is Button and str(c.get_meta("pop_key", "")) == key:
+			return c
+	return null
+
+
+# ---------- 羈絆／文明浮動說明 ----------
+func _hover_pop(key: String, row: Control, entering: bool) -> void:
+	if _pop_pinned:
+		return
+	if entering:
+		_open_pop(key, row, false)
+	elif _pop_key == key:
+		_close_pop()
+
+
+func _press_pop(key: String, row: Control) -> void:
+	if popover.visible and _pop_key == key and _pop_pinned:
+		_close_pop()
+		return
+	_open_pop(key, row, true)
+
+
+func _open_pop(key: String, row: Control, pinned: bool) -> void:
+	_pop_key = key
+	_pop_pinned = pinned
+	_pop_anchor_y = row.get_global_rect().position.y
+	popover_text.text = _pop_text(key)
+	popover.visible = true
+	_place_popover()
+	_place_popover_deferred()
+
+
+func _close_pop() -> void:
+	popover.visible = false
+	_pop_key = ""
+	_pop_pinned = false
+
+
+func is_popover_open() -> bool:
+	return popover.visible
+
+
+func popover_key() -> String:
+	return _pop_key if popover.visible else ""
+
+
+func popover_bbcode() -> String:
+	return popover_text.text if popover.visible else ""
+
+
+func _place_popover_deferred() -> void:
+	await get_tree().process_frame
+	if popover.visible:
+		_place_popover()
+
+
+## 浮動說明放在羈絆清單右側，貼齊被點的那一列；高度超過可用空間時可捲動
+func _place_popover() -> void:
+	var r := board_rect()
+	var avail := r.size.y - 8.0
+	var h := minf(popover_text.get_content_height() + 2.0, avail)
+	popover_scroll.custom_minimum_size = Vector2(POPOVER_W, maxf(40.0, h))
+	popover.reset_size()
+	var x := left_panel.get_global_rect().end.x + 6.0
+	var y := clampf(_pop_anchor_y, r.position.y, maxf(r.position.y, r.end.y - popover.size.y))
+	popover.position = Vector2(x, y)
+
+
+func _pop_text(key: String) -> String:
+	if key == "civ":
+		var c := GameData.civ(run.civ_id)
+		var lines: Array = ["[b][color=%s]%s文明[/color][/b]　[color=#9aa3ad]全軍效果（含中立棋子）[/color]" % [UiStyle.hex_color(_civ_color()), c.get("name", "")]]
+		for bf in c.get("buffs", []):
+			lines.append("[color=%s]▲ %s[/color]" % [COLOR_UP, bf["text"]])
+		for df in c.get("debuffs", []):
+			lines.append("[color=%s]▼ %s[/color]" % [COLOR_DOWN, df["text"]])
+		for u in GameData.units():
+			if int(u["cost"]) == 4 and str(u["race"]) == str(c.get("race", run.civ_id)):
+				lines.append("[color=#9aa3ad]專屬 4 費：%s[/color]" % u.get("name", ""))
+		return "\n".join(lines)
+	var parts := key.split(":")
+	if parts.size() != 2:
+		return ""
+	return _trait_text(parts[0], parts[1])
+
+
+func _trait_text(group: String, key: String) -> String:
+	var board_units: Array = []
+	for p in run.board_lineup():
+		board_units.append({"id": p["id"], "star": p["star"]})
+	var bench_units: Array = []
+	for b in run.bench:
+		if b != null:
+			bench_units.append({"id": b["id"], "star": b["star"]})
+	var d := Synergy.detail(group, key, board_units, bench_units, run.civ_id)
+	var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[d["group"]]
+	var lines: Array = ["[b]%s[/b]　[color=#9aa3ad]%s羈絆[/color]" % [d["name"], group_name]]
+	var tier := int(d["tier"])
+	lines.append("[color=#ffd24d]已啟動第 %d 階（上場 %d 種）[/color]" % [tier + 1, d["count"]] if tier >= 0 else "[color=#9aa3ad]未啟動（上場 %d 種）[/color]" % d["count"])
+	var th: Array = d["thresholds"]
+	for i in th.size():
+		lines.append("%s[b]%d[/b]　%s[/color]" % ["[color=#ffd24d]" if i == tier else "[color=#9aa3ad]", th[i], d["texts"][i]])
+	lines.append("[b]成員[/b] [color=#8a90a0]（只計已上場且不同名稱）[/color]")
+	for m in d["members"]:
+		var stars := ""
+		if not m["stars"].is_empty():
+			stars = " " + "、".join(m["stars"].map(func(s): return "★".repeat(int(s))))
+		var nm := "[s]%s[/s]" % m["name"] if m["state"] == "unavailable" else str(m["name"])
+		lines.append("%s %s %d 費%s" % [STATE_MARK[m["state"]], nm, m["cost"], stars])
+	return "\n".join(lines)
+
+
+func _input(event: InputEvent) -> void:
+	# 點擊浮動說明與羈絆清單以外的地方：關閉說明（不攔截事件）
+	if popover.visible and event is InputEventMouseButton and event.pressed:
+		var p: Vector2 = event.position
+		if not popover.get_global_rect().has_point(p) and not left_panel.get_global_rect().has_point(p):
+			_close_pop()
 
 
 # ---------- 除錯 ----------

@@ -55,11 +55,16 @@ func board_size() -> Vector2:
 
 
 func slot_size() -> float:
-	return hex_size * 1.5
+	return hex_size * 1.32
 
 
 func bench_gap() -> float:
-	return hex_size * 0.25
+	return hex_size * 0.32
+
+
+## 第一排棋子頭上的狀態條需要的上方空間
+func top_pad() -> float:
+	return hex_size * 0.36
 
 
 func bench_width() -> float:
@@ -68,7 +73,7 @@ func bench_width() -> float:
 
 func total_size() -> Vector2:
 	var b := board_size()
-	return Vector2(maxf(b.x, bench_width()), b.y + bench_gap() + slot_size())
+	return Vector2(maxf(b.x, bench_width()), top_pad() + b.y + bench_gap() + slot_size())
 
 
 func bench_origin() -> Vector2:
@@ -87,9 +92,9 @@ func cell_center(c: Vector2i) -> Vector2:
 	return HexGrid.to_pixel(c, hex_size)
 
 
-## 在 rect（畫面座標）中放到最大
+## 在 rect（畫面座標）中放到最大（保持比例、完整顯示 7×8 棋盤與候補區）
 func fit(rect: Rect2) -> void:
-	var size := 48.0
+	var size := 64.0
 	while size > 14.0:
 		hex_size = size
 		var t := total_size()
@@ -98,7 +103,7 @@ func fit(rect: Rect2) -> void:
 		size -= 0.5
 	var t := total_size()
 	var top_left := rect.position + (rect.size - t) * 0.5
-	position = top_left + Vector2((t.x - board_size().x) * 0.5, 0).floor()
+	position = top_left + Vector2((t.x - board_size().x) * 0.5, top_pad()).floor()
 	position = position.floor()
 	fx.hex_size = hex_size
 	_relayout_tokens()

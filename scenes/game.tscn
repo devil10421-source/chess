@@ -45,7 +45,7 @@ anchor_right = 1.0
 offset_left = 6.0
 offset_top = 6.0
 offset_right = -6.0
-offset_bottom = 58.0
+offset_bottom = 44.0
 grow_horizontal = 2
 
 [node name="HBox" type="HBoxContainer" parent="TopBar"]
@@ -60,16 +60,16 @@ theme_override_constants/separation = 0
 [node name="RoundLabel" type="Label" parent="TopBar/HBox/RoundBox"]
 layout_mode = 2
 text = "1/24"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
 
 [node name="RewardDots" type="Control" parent="TopBar/HBox/RoundBox"]
-custom_minimum_size = Vector2(112, 14)
+custom_minimum_size = Vector2(112, 8)
 layout_mode = 2
 script = ExtResource("5_dots")
 
 [node name="Countdown" type="Control" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(0, 36)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
@@ -115,22 +115,22 @@ theme_override_constants/outline_size = 4
 vertical_alignment = 1
 
 [node name="SpeedButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(52, 36)
+custom_minimum_size = Vector2(52, 30)
 layout_mode = 2
 text = "1×"
 
 [node name="SkipButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(60, 36)
+custom_minimum_size = Vector2(60, 30)
 layout_mode = 2
 text = "略過"
 
 [node name="DebugButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(56, 36)
+custom_minimum_size = Vector2(56, 30)
 layout_mode = 2
 text = "除錯"
 
 [node name="MenuBtn" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(56, 36)
+custom_minimum_size = Vector2(56, 30)
 layout_mode = 2
 text = "選單"
 
@@ -139,58 +139,30 @@ layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
 offset_left = 6.0
-offset_top = 64.0
-offset_right = 196.0
-offset_bottom = -168.0
+offset_top = 48.0
+offset_right = 162.0
+offset_bottom = -130.0
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="LeftPanel"]
+[node name="Scroll" type="ScrollContainer" parent="LeftPanel"]
 layout_mode = 2
-
-[node name="Header" type="HBoxContainer" parent="LeftPanel/VBox"]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="LeftPanel/VBox/Header"]
-layout_mode = 2
-text = "文明與羈絆"
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
-clip_text = true
-
-[node name="Toggle" type="Button" parent="LeftPanel/VBox/Header"]
-custom_minimum_size = Vector2(40, 32)
-layout_mode = 2
-text = "◀"
-
-[node name="Scroll" type="ScrollContainer" parent="LeftPanel/VBox"]
-layout_mode = 2
-size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="List" type="VBoxContainer" parent="LeftPanel/VBox/Scroll"]
+[node name="List" type="VBoxContainer" parent="LeftPanel/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 4
+theme_override_constants/separation = 3
 
-[node name="CivButton" type="Button" parent="LeftPanel/VBox/Scroll/List"]
-custom_minimum_size = Vector2(0, 38)
+[node name="CivButton" type="Button" parent="LeftPanel/Scroll/List"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
-text = "文明 ▶"
+text = ""
 alignment = 0
 clip_text = true
 
-[node name="CivDetail" type="RichTextLabel" parent="LeftPanel/VBox/Scroll/List"]
+[node name="TraitList" type="VBoxContainer" parent="LeftPanel/Scroll/List"]
 layout_mode = 2
-size_flags_horizontal = 3
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-visible = false
-theme_override_font_sizes/normal_font_size = 13
-
-[node name="TraitList" type="VBoxContainer" parent="LeftPanel/VBox/Scroll/List"]
-layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 3
 
 [node name="RightPanel" type="PanelContainer" parent="."]
 layout_mode = 1
@@ -199,9 +171,9 @@ anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = -286.0
-offset_top = 64.0
+offset_top = 48.0
 offset_right = -6.0
-offset_bottom = -168.0
+offset_bottom = -130.0
 grow_horizontal = 0
 grow_vertical = 2
 
@@ -246,6 +218,29 @@ custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = "出售"
 
+[node name="TraitPopover" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 170.0
+offset_top = 60.0
+offset_right = 500.0
+offset_bottom = 200.0
+mouse_filter = 0
+
+[node name="Scroll" type="ScrollContainer" parent="TraitPopover"]
+custom_minimum_size = Vector2(330, 0)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Text" type="RichTextLabel" parent="TraitPopover/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+theme_override_font_sizes/normal_font_size = 14
+theme_override_font_sizes/bold_font_size = 14
+
 [node name="BottomBar" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 12
@@ -253,7 +248,7 @@ anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 6.0
-offset_top = -162.0
+offset_top = -126.0
 offset_right = -6.0
 offset_bottom = -6.0
 grow_horizontal = 2
@@ -261,19 +256,19 @@ grow_vertical = 0
 
 [node name="VBox" type="VBoxContainer" parent="BottomBar"]
 layout_mode = 2
-theme_override_constants/separation = 6
+theme_override_constants/separation = 4
 
 [node name="RowA" type="HBoxContainer" parent="BottomBar/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="ResBox" type="HBoxContainer" parent="BottomBar/VBox/RowA"]
-custom_minimum_size = Vector2(230, 30)
+custom_minimum_size = Vector2(230, 28)
 layout_mode = 2
-theme_override_constants/separation = 3
+theme_override_constants/separation = 4
 
 [node name="XpBox" type="Control" parent="BottomBar/VBox/RowA"]
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -312,7 +307,7 @@ mouse_filter = 2
 theme_override_constants/separation = 3
 
 [node name="BagButton" type="Button" parent="BottomBar/VBox/RowA"]
-custom_minimum_size = Vector2(150, 30)
+custom_minimum_size = Vector2(150, 28)
 layout_mode = 2
 text = "背包 0"
 
@@ -326,13 +321,13 @@ custom_minimum_size = Vector2(230, 0)
 layout_mode = 2
 
 [node name="RerollButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
-custom_minimum_size = Vector2(0, 50)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 text = ""
 size_flags_vertical = 3
 
 [node name="CivUpButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
-custom_minimum_size = Vector2(0, 50)
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 text = ""
 size_flags_vertical = 3
@@ -343,35 +338,35 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="Slot0" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
-custom_minimum_size = Vector2(90, 100)
+custom_minimum_size = Vector2(90, 76)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
 [node name="Slot1" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
-custom_minimum_size = Vector2(90, 100)
+custom_minimum_size = Vector2(90, 76)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
 [node name="Slot2" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
-custom_minimum_size = Vector2(90, 100)
+custom_minimum_size = Vector2(90, 76)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
 [node name="Slot3" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
-custom_minimum_size = Vector2(90, 100)
+custom_minimum_size = Vector2(90, 76)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
 [node name="Slot4" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
-custom_minimum_size = Vector2(90, 100)
+custom_minimum_size = Vector2(90, 76)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
@@ -382,13 +377,13 @@ custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 
 [node name="StartButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
-custom_minimum_size = Vector2(0, 60)
+custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = ""
 size_flags_vertical = 3
 
 [node name="LockButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
-custom_minimum_size = Vector2(0, 40)
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 text = ""
 
