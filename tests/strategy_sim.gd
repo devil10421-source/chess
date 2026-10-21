@@ -1,6 +1,6 @@
 extends SceneTree
-## V0.4 策略與經濟模擬（固定種子，可重複執行）。
-## 用法：godot --headless --path . --script res://tests/strategy_sim.gd -- --runs=6 --out=docs/V0.4_模擬報告.md
+## V0.5 策略與經濟模擬（固定種子，可重複執行）。
+## 用法：godot --headless --path . --script res://tests/strategy_sim.gd -- --runs=6 --out=docs/V0.5_模擬報告.md
 ## 兩部分，結果分開呈現：
 ##   A. 純抽卡模擬（不含戰鬥）：只用商店機率與有限卡池，估算各等級找到指定 4 費的刷新次數。
 ##   B. 策略 bot 完整對局（含真實戰鬥模擬）：三種策略 × 六文明 × N 局，記錄升級時間、金幣收支、4 費取得、二星／三星與通關率。
@@ -33,7 +33,7 @@ func _initialize() -> void:
 		if a.begins_with("--out="):
 			path = a.substr(6)
 	var t0 := Time.get_ticks_msec()
-	out("# 《六族遠征》V0.4 策略與經濟模擬報告")
+	out("# 《六族遠征》V0.5 策略與經濟模擬報告")
 	out("")
 	out("由 `tests/strategy_sim.gd` 產生（固定種子，可重複執行：`godot --headless --path . --script res://tests/strategy_sim.gd -- --runs=%d`）。" % runs)
 	out("")
@@ -135,6 +135,8 @@ func _strategy_sim(runs: int, strategies: Array) -> void:
 		["本族 4 費二星：機率／平均回合", func(rs): return _first(rs, "own4_star2_round")],
 		["4 費三星出現頻率", func(rs): return _pct(rs.filter(func(r): return r["stats"]["four_star3"]).size(), rs.size())],
 		["低費（1～2 費）三星：機率／平均回合", func(rs): return _first(rs, "low_three_star_round")],
+		["基礎組件取得（整局）", func(rs): return "%.1f" % _avg(rs.map(func(r): return float(r["stats"].get("components", 0))))],
+		["持有合成裝備（結束時）", func(rs): return "%.1f" % _avg(rs.map(func(r): return float(r["stats"].get("crafted", 0))))],
 		["卡池守恆檢查", func(rs): return "全部通過" if rs.all(func(r): return r["pool_ok"]) else "有錯誤"],
 	]
 	for row in rows:

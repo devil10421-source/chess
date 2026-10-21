@@ -28,7 +28,7 @@
 └───────────────────────────────────────────────────────────────┘
 ```
 
-* **戰鬥是「先算後播」**：按下「開始戰鬥」時 `CombatSim` 以固定步長（0.05 秒）與 seeded RNG 一次算完整場，輸出事件清單；`BattlePlayer` 只負責依時間播放事件。關鍵判定不寫在動畫 callback 中，同一個種子一定得到同一場戰鬥。
+* **戰鬥是「邊算邊播」（V0.5）**：倒數歸零時建立 `CombatSim`（固定步長 0.05 秒、seeded RNG），`BattlePlayer` 依播放時間呼叫 `step_to()` 逐步推進並播放新事件；略過＝`run()` 一次算完剩下的部分。戰鬥中的操作（替場上棋子換裝備）以 `queue_items()` 排入下一步開頭套用並寫入 `op_log`；相同種子＋相同操作時間點一定得到同一場戰鬥。關鍵判定不寫在動畫 callback 中。
 * **JSON 而非 .tres**：選用 JSON 是因為可以直接用任何文字編輯器或試算表轉換工具修改、容易比對差異；匯出設定已把 `data/*.json` 納入封包。
 
 ## 2. 資料夾結構
@@ -236,7 +236,7 @@ Game
 ```
 
 ### 回合流程
-`PREP →（開戰）BATTLE → AFTER（1 秒提示）→ REWARD（若本回合有獎勵；計時器停止）→ PREP（計時器開始）`。最後一回合或遠征生命歸零時，AFTER 之後進入結束畫面。
+V0.5：`PREP（計時器開始；若有上一場特殊戰鬥的獎勵就顯示三選一，計時不停）→（倒數歸零：未選的獎勵隨機發放 → 自動補位）BATTLE → AFTER（1 秒提示）→ PREP`。最後一回合或遠征生命歸零時，AFTER 之後進入結束畫面。
 
 ### 存檔
 version 2：新增 `inventory`、每隻棋子的 `items`、`rewards_claimed`、`pending_reward`。讀到 version 1 會補空背包、空裝備欄與空領取紀錄。
@@ -277,4 +277,39 @@ version 2：新增 `inventory`、每隻棋子的 `items`、`rewards_claimed`、`
 version 3：新增 `pool`（快照）、`removers`、`removers_granted`；`pending_reward.tier` 改名 `drop`（讀檔相容舊名）。version 1、2 存檔可直接讀取。
 
 ### 模擬
-`tests/strategy_bot.gd`＋`tests/strategy_sim.gd`：A 純抽卡（不含戰鬥）與 B 三種策略完整對局（含戰鬥）分開輸出，報告在 `docs/V0.4_模擬報告.md`。
+`tests/strategy_bot.gd`＋`tests/strategy_sim.gd`：A 純抽卡（不含戰鬥）與 B 三種策略完整對局（含戰鬥）分開輸出，報告在 `docs/V0.5_模擬報告.md`（V0.4 的保留在 `docs/V0.4_模擬報告.md`）。
+
+## 11. V0.5 架構變更
+
+### 即時戰鬥模擬（scripts/core/combat/combat_sim.gd）
+| 項目 | 實作 |
+|---|---|
+| 逐步推進 | `start()`（開戰效果只觸發一次）→ `step()`／`step_to(t)`／`run()`；`finished`、`result()`、`snapshots()`。`run()` 等同一路 `step()` 到結束，結果相同 |
+| 戰鬥中換裝備 | `RunState._sync_live_items(uid)` → `CombatSim.queue_items(uid, items)`；下一步開頭 `_apply_ops()` 依序套用：mods＝mods − item_mods(舊) + item_mods(新)，重新登錄唯一特性（不重觸發開戰效果）；生命上限增加時目前生命同量增加、減少時不超過新上限；產生 `items` 事件。已發生的事件不改寫 |
+| 重播 | `op_log` 記錄 `{tick, uid, items}`；以 `scheduled_ops` 餵回相同操作可得到完全相同的事件 |
+| 施法前搖 | `combat.cast_windup` 0.25 秒；`SkillRunner.can_cast()` 確認有合法目標才開始前搖，產生 `cast_start` 事件，前搖結束才真正施放 |
+| 投射物 | 遠程普攻以 `add_delayed({kind: "projectile"})` 在飛行時間（`projectile_base` + 距離 × `projectile_per_hex`）後命中；目標已陣亡則落空 |
+
+### 戰鬥中的商店與候補（scripts/core/run_state.gd）
+- `battle_active`／`live_battle`／`is_fighting(uid)`：戰鬥中場上棋子不能出售、移動、卸裝；`move_to_board` 一律拒絕。
+- `_merge_candidates()` 在戰鬥中跳過場上棋子；被延後的升星在 `begin_round()` 的 `resolve_pending_merges()` 完成。
+- 介面：`GameScreen._shop_open()` 在 PREP／BATTLE／AFTER 都成立；`BoardView` 在戰鬥模式下用 `BattlePlayer.cid_at()` 找到戰鬥中的己方棋子，支援拖放與點選裝備。
+
+### 組件與合成
+- `equipment.json`：`source`＝`component`／`craft`／`special`；`recipes`（順序不拘）；`component_drops`（chance、guarantee、cap、guarantee_round_in_chapter）。三選一只從 `special` 抽。
+- `RunState.combine_inventory(i, j)`、`combine_on_unit(uid, slot, inv)`、`combinable_slot(uid, inv)`；戰鬥中合成同樣透過 `_sync_live_items` 立即生效。
+- `RunState._component_drops(round)`：種子＝`mix(run_seed, 7000 + round)`，與操作時機無關；`component_log` 記錄每次掉落（存檔）。
+- 新唯一特性種類：`combo_strike`、`on_hit_magic`、`after_move_armor`（`ItemPassives.on_move`）、`on_skill_hit_shield`（`on_skill_taken`，有冷卻）、`on_cast_ally_shield`；每個唯一特性有自己的普攻計數（`ItemPassives._count`）。
+- 介面：`GameScreen._preview_combine()` 顯示結果卡＋「確認合成」；`_give_item()` 決定合成或直接穿上。
+
+### 特殊獎勵
+- `RunState.auto_claim_reward()`：在 `create_battle()` 開頭呼叫；種子＝`mix(run_seed, 9000 + 獎勵回合)`；`claim_reward()` 在 `battle_active` 時拒絕。`last_auto_reward` 供畫面提示。
+- 介面：`RewardOverlay` 的 `mouse_filter` 為 IGNORE（面板外可操作）；`RewardReopen` 按鈕顯示剩餘秒數；`_update_reward_countdown()` 處理最後 5 秒提示。
+
+### 備戰時間與節奏
+- `rounds.prep_by_round`（`PrepTimer.seconds_for_round()`）；沒有開始戰鬥按鈕。
+- `battle_playback.segments` 0.85×／1.3×／1.7×；`BattlePlayer`：普攻前衝 0.264 秒、傷害數字 1.04 秒、施法範圍 0.7 秒＋光環、陣亡淡出 0.5 秒。
+- 候補區 `UnitToken.on_bench`：不畫 HP／MP，只在頭上畫星級（`_draw_bench_star`）。
+
+### 存檔
+version 3 不變；新增 `component_log`（舊存檔讀為空）。
