@@ -64,7 +64,7 @@ static func spec_scale() -> float:
 static func final_stats(unit_id: String, star: int, mods: Dictionary) -> Dictionary:
 	var s := base_stats(unit_id, star)
 	s["hp"] = float(maxi(1, roundi((s["hp"] + float(mods.get("hp_flat", 0.0))) * (1.0 + float(mods.get("hp_pct", 0.0)) / 100.0))))
-	s["atk"] = s["atk"] + float(mods.get("atk_flat", 0.0))
+	s["atk"] = (s["atk"] + float(mods.get("atk_flat", 0.0))) * maxf(0.1, 1.0 + float(mods.get("atk_pct", 0.0)) / 100.0)
 	s["atk_speed"] = s["atk_speed"] * maxf(0.25, 1.0 + float(mods.get("atk_speed_pct", 0.0)) / 100.0)
 	s["crit_chance"] = clampf(s["crit_chance"] + float(mods.get("crit_chance_add", 0.0)) / 100.0, 0.0, 1.0)
 	s["crit_mult"] = s["crit_mult"] + float(mods.get("crit_dmg_add", 0.0)) / 100.0

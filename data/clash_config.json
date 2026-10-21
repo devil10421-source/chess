@@ -1,0 +1,365 @@
+{
+  "_note": "《氏族爭霸》10 人 PvPvE 核心原型 V0.1 的設定。全部是第一輪測試值（未定案），集中在這裡方便調整。單人模式《六族遠征》不讀這個檔案。",
+  "version": "0.1.0",
+  "match": {
+    "_note": "players：房間人數；start_hp：玩家生命；max_rounds：安全上限（到達後仍未分出冠軍，依名次規則以生命排序）",
+    "players": 10,
+    "start_hp": 100,
+    "max_rounds": 45,
+    "start_gold": 5,
+    "ai_names": [
+      "艾琳",
+      "鐵木",
+      "卡隆",
+      "西風",
+      "緋櫻",
+      "蒼角",
+      "白狼",
+      "赤焰",
+      "月影",
+      "青嵐"
+    ],
+    "ai_country_prefix": [
+      "永恆",
+      "黎明",
+      "鋼鐵",
+      "群星",
+      "翡翠",
+      "深淵",
+      "曙光",
+      "雷霆",
+      "霜雪",
+      "琥珀"
+    ],
+    "ai_country_suffix": [
+      "共和國",
+      "聯合王國",
+      "公國",
+      "自治領",
+      "聯邦",
+      "帝國",
+      "公社",
+      "邦聯",
+      "王朝",
+      "合眾國"
+    ]
+  },
+  "pool": {
+    "_note": "十人共用有限棋池：每種棋子的總份數（依費用）。1★=1 份、2★=3 份、3★=9 份；商店上顯示即預留。",
+    "supply": {
+      "1": 30,
+      "2": 25,
+      "3": 18,
+      "4": 10
+    }
+  },
+  "clans": {
+    "_note": "原本 10 隻中立棋子的氏族歸屬：【測試分配，未定案】只為了讓 34 隻棋子都能參與種族羈絆；費用與技能不變。",
+    "neutral_assignment": {
+      "NEU1": "human",
+      "NEU2": "deer",
+      "NEU3": "centaur",
+      "NEU4": "orc",
+      "NEU5": "oni",
+      "NEU6": "human",
+      "NEU7": "elf",
+      "NEU8": "orc",
+      "NEU9": "oni",
+      "NEU10": "deer"
+    }
+  },
+  "rounds": {
+    "_note": "回合表：pve_first 起每 pve_every 回合一次合作 PvE，其餘為 PvP；存活 2 人時只打 PvP。prep_by_round＝備戰秒數；trade_seconds＝交易倒數。",
+    "pve_first": 2,
+    "pve_every": 6,
+    "prep_by_round": [
+      {
+        "from": 1,
+        "to": 1,
+        "seconds": 35
+      },
+      {
+        "from": 2,
+        "to": 99,
+        "seconds": 30
+      }
+    ],
+    "trade_seconds": 20,
+    "government_round": 8,
+    "policy_round": 16
+  },
+  "pvp": {
+    "_note": "PvP 輸方扣血＝回合基礎值＋對方存活棋子（1★/2★/3★ 各 1/2/3）。平手（時間到雙方都有存活）＝雙方都依對方存活棋子扣血。勝方 +win_gold 金。",
+    "base_damage": [
+      {
+        "from": 1,
+        "to": 5,
+        "value": 1
+      },
+      {
+        "from": 6,
+        "to": 10,
+        "value": 2
+      },
+      {
+        "from": 11,
+        "to": 15,
+        "value": 4
+      },
+      {
+        "from": 16,
+        "to": 20,
+        "value": 6
+      },
+      {
+        "from": 21,
+        "to": 25,
+        "value": 8
+      },
+      {
+        "from": 26,
+        "to": 30,
+        "value": 11
+      },
+      {
+        "from": 31,
+        "to": 999,
+        "value": 15
+      }
+    ],
+    "unit_damage_by_star": [
+      1,
+      2,
+      3
+    ],
+    "win_gold": 1
+  },
+  "pve": {
+    "_note": "合作 PvE。stages：第 n 次 PvE 使用《六族遠征》第幾回合的敵軍；超出清單後重複最後一項並逐次加強 extra_scale_per_repeat。duo_scale／solo_scale＝敵軍生命與攻擊倍率（落單者沒有隊友救援，敵軍略弱）。失敗扣血依 loss；成功獎勵 reward_gold＋1 個隨機基礎組件，special_item_pves 另外獲得 1 件特殊裝備。",
+    "stages": [
+      2,
+      6,
+      12,
+      18,
+      21,
+      24
+    ],
+    "extra_scale_per_repeat": 0.25,
+    "duo_scale": 1.0,
+    "solo_scale": 0.85,
+    "loss": [
+      {
+        "from": 1,
+        "to": 10,
+        "value": 4
+      },
+      {
+        "from": 11,
+        "to": 20,
+        "value": 8
+      },
+      {
+        "from": 21,
+        "to": 30,
+        "value": 12
+      },
+      {
+        "from": 31,
+        "to": 999,
+        "value": 16
+      }
+    ],
+    "reward_gold": 2,
+    "reward_component": true,
+    "special_item_pves": [
+      2,
+      4,
+      6
+    ],
+    "reinforce_delay": 1.5,
+    "max_active_time": 45.0
+  },
+  "government": {
+    "_note": "國家制度（第 8 回合選）與深化政策（第 16 回合選）。所有效果都會實際影響經濟或戰鬥；數值為測試值。",
+    "systems": {
+      "democracy": {
+        "name": "超級民主聯邦",
+        "role": "經濟、商店效率、靈活轉型",
+        "base_text": "每回合收入 +1 金",
+        "income_bonus": 1,
+        "policies": [
+          "selective_democracy",
+          "free_market"
+        ]
+      },
+      "empire": {
+        "name": "萬世帝國",
+        "role": "精銳、高星棋子、核心戰力",
+        "base_text": "二星以上棋子生命與攻擊 +8%",
+        "elite_min_star": 2,
+        "elite_hp_pct": 8,
+        "elite_atk_pct": 8,
+        "policies": [
+          "i_am_the_state",
+          "never_retreat"
+        ]
+      },
+      "commune": {
+        "name": "偉大公社",
+        "role": "集體動員、持續作戰、後期成長",
+        "base_text": "所有上場棋子生命 +5%",
+        "all_hp_pct": 5,
+        "policies": [
+          "people_power",
+          "five_year_plan"
+        ]
+      }
+    },
+    "policies": {
+      "selective_democracy": {
+        "system": "democracy",
+        "name": "選擇式民主",
+        "slogan": "每個人都有選擇權，前提是選擇正確。",
+        "text": "每回合第一次刷新免費（不累積）；出售二星以上棋子額外 +1 金。不提供直接戰鬥加成。",
+        "free_rerolls_per_round": 1,
+        "sell_bonus_2star": 1
+      },
+      "free_market": {
+        "system": "democracy",
+        "name": "自由市場會自己處理",
+        "slogan": "市場永遠是對的，除非需要政府出手。",
+        "text": "利息上限 +2；但 PvP 勝利不再額外得金，上場棋子造成的傷害 −5%。",
+        "interest_max_bonus": 2,
+        "pvp_win_gold": 0,
+        "damage_pct": -5
+      },
+      "i_am_the_state": {
+        "system": "empire",
+        "name": "朕即是國家",
+        "slogan": "國家屬於人民，而人民屬於朕。",
+        "text": "指定一名核心棋子：生命 +40%、攻擊 +35%、初始魔力 +20；其他棋子不再享有帝國的精銳加成。未指定時開戰自動選最強的場上棋子。",
+        "core_hp_pct": 40,
+        "core_atk_pct": 35,
+        "core_start_mana": 20
+      },
+      "never_retreat": {
+        "system": "empire",
+        "name": "帝國永不退讓",
+        "slogan": "帝國從不撤退，只是國境偶爾會後退。",
+        "text": "開戰時若上場陣容與上一場相比保留 75% 以上，忠誠 +1（最多 5 層）；保留不到 50% 就歸零。每層生命與攻擊 +4%。",
+        "keep_ratio_stack": 0.75,
+        "keep_ratio_reset": 0.5,
+        "max_stacks": 5,
+        "hp_pct_per_stack": 4,
+        "atk_pct_per_stack": 4
+      },
+      "people_power": {
+        "system": "commune",
+        "name": "人民的力量",
+        "slogan": "人民是國家的主人，也是國家最重要的資源。",
+        "text": "上場棋子每累積 4 次有效普攻或受到普攻，召喚 1 名村民（每隻最多 4 名）。村民跟在棋子旁，每 1 秒對棋子的目標造成魔法傷害；戰鬥結束後消失。",
+        "hits_per_villager": 4,
+        "max_villagers": 4,
+        "pulse_interval": 1.0,
+        "damage_by_star": [
+          10,
+          15,
+          22
+        ]
+      },
+      "five_year_plan": {
+        "system": "commune",
+        "name": "五回合計畫",
+        "slogan": "一切都按照計畫進行，包括計畫的修改。",
+        "text": "計畫期間每回合收入 −1；每完成 5 回合：發展等級 +1、立即獲得 5 金與 4 經驗。發展等級每級使每回合收入 +1（可累積）。",
+        "cycle_rounds": 5,
+        "income_penalty": 1,
+        "cycle_gold": 5,
+        "cycle_xp": 4,
+        "income_per_level": 1
+      }
+    }
+  },
+  "ai": {
+    "_note": "AI 難度。normal：維持利息、湊羈絆、追升星、會刷新；easy：較少刷新、升級慢、不看羈絆。level_targets[i]＝第 i+1 回合想達到的等級。",
+    "default_difficulty": "normal",
+    "normal": {
+      "econ_floor_round": 4,
+      "keep_gold": 20,
+      "reroll_budget": 2,
+      "synergy_weight": 1.6,
+      "level_targets": [
+        1,
+        2,
+        3,
+        3,
+        4,
+        4,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        8,
+        8,
+        8,
+        8,
+        8,
+        9,
+        9,
+        9,
+        9,
+        9,
+        10
+      ]
+    },
+    "easy": {
+      "econ_floor_round": 99,
+      "keep_gold": 10,
+      "reroll_budget": 0,
+      "synergy_weight": 0.0,
+      "level_targets": [
+        1,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8
+      ]
+    },
+    "trade_accept_ratio": 0.9
+  },
+  "tie_rule": {
+    "_note": "同一回合多人淘汰的名次：① 該回合開始時生命較高者名次較前 ② 本回合結算後生命（可為負）較高者較前 ③ 仍相同則並列（共用較前的名次）。本原型中『結算前生命』等於回合開始生命，所以第 ② 項改用結算後生命。"
+  }
+}

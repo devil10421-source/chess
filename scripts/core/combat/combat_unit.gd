@@ -51,6 +51,12 @@ var winding_up := false
 ## 裝備特效的冷卻（唯一特性 id -> 可再次觸發的時間）
 var item_cd: Dictionary = {}
 var focus_stacks := 0
+## 《氏族爭霸》人民的力量：動員值（有效普攻／受擊次數）、村民數、下一次村民攻擊時間
+var mobilize_count := 0
+var villagers := 0
+var villager_next := 0.0
+## 《氏族爭霸》援軍：從隊友棋盤過來的棋子（""＝本來就在這個棋盤）
+var origin := ""
 ## 狀態：{kind, value, until, src, next_tick?, tick_amount?, dtype?, tag?}
 var statuses: Array = []
 ## 護盾：{amount, until}
@@ -157,5 +163,5 @@ func snapshot() -> Dictionary:
 		"cell": cell, "hp": hp, "max_hp": max_hp, "mana": mana, "mana_max": mana_max,
 		"shield": shield_total(), "atk": atk, "armor": armor, "mr": mr, "atk_speed": atk_speed,
 		"range": attack_range, "move_speed": move_speed, "mods": mods.duplicate(), "items": items.duplicate(),
-		"crit_chance": crit_chance, "crit_mult": crit_mult,
+		"crit_chance": crit_chance, "crit_mult": crit_mult, "origin": origin, "villagers": villagers,
 	}

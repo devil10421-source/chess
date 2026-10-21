@@ -33,13 +33,14 @@ static func copies_for_star(star: int) -> int:
 	return int(arr[clampi(star, 1, arr.size()) - 1])
 
 
+## civ_id 為 ""（《氏族爭霸》）：沒有文明招募限制，34 隻棋子全部可抽
 static func pool_for(civ_id: String, cost: int) -> Array:
 	var race := str(GameData.civ(civ_id).get("race", civ_id))
 	var out: Array = []
 	for u in GameData.units():
 		if int(u["cost"]) != cost:
 			continue
-		if cost >= 4 and str(u["race"]) != race and not GameData.is_neutral(str(u["id"])):
+		if civ_id != "" and cost >= 4 and str(u["race"]) != race and not GameData.is_neutral(str(u["id"])):
 			continue
 		out.append(str(u["id"]))
 	return out

@@ -19,6 +19,8 @@ extends RefCounted
 ##   damage 另有 redirect_from（守護連結代為承受）、parried（返刃格擋）、counter（反擊）
 ##   cast_start {cid, name}（施法前搖）     items {cid, items, hp, max_hp}（戰鬥中更換裝備，之後的計算立即使用新數值）
 ##   attack.ranged＝true 時，傷害在投射物飛行時間後才結算（damage 事件時間＝命中時間）
+##   《氏族爭霸》：hold {}（我方全滅、等待隊友救援，戰場凍結）  spawn {cid, snap}（援軍抵達）
+##   villager {cid, n}（村民數變化）  villager_hit {cid, tgt, n}（村民攻擊；傷害事件 source＝villager）
 
 const EPS := 0.0001
 
@@ -43,6 +45,13 @@ var _result: Dictionary = {}
 var _pending_ops: Array = []      # 等待下一步套用的操作
 var op_log: Array = []            # 已套用的操作 [{tick, uid, items}]（重播用）
 var scheduled_ops: Dictionary = {}  # 重播：tick -> [{uid, items}]
+## 《氏族爭霸》合作 PvE：我方全滅但敵軍仍在時不結束，凍結戰場等待隊友援軍（hold_on_wipe）。
+## 凍結期間不推進任何狀態，也不計入戰鬥時間上限（只計 _active_steps），所以不會因等待救援而逾時。
+var hold_on_wipe := false
+var holding := false
+var _active_steps := 0
+var _hard_cap_steps := 0
+var _people_power: Dictionary = {}
 
 
 func _init(seed_value: int) -> void:
@@ -128,6 +137,7 @@ func start() -> void:
 	for u in units:
 		ItemPassives.on_battle_start(self, u)
 	_max_steps = int(round(max_time / tick))
+	_hard_cap_steps = _max_steps * 6
 
 
 ## 推進一步（固定時間 tick）。回傳 false 表示戰鬥已結束。
@@ -136,9 +146,17 @@ func step() -> bool:
 		return false
 	start()
 	t = _tick_index * tick
+	if holding:
+		# 全滅等待救援：戰場凍結（敵軍生命與狀態保留），只讓時間前進，與隊友的棋盤同步
+		_tick_index += 1
+		if _tick_index > _hard_cap_steps:
+			_finish()
+			return false
+		return true
 	_apply_ops(_tick_index)
 	_update_statuses()
 	_run_delayed()
+	_villager_pulse()
 	if _is_over():
 		_finish()
 		return false
@@ -152,8 +170,10 @@ func step() -> bool:
 		_finish()
 		return false
 	_tick_index += 1
-	if _tick_index > _max_steps:
-		t = max_time
+	_active_steps += 1
+	if _active_steps > _max_steps or _tick_index > _hard_cap_steps:
+		if not hold_on_wipe:
+			t = max_time
 		_finish()
 		return false
 	return true
@@ -273,7 +293,104 @@ func _finish() -> void:
 
 
 func _is_over() -> bool:
-	return alive_of(0).is_empty() or alive_of(1).is_empty()
+	if alive_of(1).is_empty():
+		return true
+	if alive_of(0).is_empty():
+		if hold_on_wipe:
+			if not holding:
+				holding = true
+				emit({"k": "hold"})
+			return false
+		return true
+	return false
+
+
+# ---------- 《氏族爭霸》合作 PvE ----------
+## 強制結束（例如隊友也失敗、無法救援）
+func force_finish() -> void:
+	holding = false
+	_finish()
+
+
+## 清場時我方存活棋子的戰鬥快照（援軍用）：種類、星級、裝備、修正值、剩餘生命與魔力
+func survivor_snapshots() -> Array:
+	var out: Array = []
+	for u in alive_of(0):
+		out.append({"id": u.unit_id, "star": u.star, "hp": u.hp, "max_hp": u.max_hp, "mana": u.mana,
+			"items": u.items.duplicate(), "mods": u.mods.duplicate(), "origin": u.origin})
+	return out
+
+
+## 援軍抵達：放在我方區域後排的空格；保留清場時的生命與魔力（不從棋池生成新份數，只是戰鬥快照）。回傳加入的 cid。
+func add_reinforcements(entries: Array, origin_label: String) -> Array:
+	var added: Array = []
+	var cells: Array = []
+	for r in [7, 6, 5, 4]:
+		for c in [3, 2, 4, 1, 5, 0, 6]:
+			cells.append(Vector2i(c, r))
+	for e in entries:
+		var cell := HexGrid.INVALID
+		for c in cells:
+			if not occupancy.has(c):
+				cell = c
+				break
+		if cell == HexGrid.INVALID:
+			break
+		var u := add_unit(str(e["id"]), int(e["star"]), cell, 0, e["mods"], 0, e.get("items", []))
+		u.hp = clampf(float(e["hp"]), 1.0, u.max_hp)
+		u.mana = minf(float(e.get("mana", 0.0)), u.mana_max)
+		u.origin = origin_label
+		u.ready_at = t
+		u.front_rank = cell.y - HexGrid.PLAYER_ROW_MIN
+		emit({"k": "spawn", "cid": u.cid, "snap": u.snapshot()})
+		added.append(u.cid)
+	if not added.is_empty():
+		holding = false
+	return added
+
+
+# ---------- 《氏族爭霸》人民的力量（村民） ----------
+func _pp_cfg() -> Dictionary:
+	if _people_power.is_empty():
+		_people_power = GameData.clash_cfg("government").get("policies", {}).get("people_power", {})
+	return _people_power
+
+
+## 有效普攻或受到普攻（不含持續傷害、技能、反擊、村民攻擊）累積動員值；每 hits_per_villager 次召喚 1 名村民
+func _mobilize(u: CombatUnit) -> void:
+	if not u.alive or float(u.mods.get("mobilize", 0.0)) <= 0.0:
+		return
+	var pp := _pp_cfg()
+	u.mobilize_count += 1
+	if u.mobilize_count % int(pp.get("hits_per_villager", 4)) == 0 and u.villagers < int(pp.get("max_villagers", 4)):
+		u.villagers += 1
+		if u.villagers == 1:
+			u.villager_next = t + float(pp.get("pulse_interval", 1.0))
+		emit({"k": "villager", "cid": u.cid, "n": u.villagers})
+
+
+## 村民攻擊：每 pulse_interval 秒對棋子的目標（沒有則最近的敵人）造成 村民數 × 每名傷害 的魔法傷害（統一結算，不是獨立棋子）
+func _villager_pulse() -> void:
+	for u in units:
+		if not u.alive or u.villagers <= 0 or t + EPS < u.villager_next:
+			continue
+		var pp := _pp_cfg()
+		u.villager_next += float(pp.get("pulse_interval", 1.0))
+		var tgt := unit_by_cid(u.target_cid)
+		if tgt == null or not tgt.alive or tgt.side == u.side:
+			tgt = null
+			var best := 999
+			for e in enemies_of(u):
+				var d := HexGrid.distance(u.cell, e.cell)
+				if d < best:
+					best = d
+					tgt = e
+		if tgt == null:
+			continue
+		var arr: Array = pp.get("damage_by_star", [10, 15, 22])
+		var per := float(arr[clampi(u.star, 1, arr.size()) - 1])
+		emit({"k": "villager_hit", "cid": u.cid, "tgt": tgt.cid, "n": u.villagers})
+		deal_damage(u, tgt, per * u.villagers, "magic", "villager", false)
 
 
 func _act(u: CombatUnit) -> void:
@@ -540,6 +657,10 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	var hp_damage := _apply_hit(src, tgt, dmg, {"crit": crit, "dtype": dtype, "source": source, "dot": is_dot, "parried": not parry.is_empty()}, true)
 	if crit:
 		ItemPassives.on_crit(self, src, tgt)
+	if source == "basic" and not is_dot and hp_damage + dmg > 0.0:
+		_mobilize(src)
+		if tgt.alive:
+			_mobilize(tgt)
 	if source == "skill" and tgt.alive:
 		ItemPassives.on_skill_taken(self, tgt)
 	if tgt.alive and source == "basic":
@@ -643,7 +764,7 @@ func effective_reduction(src: CombatUnit, defense: float, dtype: String) -> floa
 ## 傷害加成百分比（加總後一次套用）。拆成獨立函式方便測試與 UI 說明。
 func damage_bonus_pct(src: CombatUnit, tgt: CombatUnit, dtype: String, source: String, is_dot: bool) -> float:
 	var m := src.mods
-	var pct := 0.0
+	var pct := float(m.get("dmg_pct", 0.0))   # 《氏族爭霸》國家制度：所有傷害
 	if source == "basic":
 		pct += float(m.get("basic_dmg_pct", 0.0))
 		pct += float(m.get("melee_basic_pct", 0.0)) if src.is_melee() else float(m.get("ranged_basic_pct", 0.0))
