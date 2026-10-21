@@ -240,3 +240,41 @@ Game
 
 ### 存檔
 version 2：新增 `inventory`、每隻棋子的 `items`、`rewards_claimed`、`pending_reward`。讀到 version 1 會補空背包、空裝備欄與空領取紀錄。
+
+## 10. V0.4 架構變更
+
+### 版面（scenes/game.tscn，由 `tools/gen_game_scene.py` 產生）
+- 棋盤可用區＝上下兩條之間；左右以「左側羈絆清單寬度」對稱保留，棋盤固定置中（`GameScreen.board_rect()`）。右側面板（排行／棋子資訊／背包）與羈絆說明 `TraitPopover` 都浮在戰場上，不參與棋盤尺寸計算，開關時棋盤的位置與縮放不變。
+- 手機安全區：`_safe_insets()` 讀 `DisplayServer.get_display_safe_area()`，只在 mobile 平台內縮上下左右的面板。
+- `BoardView.top_pad()`：第一排棋子頭上狀態條需要的空間；候補格 1.32 格寬、間距 0.32 格。
+- `UnitToken.head_layout()`：頭上元件位置（星級標記在 HP／MP 條左側；裝備圖示在條下方，0 件時為空陣列）。`UiIcon.paint()` 為靜態繪圖，棋子與介面共用同一套圖示。
+
+### 戰鬥（scripts/core/combat）
+| 項目 | 實作 |
+|---|---|
+| 穿透 | `CombatUnit.penetration(dtype)`＝mods（裝備／文明／羈絆）＋自身狀態（技能），上限 `combat.status.penetration_max_pct`；`CombatSim.reduction_after_pen()`＝減傷率 ×（1 − 穿透）。舊的 `armor_down` 已移除，技能改用 `params.pen／pen_dur`（`SkillRunner._self_pen`） |
+| 狀態規則 | `CombatSim.UNIQUE_STATUSES`（緩速、重傷：只有一份，取較長時間）；`REFRESH_STATUSES`（持續傷害、持續治療、穿透、標記、守護連結、返刃、祝福：同來源同 tag 刷新） |
+| 傷害管線 | `deal_damage`：加成 → 暴擊 → 防禦（含穿透）→ 額外減傷 → 返刃格擋 → `_apply_hit`（護盾 → 守護連結轉移 → 扣血 → 事件／統計 → 陣亡或祝福觸發）→ 回魔與裝備被動 → 反擊 |
+| 延遲效果 | `CombatSim.add_delayed()／_run_delayed()`（虛空裂隙），每步在狀態結算後執行，結果可重現 |
+| 後撤 | `CombatSim.retreat_step()`：相鄰合法空格，排序鍵＝最近敵人距離↓、可攻擊此格的敵人數↑、仍在原目標射程內、與敵人距離總和↓、座標；產生 `retreat` 事件 |
+| 新事件 | `retreat`、`rift`、`burst`；`damage` 另有 `redirect_from`、`parried`；反擊的 `attack` 帶 `counter` |
+
+### 經濟與卡池（scripts/core/shop.gd、run_state.gd）
+- 卡池剩餘張數不另外存狀態：`RunState.pool_remaining()`＝供應量 − 商店預留 − 玩家持有（`Shop.copies_for_star`：1／3／9）。存讀檔、鎖定、合成、出售都自然守恆；存檔另存一份快照供核對。
+- `Shop.roll_slot(rng, level, civ, excluded, pool)`：先抽費用（沒有合格棋子的費用權重為 0），再依剩餘張數加權抽棋子並扣 1。
+
+### 中立陣營
+- `race = "neutral"`：`Synergy.count` 跳過沒有定義的種族；`Shop.pool_for` 的 4 費＝本族＋中立。
+- 4 費規格數值放在 `units.json → spec`，`UnitStats.base_stats` 以 `neutral.spec_scale` 換算生命與攻擊；`skill.spec_scaled` 的技能固定量＝參數 × 倍率 × 星級技能倍率；攻擊力百分比型技能直接用已含星級的攻擊力。
+- 被動技能（`skill.passive`，追跡獵手）：`mana_max = 0`，不累積魔力、不施放。
+
+### 裝備
+- `equipment.json`：`stats`＋`unique {id, name, desc}`＋`passive`；`drop` 只決定掉落池。`ItemPassives.unique_passives()` 依唯一特性 id 去重（取效果較強者）。
+- `RunState.equip()` 不再能覆蓋或互換；`use_remover()` 消耗卸除器取下；`_merge_candidates()` 的主體順序：已上場 → 玩家選中（`buy(slot, preferred_uid)`）→ uid 小。
+- 介面：右側 `BagBox` 背包；拖曳在 `GameScreen._drag_input()`（`_input` 階段處理），落點用 `BoardView.unit_at_screen()`；點裝備再點棋子用 `BoardView.tap_interceptor`。
+
+### 存檔
+version 3：新增 `pool`（快照）、`removers`、`removers_granted`；`pending_reward.tier` 改名 `drop`（讀檔相容舊名）。version 1、2 存檔可直接讀取。
+
+### 模擬
+`tests/strategy_bot.gd`＋`tests/strategy_sim.gd`：A 純抽卡（不含戰鬥）與 B 三種策略完整對局（含戰鬥）分開輸出，報告在 `docs/V0.4_模擬報告.md`。

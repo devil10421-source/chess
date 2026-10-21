@@ -1003,7 +1003,7 @@
    "mana_max": 70,
    "boss": true,
    "stats": {
-    "hp": 2200,
+    "hp": 1500,
     "atk": 46,
     "atk_speed": 0.7,
     "armor": 35,
