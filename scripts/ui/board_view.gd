@@ -27,6 +27,8 @@ var interactive := true
 var battle_mode := false
 var _selected_cid := -1
 var _selected_enemy_cell := HexGrid.INVALID
+## 備戰時棋盤上方顯示的敵方預覽：回傳 [{id, star, cell}]（《氏族爭霸》改成對手陣容或 PvE 敵軍）
+var enemy_preview_provider: Callable = func(run: RunState) -> Array: return BattleSetup.stage_units(run.round_no)
 ## 回傳某畫面座標是否位於出售區（由 GameScreen 設定）
 var is_over_sell_zone: Callable = func(_p: Vector2) -> bool: return false
 
@@ -171,7 +173,7 @@ func _sync_enemy_preview() -> void:
 	_enemy_tokens.clear()
 	if _run == null or not _show_prep:
 		return
-	for e in BattleSetup.stage_units(_run.round_no):
+	for e in enemy_preview_provider.call(_run):
 		var tk: UnitToken = TOKEN_SCENE.instantiate()
 		tokens_root.add_child(tk)
 		tk.setup(e["id"], e["star"], 1, hex_size * 0.72)

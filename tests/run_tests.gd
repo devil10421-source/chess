@@ -113,7 +113,7 @@ func eq(a: Variant, b: Variant, msg: String) -> void:
 
 # ------------------------------------------------------------
 func test_scripts_and_scenes_load() -> void:
-	for dir in ["res://scripts/core", "res://scripts/core/combat", "res://scripts/ui", "res://scripts/autoload"]:
+	for dir in ["res://scripts/core", "res://scripts/core/combat", "res://scripts/core/clash", "res://scripts/ui", "res://scripts/autoload"]:
 		for f in DirAccess.get_files_at(dir):
 			if not f.ends_with(".gd"):
 				continue

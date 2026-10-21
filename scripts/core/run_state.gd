@@ -38,6 +38,10 @@ var battle_active := false
 var removers_granted: Array = []  # 已發放卸除器的回合
 ## 一般戰鬥的組件掉落紀錄（V0.5）：[{round, id, kind: "drop"／"guarantee"}]
 var component_log: Array = []
+## 《氏族爭霸》：十人共用棋池（null＝單人模式，各自計算）。剩餘張數由所有存活玩家的持有＋商店預留即時重算。
+var shared_pool: SharedPool = null
+## 《氏族爭霸》：國家制度與政策帶來的經濟效果（例如出售二星以上額外得金）
+var perks: Dictionary = {}
 
 
 static func create(civ: String, seed_value: int) -> RunState:
@@ -172,6 +176,8 @@ func _reroll_shop() -> void:
 ## 每種可招募棋子的剩餘張數＝供應量 − 商店上顯示的張數（預留）− 玩家持有的底層張數（1★=1、2★=3、3★=9）。
 ## 不會小於 0（舊版存檔若持有超過供應量，視為 0）。
 func pool_remaining() -> Dictionary:
+	if shared_pool != null:
+		return shared_pool.remaining()
 	var out := Shop.initial_pool(civ_id)
 	var used := pool_used()
 	for id in out.keys():
@@ -363,6 +369,8 @@ func sell(uid: int) -> String:
 		return "戰鬥中的場上棋子不能出售"
 	var u: Dictionary = f["unit"]
 	gold += UnitStats.sell_value(u["id"], int(u["star"]))
+	if int(u["star"]) >= 2:
+		gold += int(perks.get("sell_bonus_2star", 0))   # 《氏族爭霸》選擇式民主
 	# 出售時裝備自動返回背包
 	inventory.append_array(unit_items(u))
 	u["items"] = []
@@ -575,6 +583,35 @@ func auto_claim_reward() -> String:
 	if claim_reward(idx) != "":
 		return ""
 	return id
+
+
+# ---------- 《氏族爭霸》交易用的所有權轉移 ----------
+## 把棋子從這名玩家身上移除（不歸還棋池：交易時只是轉移所有權）。身上裝備退回自己的背包。回傳棋子資料（新 uid 由接收者分配）。
+func take_unit_for_trade(uid: int) -> Dictionary:
+	var f := find_unit(uid)
+	if f.is_empty():
+		return {}
+	var u: Dictionary = f["unit"]
+	inventory.append_array(unit_items(u))
+	u["items"] = []
+	if f["where"] == "bench":
+		bench[int(f["index"])] = null
+	else:
+		board.erase(f["cell"])
+	_notify()
+	return {"id": str(u["id"]), "star": int(u["star"])}
+
+
+## 接收交易來的棋子：放進候補區第一個空格（沒有空格回傳 -1，不會刪除棋子），接著檢查是否能升星。回傳新 uid。
+func receive_traded_unit(unit_id: String, star: int) -> int:
+	var idx := bench_free_index()
+	if idx < 0:
+		return -1
+	var u := _new_unit(unit_id, star)
+	bench[idx] = u
+	_try_merge(unit_id, star)
+	_notify()
+	return int(u["uid"])
 
 
 # ---------- 佈陣 ----------

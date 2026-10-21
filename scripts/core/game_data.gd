@@ -11,6 +11,7 @@ static var _stage_map: Dictionary = {}
 
 
 static func reload() -> void:
+	set_clash_clans(false)
 	_cache.clear()
 	_item_map.clear()
 	_unit_map.clear()
@@ -45,6 +46,48 @@ static func config() -> Dictionary:
 
 static func cfg(section: String) -> Dictionary:
 	return config().get(section, {})
+
+
+# ---------- 《氏族爭霸》設定（data/clash_config.json） ----------
+static func clash_config() -> Dictionary:
+	return _load("clash_config")
+
+
+static func clash_cfg(section: String) -> Dictionary:
+	return clash_config().get(section, {})
+
+
+## 氏族爭霸模式：原本的中立棋子依 clans.neutral_assignment 歸入六大氏族（測試分配），離開模式時還原。
+## 直接改寫棋子資料的 race 欄位，讓羈絆、商店、圖示等所有地方一致；費用、技能與數值不變。
+static var _clan_backup: Dictionary = {}
+
+
+static func set_clash_clans(enabled: bool) -> void:
+	unit("")   # 確保已建立對照表
+	if enabled:
+		var assign: Dictionary = clash_cfg("clans").get("neutral_assignment", {})
+		for id in assign.keys():
+			var u: Dictionary = _unit_map.get(id, {})
+			if u.is_empty():
+				continue
+			if not _clan_backup.has(id):
+				_clan_backup[id] = str(u["race"])
+			u["race"] = str(assign[id])
+	else:
+		for id in _clan_backup.keys():
+			var u: Dictionary = _unit_map.get(id, {})
+			if not u.is_empty():
+				u["race"] = _clan_backup[id]
+		_clan_backup.clear()
+
+
+static func clash_clans_active() -> bool:
+	return not _clan_backup.is_empty()
+
+
+## 原本是中立棋子（氏族爭霸中已有測試氏族歸屬）
+static func was_neutral(id: String) -> bool:
+	return _clan_backup.has(id) or is_neutral(id)
 
 
 static func total_rounds() -> int:

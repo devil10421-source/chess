@@ -172,4 +172,7 @@ header = '''[gd_scene load_steps=6 format=3]
 out = header + '\n' + '\n\n'.join(nodes) + '\n'
 out = out.replace("theme_override_constants__separation", "theme_override_constants/separation")
 open('scenes/game.tscn', 'w', encoding='utf-8').write(out)
+# 《氏族爭霸》對局畫面：同一套節點，根節點改用 clash_screen.gd（繼承 game_screen.gd）
+clash = out.replace('path="res://scripts/ui/game_screen.gd"', 'path="res://scripts/ui/clash_screen.gd"').replace('[node name="Game" type="Control"]', '[node name="ClashGame" type="Control"]', 1)
+open('scenes/clash_game.tscn', 'w', encoding='utf-8').write(clash)
 print(len(nodes), "nodes")

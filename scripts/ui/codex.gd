@@ -27,6 +27,11 @@ func _ready() -> void:
 		r.add_theme_font_size_override("bold_font_size", 18)
 	rules.text = _rules_text()
 	civs.text = _civ_text()
+	if Session.clash != null:
+		# 《氏族爭霸》：規則與「國家制度」分頁改成十人模式的內容
+		rules.text = ClashRulesText.rules()
+		tabs.set_tab_title(2, "國家制度")
+		civs.text = ClashRulesText.governments()
 	traits_text.text = _traits_text()
 	_set_star(1)
 

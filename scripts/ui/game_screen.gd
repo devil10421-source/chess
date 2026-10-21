@@ -345,7 +345,7 @@ func _connect() -> void:
 	civup_btn.pressed.connect(_on_buy_xp)
 	lock_btn.pressed.connect(func():
 		if _shop_open():
-			run.toggle_lock())
+			_do({"type": "lock"}))
 	sell_btn.pressed.connect(_on_sell_selected)
 	bag_btn.pressed.connect(_show_bag)
 	close_detail_btn.pressed.connect(_close_detail)
@@ -378,10 +378,10 @@ func _connect() -> void:
 	board.battle_unit_selected.connect(func(cid: int): _set_info("battle" if cid >= 0 else "none", cid if cid >= 0 else null))
 	board.move_to_board_requested.connect(func(uid: int, cell: Vector2i):
 		if phase == Phase.PREP:
-			_report(run.move_to_board(uid, cell)))
+			_report(_do({"type": "to_board", "uid": uid, "cell": cell})))
 	board.move_to_bench_requested.connect(func(uid: int, idx: int):
 		# 戰鬥中也能整理候補區（只影響下一回合）；場上棋子由 RunState 擋下
-		_report(run.move_to_bench(uid, idx)))
+		_report(_do({"type": "to_bench", "uid": uid, "index": idx})))
 	board.sell_requested.connect(func(uid: int): _sell(uid))
 	battle_player.finished.connect(_on_battle_finished)
 	$DebugPanel/VBox/RoundRow/JumpButton.pressed.connect(_debug_jump)
@@ -859,7 +859,7 @@ func _combine_in_bag(i: int, j: int) -> void:
 	var a_id := str(run.inventory[i])
 	var b_id := str(run.inventory[j])
 	_preview_combine(a_id, b_id, func():
-		var r := run.combine_inventory(i, j)
+		var r := _do({"type": "combine_bag", "i": i, "j": j})
 		if r == "":
 			_toast("合成了 %s" % GameData.item(GameData.recipe(a_id, b_id)).get("name", ""), UiStyle.GOLD)
 			_pending_item = -1
@@ -881,7 +881,7 @@ func _give_item(uid: int, inv_index: int) -> void:
 	var b_id := str(run.inventory[inv_index])
 	var has_free := items.size() < GameData.item_slots()
 	_preview_combine(a_id, b_id, func():
-		var r := run.combine_on_unit(uid, slot, inv_index)
+		var r := _do({"type": "combine_unit", "uid": uid, "slot": slot, "inv": inv_index})
 		if r == "":
 			_toast("%s 合成了 %s" % [GameData.unit(str(f["unit"]["id"])).get("name", ""), GameData.item(GameData.recipe(a_id, b_id)).get("name", "")], UiStyle.GOLD)
 			_close_bag()
@@ -983,7 +983,7 @@ func _show_item_info(id: String, slot: int, editable: bool) -> void:
 		var hint := InfoView.make_rich("[color=#9aa3ad]裝備裝上後會鎖定。使用 1 個%s可取下這件並放回背包（星級與位置不變）。目前持有 %d 個。[/color]" % [GameData.remover_name(), run.removers], 13)
 		item_body.add_child(hint)
 		_overlay_button("使用卸除器（剩 %d）" % run.removers, func():
-			var r := run.use_remover(uid, slot)
+			var r := _do({"type": "remover", "uid": uid, "slot": slot})
 			if r == "":
 				_toast("已取下 %s，放回背包" % GameData.item(id).get("name", id))
 			_report(r)
@@ -1147,7 +1147,7 @@ func _try_equip(uid: int, inv_index: int) -> bool:
 		return false
 	var id := str(run.inventory[inv_index])
 	var f := run.find_unit(uid)
-	var r := run.equip(uid, inv_index)
+	var r := _do({"type": "equip", "uid": uid, "inv": inv_index})
 	if r != "":
 		_toast(r)
 		return false
@@ -1222,17 +1222,17 @@ func _report(reason: String) -> void:
 
 func _on_buy(slot: int) -> void:
 	if _shop_open():
-		_report(run.buy(slot, board.selected_uid()))
+		_report(_do({"type": "buy", "slot": slot, "prefer": board.selected_uid()}))
 
 
 func _on_reroll() -> void:
 	if _shop_open():
-		_report(run.reroll())
+		_report(_do({"type": "reroll"}))
 
 
 func _on_buy_xp() -> void:
 	if _shop_open():
-		_report(run.buy_xp())
+		_report(_do({"type": "buy_xp"}))
 
 
 func _on_sell_selected() -> void:
@@ -1252,7 +1252,7 @@ func _sell(uid: int) -> void:
 		return
 	var value := UnitStats.sell_value(f["unit"]["id"], int(f["unit"]["star"]))
 	var n_items := RunState.unit_items(f["unit"]).size()
-	if run.sell(uid) == "":
+	if _do({"type": "sell", "uid": uid}) == "":
 		_toast("出售 %s，+%d 金%s" % [GameData.unit(f["unit"]["id"])["name"], value, "（裝備已回到背包）" if n_items > 0 else ""])
 		board.select(-1)
 
@@ -1375,11 +1375,11 @@ func _info_prep_unit(uid: int) -> void:
 		for p in lineup:
 			ids.append(p["id"])
 			its.append(p["items"])
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		var all_sources := _lineup_sources(lineup, ids, its)
 		for i in lineup.size():
 			if int(lineup[i]["uid"]) == uid:
 				sources = all_sources[i]
-		note = "場上：已含文明、羈絆與裝備"
+		note = _board_note()
 	else:
 		sources = Modifiers.sources_for_lineup([id], "", false, [items])[0]
 		note = "候補區：只計裝備（上場後才套用文明與羈絆）"
@@ -1391,6 +1391,15 @@ func _info_prep_unit(uid: int) -> void:
 	if _shop_open() and not run.is_fighting(uid):
 		sell_btn.visible = true
 		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, int(u["star"]))
+
+
+## 場上棋子的修正來源（《氏族爭霸》會再加上國家制度）
+func _lineup_sources(_lineup: Array, ids: Array, its: Array) -> Array:
+	return Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+
+
+func _board_note() -> String:
+	return "場上：已含文明、羈絆與裝備"
 
 
 func _info_enemy(ref: Dictionary) -> void:
@@ -1415,7 +1424,7 @@ func _info_battle(cid: int) -> void:
 		for p in lineup:
 			ids.append(p["id"])
 			its.append(p.get("items", []))
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		var all_sources := _lineup_sources(lineup, ids, its)
 		for i in lineup.size():
 			if int(lineup[i]["cid"]) == cid:
 				sources = all_sources[i]
@@ -1431,6 +1440,37 @@ func _info_battle(cid: int) -> void:
 	card.show_unit({"ref": "c%d" % cid, "id": str(snap["id"]), "star": int(snap["star"]), "side": side, "sources": sources,
 		"statuses": battle_player.live_statuses(cid), "live": live, "items": snap.get("items", []),
 		"note": ("已陣亡。" if not battle_player.is_alive(cid) else "") + ("狀態：" + "、".join(st_names) if not st_names.is_empty() else "目前沒有增益或負面狀態")})
+
+
+# ---------- 玩家動作 ----------
+## 畫面上的玩家動作都經過這裡（action 格式與 ClashMatch.submit() 相同）。
+## 單人模式直接呼叫 RunState；《氏族爭霸》覆寫成交給對局管理器（與 AI 共用同一個規則接口）。
+func _do(action: Dictionary) -> String:
+	match str(action.get("type", "")):
+		"buy":
+			return run.buy(int(action["slot"]), int(action.get("prefer", -1)))
+		"sell":
+			return run.sell(int(action["uid"]))
+		"reroll":
+			return run.reroll()
+		"buy_xp":
+			return run.buy_xp()
+		"lock":
+			run.toggle_lock()
+			return ""
+		"to_board":
+			return run.move_to_board(int(action["uid"]), action["cell"])
+		"to_bench":
+			return run.move_to_bench(int(action["uid"]), int(action["index"]))
+		"equip":
+			return run.equip(int(action["uid"]), int(action["inv"]))
+		"combine_bag":
+			return run.combine_inventory(int(action["i"]), int(action["j"]))
+		"combine_unit":
+			return run.combine_on_unit(int(action["uid"]), int(action["slot"]), int(action["inv"]))
+		"remover":
+			return run.use_remover(int(action["uid"]), int(action["slot"]))
+	return "未知的動作"
 
 
 # ---------- 畫面更新 ----------
