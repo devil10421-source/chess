@@ -67,11 +67,22 @@ static func units() -> Array:
 	return _load("units").get("units", [])
 
 
+## 特殊單位（例如第一回合的教學弱敵）：不在 24 種基礎棋子內，不進商店／圖鑑／羈絆
+static func special_units() -> Array:
+	return _load("units").get("special_units", [])
+
+
 static func unit(id: String) -> Dictionary:
 	if _unit_map.is_empty():
 		for u in units():
 			_unit_map[u["id"]] = u
+		for u in special_units():
+			_unit_map[u["id"]] = u
 	return _unit_map.get(id, {})
+
+
+static func is_special(id: String) -> bool:
+	return unit(id).has("stats")
 
 
 static func has_unit(id: String) -> bool:

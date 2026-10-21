@@ -16,6 +16,12 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 	var tier: Dictionary = GameData.cfg("tiers").get(str(int(u.get("cost", 1))), {})
 	var cls: Dictionary = GameData.cfg("classes").get(str(u.get("class", "")), {})
 	var combat := GameData.cfg("combat")
+	if u.has("stats"):
+		# 特殊單位：直接使用資料中指定的屬性
+		var fixed: Dictionary = u["stats"]
+		tier = {"hp": fixed.get("hp", 1), "atk": fixed.get("atk", 1), "armor": fixed.get("armor", 0), "mr": fixed.get("mr", 0),
+			"atk_speed": fixed.get("atk_speed", 0.8)}
+		cls = {}
 	var hp := roundf(float(tier.get("hp", 100)) * float(cls.get("hp", 1.0))) * _star_value("hp_mult", star)
 	var atk := float(tier.get("atk", 10)) * float(cls.get("atk", 1.0)) * _star_value("atk_mult", star)
 	var armor := roundf(float(tier.get("armor", 0)) * float(cls.get("armor", 1.0))) + _star_value("armor_add", star)
@@ -100,6 +106,18 @@ static func skill_text(unit_id: String, star: int) -> String:
 			shown = str(v)
 		text = text.replace("{" + str(key) + "}", shown)
 	return text
+
+
+## 防禦減傷率（物防、魔防共用）：max_reduction × D / (D + k)，D 最低為 0。
+## 參數在 game_config.json → defense；只在這裡計算，戰鬥與 UI 都呼叫這個函式。
+static func defense_reduction(defense: float) -> float:
+	var d := maxf(0.0, defense)
+	var cfg := GameData.cfg("defense")
+	var cap := float(cfg.get("max_reduction", 0.75))
+	var k := float(cfg.get("k", 75.0))
+	if d <= 0.0 or k + d <= 0.0:
+		return 0.0
+	return cap * d / (d + k)
 
 
 static func sell_value(unit_id: String, star: int) -> int:

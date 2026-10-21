@@ -79,7 +79,8 @@
     "archer":   {"name": "射手", "hp": 0.80, "atk": 1.15, "armor": 1.0},
     "mage":     {"name": "法師", "hp": 0.78, "atk": 0.95, "armor": 1.0},
     "assassin": {"name": "刺客", "hp": 0.88, "atk": 1.20, "armor": 1.0},
-    "priest":   {"name": "祭司", "hp": 0.90, "atk": 0.70, "armor": 1.0}
+    "priest":   {"name": "祭司", "hp": 0.90, "atk": 0.70, "armor": 1.0},
+    "dummy":    {"name": "教學", "hp": 1.0, "atk": 1.0, "armor": 1.0}
   },
   "combat": {
     "tick": 0.05,
@@ -99,12 +100,22 @@
     "dot_tick": 0.5,
     "max_phys_reduction": 0.8
   },
+  "defense": {
+    "_note": "物防與魔防共用的邊際遞減公式：減傷率 = max_reduction × D / (D + k)，實際傷害 = 原始 × (1 − 減傷率)；D 為套用破甲後的有效防禦（最低 0）",
+    "max_reduction": 0.75,
+    "k": 75
+  },
+  "targeting": {
+    "_note": "近戰索敵：分數 = 走到可攻擊位置的步數 + front_weight × 目標的部署深度（0=前排…3=後排），分數低者優先；刺客不吃部署深度；遠程照六角距離。選定後鎖定到目標死亡，除非被嘲諷或技能改變；鎖定目標持續無法接近超過 stuck_retarget_time 秒才重新索敵。",
+    "front_weight": 2,
+    "stuck_retarget_time": 1.5
+  },
   "enemy": {
     "use_synergies": false
   },
   "labels": {
-    "races": {"elf": "精靈", "human": "人類", "orc": "半獸人", "centaur": "半人馬", "deer": "鹿角人", "oni": "鬼人"},
+    "races": {"elf": "精靈", "human": "人類", "orc": "半獸人", "centaur": "半人馬", "deer": "鹿角人", "oni": "鬼人", "neutral": "中立"},
     "types": {"vanguard": "前衛", "rear": "後衛", "mobile": "機動", "support": "支援"},
-    "race_colors": {"elf": "#4fbf6a", "human": "#d9c27a", "orc": "#c0563a", "centaur": "#b9864a", "deer": "#5fa7a0", "oni": "#9a3d7c"}
+    "race_colors": {"neutral": "#8a8070", "elf": "#4fbf6a", "human": "#d9c27a", "orc": "#c0563a", "centaur": "#b9864a", "deer": "#5fa7a0", "oni": "#9a3d7c"}
   }
 }

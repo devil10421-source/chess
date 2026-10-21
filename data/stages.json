@@ -1,8 +1,8 @@
 {
   "_note": "24 關敵軍配置。col 0~6；row 0 = 敵方最後排、3 = 敵方最前排（靠近玩家）。star 1~3。seed 決定該關戰鬥亂數（暴擊）。難度以上場數、稀有度、星級、站位與戰術遞增，不另外灌血。",
   "stages": [
-    {"round": 1, "chapter": 1, "name": "草原斥候（教學）", "seed": 101, "units": [
-      {"id": "CEN1", "star": 1, "col": 3, "row": 1}]},
+    {"round": 1, "chapter": 1, "name": "稻草兵（教學）", "seed": 101, "units": [
+      {"id": "TUT1", "star": 1, "col": 3, "row": 2}]},
     {"round": 2, "chapter": 1, "name": "荒野游勇", "seed": 102, "units": [
       {"id": "ORC1", "star": 1, "col": 3, "row": 3}, {"id": "HUM1", "star": 1, "col": 4, "row": 1}]},
     {"round": 3, "chapter": 1, "name": "刀與弓", "seed": 103, "units": [

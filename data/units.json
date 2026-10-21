@@ -54,5 +54,11 @@
      "skill": {"kind": "shadow_step", "name": "影步", "desc": "瞬移至最遠的敵人身旁造成 {dmg} 物理傷害；若擊殺，再追擊生命最低的敵人造成 {dmg2}。", "params": {"dmg": 1.4, "dmg2": 0.8, "dtype": "physical"}}},
     {"id": "ONI4", "name": "業火鬼王", "short": "鬼王", "race": "oni", "cost": 4, "type": "rear", "class": "mage", "range": 3,
      "skill": {"kind": "hellfire", "name": "業火降臨", "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。", "params": {"dmg": 0.9, "radius": 2, "dot": 0.7, "dur": 4, "dtype": "magic"}}}
+  ],
+  "_special_note": "特殊單位：不屬於 24 種基礎棋子，不會出現在商店、圖鑑與羈絆。stats 直接指定一星屬性（不套用稀有度與職業修正）。",
+  "special_units": [
+    {"id": "TUT1", "name": "稻草兵", "short": "稻草", "race": "neutral", "cost": 1, "type": "vanguard", "class": "dummy", "range": 1, "mana_max": 9999,
+     "stats": {"hp": 35, "atk": 3, "atk_speed": 0.5, "armor": 0, "mr": 0},
+     "skill": {"kind": "none", "name": "（無主動技能）", "desc": "第一回合的教學用弱敵，沒有主動技能。", "params": {}}}
   ]
 }

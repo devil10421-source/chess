@@ -34,6 +34,12 @@ func _initialize() -> void:
 		"test_all_skills_trigger",
 		"test_ranged_vs_melee",
 		"test_save_roundtrip",
+		"test_defense_formula",
+		"test_front_line_protection",
+		"test_flank_breakthrough",
+		"test_assassin_and_taunt",
+		"test_target_lock",
+		"test_round1_all_units_win",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -694,3 +700,176 @@ func test_full_runs() -> void:
 				early_ok += 1
 		check(early_ok >= 2, "%s 的 bot 在前 4 關至少清 2 關（實際 %d）" % [c["id"], early_ok])
 		print("      %s：%s，打到第 %d 回合，遠征生命 %d" % [c["name"], r["outcome"], run.history.size(), run.hp])
+
+
+# ================= V0.2 第一批：核心戰鬥 =================
+func test_defense_formula() -> void:
+	eq(UnitStats.defense_reduction(0), 0.0, "防禦 0 → 減傷 0%")
+	check(is_equal_approx(UnitStats.defense_reduction(75), 0.375), "防禦 75 → 0.75×75/150 = 37.5%")
+	check(is_equal_approx(UnitStats.defense_reduction(25), 0.75 * 25.0 / 100.0), "防禦 25 → 18.75%")
+	eq(UnitStats.defense_reduction(-30), 0.0, "負防禦視為 0")
+	check(UnitStats.defense_reduction(100000) < 0.75, "上限趨近但不超過 75%")
+	var gain_low := UnitStats.defense_reduction(20) - UnitStats.defense_reduction(10)
+	var gain_high := UnitStats.defense_reduction(110) - UnitStats.defense_reduction(100)
+	check(gain_low > gain_high, "邊際效益遞減（低防禦每點收益較高）")
+	# 戰鬥中實際套用：100 原始物理傷害打 75 護甲 → 63（四捨五入）
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty())
+	var b := sim.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	b.armor = 75.0
+	b.mr = 0.0
+	b.max_hp = 99999.0
+	b.hp = 99999.0
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 63.0, "物理技能 100 打 75 護甲 = 63")
+	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), 100.0, "法術傷害看魔抗（0）")
+	b.mr = 75.0
+	eq(sim.deal_damage(a, b, 100.0, "magic", "skill", false), 63.0, "魔抗 75 同一公式")
+	b.statuses.append({"kind": "armor_down", "value": 500.0, "until": 99.0, "src": -1})
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 100.0, "破甲超過護甲時有效防禦為 0，不會增傷")
+	# 百分比減傷與防禦分開計算
+	b.statuses.clear()
+	b.statuses.append({"kind": "phys_dr", "value": 50.0, "until": 99.0, "src": -1})
+	eq(sim.deal_damage(a, b, 100.0, "physical", "skill", false), 31.0, "75 護甲再加 50% 免傷：100×0.625×0.5≈31")
+
+
+func _first_targets(sim: CombatSim) -> Dictionary:
+	## 回傳每個單位「第一次普攻／技能傷害」打到的對象 cid
+	var out := {}
+	for e in sim.events:
+		if e["k"] == "attack" and not out.has(e["cid"]):
+			out[e["cid"]] = e["tgt"]
+	return out
+
+
+func test_front_line_protection() -> void:
+	# 我方：前排三坦克，後排三輸出；敵方：三隻一般近戰
+	var front := [Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4)]
+	var back := [Vector2i(2, 5), Vector2i(3, 5), Vector2i(4, 5)]
+	for seed_value in [1, 2, 3]:
+		var sim := CombatSim.new(seed_value)
+		var front_cids := {}
+		for c in front:
+			front_cids[sim.add_unit("HUM2", 1, c, 0, Modifiers.empty()).cid] = true
+		for c in back:
+			sim.add_unit("ONI1", 1, c, 0, Modifiers.empty())
+		var enemy_cids: Array = []
+		for c in [Vector2i(2, 1), Vector2i(3, 1), Vector2i(4, 1)]:
+			enemy_cids.append(sim.add_unit("ORC1", 1, c, 1, Modifiers.empty()).cid)
+		sim.run()
+		var firsts := _first_targets(sim)
+		for ec in enemy_cids:
+			check(front_cids.has(firsts.get(ec, -1)), "種子 %d：敵方近戰 %d 第一個攻擊對象是前排坦克" % [seed_value, ec])
+	# 對照：沒有前排時，同樣的敵人會直接打到後排（證明前排確實改變了接戰）
+	var sim2 := CombatSim.new(1)
+	var back_cids := {}
+	for c in back:
+		back_cids[sim2.add_unit("ONI1", 1, c, 0, Modifiers.empty()).cid] = true
+	var e2 := sim2.add_unit("ORC1", 1, Vector2i(3, 1), 1, Modifiers.empty())
+	sim2.run()
+	check(back_cids.has(_first_targets(sim2).get(e2.cid, -1)), "沒有前排時敵人直接攻擊後排")
+
+
+func test_flank_breakthrough() -> void:
+	# 坦克在最右側前排，輸出放在最左側第二排、敵人從左側翼進攻：
+	# 走到輸出旁 2 步 + 深度 1×2 = 4，走到坦克旁約 6 步 → 應突破側翼打輸出（前排不是全場嘲諷）
+	var sim := CombatSim.new(5)
+	var tank := sim.add_unit("HUM2", 1, Vector2i(6, 4), 0, Modifiers.empty())
+	var carry := sim.add_unit("CEN1", 1, Vector2i(0, 5), 0, Modifiers.empty())
+	var enemy := sim.add_unit("ORC1", 1, Vector2i(0, 2), 1, Modifiers.empty())
+	sim.run()
+	eq(_first_targets(sim).get(enemy.cid, -1), carry.cid, "側翼明顯較近時，近戰會突破側翼攻擊後排")
+	check(tank.alive or true, "")
+
+
+func test_assassin_and_taunt() -> void:
+	# 刺客：技能突入最遠的後排
+	var sim := CombatSim.new(7)
+	for c in [Vector2i(2, 4), Vector2i(3, 4), Vector2i(4, 4)]:
+		sim.add_unit("HUM2", 1, c, 0, Modifiers.empty())
+	var back := sim.add_unit("CEN1", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var mods := Modifiers.empty()
+	mods["start_mana"] = 50.0
+	var assassin := sim.add_unit("ONI3", 1, Vector2i(3, 1), 1, mods)
+	sim.run()
+	var hit_back := false
+	for e in sim.events:
+		if e["k"] == "damage" and e["src"] == assassin.cid and e["tgt"] == back.cid:
+			hit_back = true
+			break
+	check(hit_back, "刺客技能能越過前排打到最後排")
+	# 嘲諷：敵人原本鎖定 X，被嘲諷期間改打嘲諷者，但鎖定目標不被改寫
+	var s2 := CombatSim.new(8)
+	var x := s2.add_unit("ELF1", 3, Vector2i(2, 4), 0, Modifiers.empty())
+	var taunter := s2.add_unit("HUM2", 3, Vector2i(3, 4), 0, Modifiers.empty())
+	var foe := s2.add_unit("ORC1", 1, Vector2i(2, 3), 1, Modifiers.empty())
+	foe.target_cid = x.cid
+	s2.apply_cc(taunter, foe, "taunt", 2.0)
+	var info := s2.acquire_target(foe)
+	eq(info.get("target").cid, taunter.cid, "被嘲諷時攻擊嘲諷者")
+	check(info.get("forced", false), "嘲諷屬於強制目標")
+	s2.t = 0.0
+	s2._act(foe)
+	eq(foe.target_cid, x.cid, "嘲諷不改寫原本鎖定的目標")
+	foe.statuses.clear()
+	eq(s2.acquire_target(foe).get("target").cid, x.cid, "嘲諷結束後回到原目標")
+
+
+func test_target_lock() -> void:
+	# 正常戰鬥：所有單位都不應因「別人比較近」而換目標
+	var total := 0
+	for r in [3, 8, 13, 19, 24]:
+		var run := _demo_run(40 + r)
+		run.round_no = r
+		var res := run.start_battle()
+		for st in res["stats"]:
+			total += int(st["target_switches"])
+	check(total <= 2, "5 場戰鬥中非死亡換目標次數極少（實際 %d，只允許防卡死）" % total)
+	# 目標暫時離開射程：持續追擊同一目標
+	var sim := CombatSim.new(9)
+	var hunter := sim.add_unit("ORC1", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	var far := sim.add_unit("CEN1", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var near := sim.add_unit("HUM1", 1, Vector2i(0, 6), 0, Modifiers.empty())
+	hunter.target_cid = far.cid
+	# 讓 near 移到 hunter 旁邊（比 far 更近）
+	sim.occupancy.erase(near.cell)
+	near.cell = Vector2i(2, 3)
+	sim.occupancy[near.cell] = near.cid
+	var info := sim.acquire_target(hunter)
+	eq(info.get("target").cid, far.cid, "其他敵人走得更近也不換目標")
+	check(info.has("step"), "目標在射程外時繼續追擊")
+	# 防卡死：鎖定目標完全被包圍、無法接近超過設定秒數才換
+	var s3 := CombatSim.new(10)
+	var me := s3.add_unit("ORC1", 1, Vector2i(6, 0), 1, Modifiers.empty())
+	var boxed := s3.add_unit("HUM1", 1, Vector2i(0, 7), 0, Modifiers.empty())
+	var other := s3.add_unit("CEN1", 1, Vector2i(6, 4), 0, Modifiers.empty())
+	for n in HexGrid.neighbors(boxed.cell):
+		s3.add_unit("ELF1", 1, n, 0, Modifiers.empty())
+	me.target_cid = boxed.cid
+	s3.t = 0.0
+	eq(s3.acquire_target(me).get("target").cid, boxed.cid, "剛卡住時仍保持目標")
+	s3.t = 1.0
+	eq(s3.acquire_target(me).get("target").cid, boxed.cid, "卡住未滿 1.5 秒仍保持")
+	s3.t = 1.6
+	check(s3.acquire_target(me).get("target").cid != boxed.cid, "卡住超過 1.5 秒才換成可接近的敵人")
+	check(other.alive, "")
+
+
+func test_round1_all_units_win() -> void:
+	var slow: Array = []
+	for u in GameData.units():
+		var id := str(u["id"])
+		var cell := Vector2i(3, 4) if GameData.is_melee(id) else Vector2i(3, 6)
+		var res := BattleSetup.build([{"uid": 1, "id": id, "star": 1, "cell": cell}], "", 1, 777).run()
+		check(res["cleared"], "%s 一星單獨上場能打贏第一回合" % id)
+		check(float(res["time"]) <= 15.0, "%s 在 15 秒內取勝（實際 %.1f 秒）" % [id, res["time"]])
+		slow.append(float(res["time"]))
+	slow.sort()
+	print("      第一回合取勝時間：最快 %.1f 秒、最慢 %.1f 秒" % [slow[0], slow[slow.size() - 1]])
+	# 各文明（含 Debuff）也都能過
+	for c in GameData.civs():
+		for u in GameData.units():
+			var id := str(u["id"])
+			var cell := Vector2i(3, 4) if GameData.is_melee(id) else Vector2i(3, 6)
+			check(BattleSetup.build([{"uid": 1, "id": id, "star": 1, "cell": cell}], str(c["id"]), 1, 3).run()["cleared"],
+				"%s 文明下 %s 也能打贏第一回合" % [c["id"], id])
+	check(not Shop.full_pool("elf").has("TUT1"), "教學弱敵不會出現在商店")

@@ -78,6 +78,9 @@ static func _in_radius(list: Array, center: Vector2i, radius: int) -> Array:
 static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 	var kind := str(u.data.get("skill", {}).get("kind", ""))
 	match kind:
+		"none":
+			return false
+
 		"self_shield":
 			_cast_event(sim, u, COLORS["shield"], [u.cell])
 			sim.add_shield(u, u, _amt(u, "shield"), float(_p(u, "dur", 4)))
@@ -88,7 +91,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			if tg == null:
 				return false
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			sim.add_status(tg, "mark", float(_p(u, "pct", 40)), float(_p(u, "dur", 4)), u.cid)
 			u.target_cid = tg.cid
 			return true
@@ -101,7 +104,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			var center := tg.cell
 			_cast_event(sim, u, COLORS["cc"] if str(_p(u, "cc_kind", "")) == "slow" else COLORS["heal"], HexGrid.cells_in_range(center, radius), tg.cid)
 			for e in _in_radius(sim.enemies_of(u), center, radius):
-				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), false, false)
+				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
 					sim.apply_cc(u, e, str(_p(u, "cc_kind", "slow")), _cc(u), float(_p(u, "pct", 0)))
 			return true
@@ -113,7 +116,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			var tg: CombatUnit = list[0]
 			sim.dash_next_to(u, tg)
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			if tg.alive and float(_p(u, "armor", 0)) > 0.0:
 				sim.add_status(tg, "armor_down", float(_p(u, "armor", 0)), float(_p(u, "dur", 4)), u.cid)
 			u.target_cid = tg.cid
@@ -151,7 +154,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			if tg == null or HexGrid.distance(u.cell, tg.cell) > u.attack_range:
 				return false
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			if tg.alive and float(_p(u, "armor", 0)) > 0.0:
 				sim.add_status(tg, "armor_down", float(_p(u, "armor", 0)), float(_p(u, "dur", 4)), u.cid)
 			return true
@@ -182,7 +185,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
 			sim.emit({"k": "attack", "cid": u.cid, "tgt": tg.cid, "ranged": true})
 			var raw := u.effective_atk() * float(_p(u, "atk_pct", 100)) / 100.0 + _amt(u, "dmg")
-			sim.deal_damage(u, tg, raw, _dtype(u), false, false)
+			sim.deal_damage(u, tg, raw, _dtype(u), "skill", false)
 			return true
 
 		"brace":
@@ -204,7 +207,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			_cast_event(sim, u, COLORS["magic"], cells.keys(), tg.cid)
 			var hits: Array = sim.enemies_of(u).filter(func(e: CombatUnit) -> bool: return cells.has(e.cell))
 			for e in hits:
-				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), false, false)
+				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
 					sim.apply_cc(u, e, "stun", _cc(u))
 			u.target_cid = tg.cid
@@ -244,7 +247,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			if tg == null or HexGrid.distance(u.cell, tg.cell) > u.attack_range:
 				return false
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			sim.add_periodic(u, tg, "dot", _amt(u, "dot"), float(_p(u, "dur", 3)), "physical")
 			return true
 
@@ -253,7 +256,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			if tg == null or HexGrid.distance(u.cell, tg.cell) > u.attack_range:
 				return false
 			_cast_event(sim, u, COLORS["magic"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			sim.add_status(tg, "atk_down", float(_p(u, "pct", 30)), float(_p(u, "dur", 4)), u.cid)
 			return true
 
@@ -264,7 +267,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			var tg: CombatUnit = list[0]
 			sim.dash_next_to(u, tg)
 			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
-			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), false, false)
+			sim.deal_damage(u, tg, _amt(u, "dmg"), _dtype(u), "skill", false)
 			u.target_cid = tg.cid
 			if not tg.alive:
 				var next_list := _sorted_enemies(sim, u, "lowest_hp")
@@ -272,7 +275,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 					var nt: CombatUnit = next_list[0]
 					sim.dash_next_to(u, nt)
 					_cast_event(sim, u, COLORS["physical"], [nt.cell], nt.cid)
-					sim.deal_damage(u, nt, _amt(u, "dmg2"), _dtype(u), false, false)
+					sim.deal_damage(u, nt, _amt(u, "dmg2"), _dtype(u), "skill", false)
 					u.target_cid = nt.cid
 			return true
 
@@ -284,7 +287,7 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			var center := tg.cell
 			_cast_event(sim, u, COLORS["magic"], HexGrid.cells_in_range(center, radius), tg.cid)
 			for e in _in_radius(sim.enemies_of(u), center, radius):
-				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), false, false)
+				sim.deal_damage(u, e, _amt(u, "dmg"), _dtype(u), "skill", false)
 				if e.alive:
 					sim.add_periodic(u, e, "dot", _amt(u, "dot"), float(_p(u, "dur", 4)), "magic")
 			return true

@@ -162,3 +162,19 @@ static func find_path_step(start: Vector2i, goals: Dictionary, blocked: Dictiona
 			return {"step": step, "goal": found, "dist": dist}
 		frontier = next
 	return {}
+
+
+## 從 start 出發、不穿過 blocked 的 BFS 步數表：{格子: 步數}（start 為 0）
+static func distance_map(start: Vector2i, blocked: Dictionary) -> Dictionary:
+	var dist := {start: 0}
+	var frontier: Array[Vector2i] = [start]
+	while not frontier.is_empty():
+		var next: Array[Vector2i] = []
+		for cell in frontier:
+			for n in neighbors(cell):
+				if dist.has(n) or blocked.has(n):
+					continue
+				dist[n] = int(dist[cell]) + 1
+				next.append(n)
+		frontier = next
+	return dist

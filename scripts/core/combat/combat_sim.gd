@@ -5,7 +5,8 @@ extends RefCounted
 ##
 ## 事件格式（皆含 t 與 k）：
 ##   move   {cid, from, to, dur}           dash  {cid, from, to}
-##   attack {cid, tgt, ranged}             damage{src, tgt, v, absorbed, hp, shield, crit, dtype, basic, dot}
+##   attack {cid, tgt, ranged}             damage{src, tgt, v, absorbed, hp, shield, crit, dtype, source, basic, dot}
+##   （damage.source 為傷害來源：basic 普攻／skill 技能／item 裝備（V0.3 預留）；dtype 為屬性：physical／magic）
 ##   heal   {src, tgt, v, hp}              shield{src, tgt, v, shield, dur}
 ##   mana   {cid, v}                       cast  {cid, name, cells, color, tgt}
 ##   status {cid, kind, dur}               cleanse{cid, kind}
@@ -46,6 +47,7 @@ func add_unit(unit_id: String, star: int, cell: Vector2i, side: int, mods: Dicti
 	u.data = GameData.unit(unit_id)
 	u.mods = mods
 	u.cell = cell
+	u.front_rank = (cell.y - HexGrid.PLAYER_ROW_MIN) if side == 0 else (HexGrid.ENEMY_ROW_MAX - cell.y)
 	var s := UnitStats.final_stats(unit_id, star, mods)
 	u.max_hp = s["hp"]
 	u.hp = u.max_hp
@@ -126,8 +128,10 @@ func run() -> Dictionary:
 		stars.append(e["star"])
 	var stats: Array = []
 	for u in units:
-		stats.append({"cid": u.cid, "side": u.side, "id": u.unit_id, "star": u.star, "alive": u.alive,
-			"damage": roundi(u.damage_dealt), "healing": roundi(u.healing_done), "casts": u.casts})
+		stats.append({"cid": u.cid, "uid": u.uid, "side": u.side, "id": u.unit_id, "star": u.star, "alive": u.alive,
+			"damage": roundi(u.damage_dealt), "taken": roundi(u.damage_taken), "shielded": roundi(u.shield_absorbed),
+			"healing": roundi(u.healing_done), "raw_damage": roundi(u.raw_damage), "overkill": roundi(u.overkill),
+			"casts": u.casts, "target_switches": u.target_switches})
 	return {
 		"cleared": cleared,
 		"time": t,
@@ -153,13 +157,17 @@ func _act(u: CombatUnit) -> void:
 			emit({"k": "mana", "cid": u.cid, "v": u.mana})
 			u.ready_at = t + float(cfg.get("cast_time", 0.3))
 			return
-	# 2) 索敵
+	# 2) 索敵（嘲諷只暫時覆蓋，不改變原本的鎖定）
 	var info := acquire_target(u)
 	var tgt: CombatUnit = info.get("target")
 	if tgt == null:
 		u.ready_at = t + float(cfg.get("idle_retry", 0.2))
 		return
-	u.target_cid = tgt.cid
+	if not info.get("forced", false) and tgt.cid != u.target_cid:
+		var old := unit_by_cid(u.target_cid)
+		if old != null and old.alive:
+			u.target_switches += 1
+		u.target_cid = tgt.cid
 	# 3) 射程內 → 普攻
 	if HexGrid.distance(u.cell, tgt.cell) <= u.attack_range:
 		basic_attack(u, tgt)
@@ -176,35 +184,94 @@ func _act(u: CombatUnit) -> void:
 
 
 # ---------- 索敵與找路 ----------
-## 選目標：嘲諷優先；已鎖定且在射程內則保持；否則依「距離 → 血量 → ID」挑第一個可到達／可攻擊的敵人
+## 索敵規則（參數在 game_config.json → targeting）：
+## 1. 被嘲諷：強制攻擊嘲諷者（forced），但不改變原本的鎖定目標，嘲諷結束後回到原目標。
+## 2. 已鎖定目標且仍存活：持續追擊與攻擊，不因其他敵人變近而換目標。
+##    只有在「既打不到、也找不到路接近」持續超過 stuck_retarget_time 秒時，才改找其他可到達的敵人（防卡死）。
+## 3. 需要新目標時（開戰、目標死亡、卡死）依職能挑選：
+##    - 遠程（射程 ≥ 2）：六角距離 → 血量 → 編號。
+##    - 刺客：走到可攻擊位置的步數 → 血量 → 編號（不受前排掩護）。
+##    - 其他近戰：步數 + front_weight × 目標部署深度 → 部署深度 → 正面欄位差 → 編號。
+##      步數以 BFS 計算、會被其他棋子擋住，所以前排會自然掩護後排；但側翼若明顯更近仍可被突破。
 func acquire_target(u: CombatUnit) -> Dictionary:
 	var enemies := enemies_of(u)
 	if enemies.is_empty():
 		return {}
+	var taunter := _taunter_of(u)
+	if taunter != null:
+		var forced := _with_step(u, taunter)
+		forced["forced"] = true
+		return forced
+	var cur := unit_by_cid(u.target_cid)
+	var exclude := -1
+	if cur != null and cur.alive and cur.side != u.side:
+		var info := _with_step(u, cur)
+		if HexGrid.distance(u.cell, cur.cell) <= u.attack_range or info.has("step"):
+			u.stuck_since = -1.0
+			return info
+		if u.stuck_since < 0.0:
+			u.stuck_since = t
+		if t - u.stuck_since < float(GameData.cfg("targeting").get("stuck_retarget_time", 1.5)) - EPS:
+			return info
+		exclude = cur.cid
+	u.stuck_since = -1.0
+	var picked := pick_new_target(u, exclude)
+	if picked == null:
+		return _with_step(u, cur) if cur != null and cur.alive else {}
+	return _with_step(u, picked)
+
+
+func _taunter_of(u: CombatUnit) -> CombatUnit:
 	for s in u.statuses:
 		if s["kind"] == "taunt":
 			var src := unit_by_cid(int(s["src"]))
 			if src != null and src.alive:
-				return _with_step(u, src)
-	var cur := unit_by_cid(u.target_cid)
-	if cur != null and cur.alive and cur.side != u.side and HexGrid.distance(u.cell, cur.cell) <= u.attack_range:
-		return {"target": cur}
-	enemies.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-		var da := HexGrid.distance(u.cell, a.cell)
-		var db := HexGrid.distance(u.cell, b.cell)
-		if da != db:
-			return da < db
-		if not is_equal_approx(a.hp, b.hp):
-			return a.hp < b.hp
-		return a.cid < b.cid)
-	var fallback := {}
-	for e in enemies:
-		var info := _with_step(u, e)
-		if HexGrid.distance(u.cell, e.cell) <= u.attack_range or info.has("step"):
-			return info
-		if fallback.is_empty():
-			fallback = info
-	return fallback
+				return src
+	return null
+
+
+## 依職能挑新目標（不含 exclude_cid）。優先選可到達或已在射程內的敵人；全都到不了時回傳分數最好的那個（原地等待）。
+func pick_new_target(u: CombatUnit, exclude_cid: int = -1) -> CombatUnit:
+	var blocked := occupancy.duplicate()
+	blocked.erase(u.cell)
+	var dist := HexGrid.distance_map(u.cell, blocked)
+	var weight := float(GameData.cfg("targeting").get("front_weight", 2))
+	var best: CombatUnit = null
+	var best_key: Array = []
+	for e in enemies_of(u):
+		if e.cid == exclude_cid:
+			continue
+		var steps := _steps_to_attack(u, e, dist)
+		var reachable := 0 if steps < 999 else 1
+		var key: Array
+		if not u.is_melee():
+			key = [reachable, HexGrid.distance(u.cell, e.cell), e.hp, e.cid]
+		elif u.is_assassin():
+			key = [reachable, steps, e.hp, e.cid]
+		else:
+			key = [reachable, steps + weight * e.front_rank, e.front_rank, absi(e.cell.x - u.cell.x), e.cid]
+		if best == null or _key_less(key, best_key):
+			best = e
+			best_key = key
+	return best
+
+
+## 走到「能攻擊 e 的空格」需要的步數；已在射程內為 0；到不了為 999
+func _steps_to_attack(u: CombatUnit, e: CombatUnit, dist: Dictionary) -> int:
+	if HexGrid.distance(u.cell, e.cell) <= u.attack_range:
+		return 0
+	var best := 999
+	for c in HexGrid.cells_in_range(e.cell, u.attack_range):
+		if dist.has(c) and not occupancy.has(c):
+			best = mini(best, int(dist[c]))
+	return best
+
+
+static func _key_less(a: Array, b: Array) -> bool:
+	for i in a.size():
+		if a[i] != b[i]:
+			return a[i] < b[i]
+	return false
 
 
 ## 回傳 {target, step?}：step 為朝「可攻擊到 target 的空格」前進的第一步
@@ -262,7 +329,7 @@ func dash_next_to(u: CombatUnit, tgt: CombatUnit) -> bool:
 # ---------- 傷害、治療、護盾 ----------
 func basic_attack(u: CombatUnit, tgt: CombatUnit) -> void:
 	emit({"k": "attack", "cid": u.cid, "tgt": tgt.cid, "ranged": not u.is_melee()})
-	deal_damage(u, tgt, u.effective_atk(), "physical", true, false)
+	deal_damage(u, tgt, u.effective_atk(), "physical", "basic", false)
 	gain_mana(u, float(cfg.get("mana_per_attack", 10)))
 
 
@@ -275,20 +342,67 @@ func gain_mana(u: CombatUnit, amount: float) -> void:
 		emit({"k": "mana", "cid": u.cid, "v": u.mana})
 
 
-## 傷害公式：同類加成先加總 → 暴擊（僅普攻）→ 護甲／魔抗減免 → 物理減傷 → 護盾吸收；原始傷害 > 0 時至少 1。
-func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, is_basic: bool, is_dot: bool) -> float:
+## 傷害公式。source（來源）：basic 普攻／skill 技能／item 裝備；dtype（屬性）：physical 物理／magic 法術；is_dot：持續傷害的每次結算。
+## 步驟：同類加成先加總 → 暴擊（僅普攻）→ 防禦減傷 max×D/(D+k) → 額外百分比減傷（如迎擊姿態）→ 護盾吸收；原始傷害 > 0 時至少 1。
+## 持續傷害在「每次結算」時套用一次加成（施加時不乘），所以不會重複乘算。
+func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, source: String, is_dot: bool) -> float:
 	if tgt == null or not tgt.alive or raw <= 0.0:
 		return 0.0
+	var pct := damage_bonus_pct(src, tgt, dtype, source, is_dot)
+	var amount := raw * maxf(0.0, 1.0 + pct / 100.0)
+	var crit := false
+	if source == "basic" and rng.randf() < src.crit_chance:
+		amount *= src.crit_mult
+		crit = true
+	var defense := tgt.effective_mr() if dtype == "magic" else tgt.effective_armor()
+	amount *= 1.0 - UnitStats.defense_reduction(defense)
+	if dtype != "magic":
+		var dr := minf(float(cfg.get("max_phys_reduction", 0.8)), tgt.status_sum("phys_dr") / 100.0)
+		amount *= (1.0 - dr)
+	var dmg := float(maxi(1, roundi(amount)))
+	var absorbed := 0.0
+	var remaining := dmg
+	for sh in tgt.shields:
+		if remaining <= 0.0:
+			break
+		var take := minf(float(sh["amount"]), remaining)
+		sh["amount"] = float(sh["amount"]) - take
+		remaining -= take
+		absorbed += take
+		var provider := unit_by_cid(int(sh.get("src", tgt.cid)))
+		if provider != null:
+			provider.shield_absorbed += take
+	tgt.shields = tgt.shields.filter(func(x): return float(x["amount"]) > 0.0)
+	var hp_before := tgt.hp
+	tgt.hp = maxf(0.0, tgt.hp - remaining)
+	var hp_damage := hp_before - tgt.hp
+	src.damage_dealt += hp_damage
+	src.raw_damage += dmg
+	src.overkill += remaining - hp_damage
+	tgt.damage_taken += hp_damage
+	emit({"k": "damage", "src": src.cid, "tgt": tgt.cid, "v": dmg, "absorbed": absorbed, "hp": tgt.hp,
+		"shield": tgt.shield_total(), "crit": crit, "dtype": dtype, "source": source, "basic": source == "basic", "dot": is_dot})
+	if tgt.hp <= 0.0:
+		kill(tgt)
+	elif source == "basic":
+		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
+	return dmg
+
+
+## 傷害加成百分比（加總後一次套用）。拆成獨立函式方便測試與 UI 說明。
+func damage_bonus_pct(src: CombatUnit, tgt: CombatUnit, dtype: String, source: String, is_dot: bool) -> float:
 	var m := src.mods
 	var pct := 0.0
-	if is_basic:
+	if source == "basic":
 		pct += float(m.get("basic_dmg_pct", 0.0))
 		pct += float(m.get("melee_basic_pct", 0.0)) if src.is_melee() else float(m.get("ranged_basic_pct", 0.0))
 		var mark := tgt.status_from("mark", src.cid)
 		if not mark.is_empty():
 			pct += float(mark.get("value", 0.0))
-	elif not is_dot:
-		pct += float(m.get("skill_direct_pct", 0.0))
+	elif source == "skill":
+		pct += float(m.get("skill_dmg_pct", 0.0))          # 所有技能傷害（含技能造成的持續傷害）
+		if not is_dot:
+			pct += float(m.get("skill_direct_pct", 0.0))   # 只限技能直接傷害
 	if dtype == "magic":
 		pct += float(m.get("magic_dmg_pct", 0.0))
 		if not is_dot:
@@ -299,37 +413,7 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, is
 			pct += float(m.get("low_hp_direct_pct", 0.0))
 	if tgt.hp_ratio() < float(cfg.get("execute_threshold", 0.35)):
 		pct += float(m.get("execute_pct", 0.0))
-	var amount := raw * maxf(0.0, 1.0 + pct / 100.0)
-	var crit := false
-	if is_basic and rng.randf() < src.crit_chance:
-		amount *= src.crit_mult
-		crit = true
-	if dtype == "magic":
-		amount = amount * 100.0 / (100.0 + maxf(0.0, tgt.effective_mr()))
-	else:
-		amount = amount * 100.0 / (100.0 + maxf(0.0, tgt.effective_armor()))
-		var dr := minf(float(cfg.get("max_phys_reduction", 0.8)), tgt.status_sum("phys_dr") / 100.0)
-		amount *= (1.0 - dr)
-	var dmg := float(maxi(1, roundi(amount)))
-	var absorbed := 0.0
-	var remaining := dmg
-	for s in tgt.shields:
-		if remaining <= 0.0:
-			break
-		var take := minf(float(s["amount"]), remaining)
-		s["amount"] = float(s["amount"]) - take
-		remaining -= take
-		absorbed += take
-	tgt.shields = tgt.shields.filter(func(s): return float(s["amount"]) > 0.0)
-	tgt.hp = maxf(0.0, tgt.hp - remaining)
-	src.damage_dealt += dmg
-	emit({"k": "damage", "src": src.cid, "tgt": tgt.cid, "v": dmg, "absorbed": absorbed, "hp": tgt.hp,
-		"shield": tgt.shield_total(), "crit": crit, "dtype": dtype, "basic": is_basic, "dot": is_dot})
-	if tgt.hp <= 0.0:
-		kill(tgt)
-	elif is_basic:
-		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
-	return dmg
+	return pct
 
 
 func kill(u: CombatUnit) -> void:
@@ -359,7 +443,7 @@ func add_shield(src: CombatUnit, tgt: CombatUnit, amount: float, dur: float) -> 
 	if tgt == null or not tgt.alive or amount <= 0.0:
 		return
 	var v := roundf(amount * maxf(0.0, 1.0 + float(src.mods.get("heal_shield_pct", 0.0)) / 100.0))
-	tgt.shields.append({"amount": v, "until": t + dur})
+	tgt.shields.append({"amount": v, "until": t + dur, "src": src.cid})
 	emit({"k": "shield", "src": src.cid, "tgt": tgt.cid, "v": v, "shield": tgt.shield_total(), "dur": dur})
 
 
@@ -390,13 +474,13 @@ func apply_cc(src: CombatUnit, tgt: CombatUnit, kind: String, base_dur: float, v
 
 
 ## 持續傷害／治療：總量 total 分攤在 dur 秒內，每 dot_tick 秒結算一次
-func add_periodic(src: CombatUnit, tgt: CombatUnit, kind: String, total: float, dur: float, dtype: String = "physical") -> void:
+func add_periodic(src: CombatUnit, tgt: CombatUnit, kind: String, total: float, dur: float, dtype: String = "physical", source: String = "skill") -> void:
 	if tgt == null or not tgt.alive or total <= 0.0:
 		return
 	var period := float(cfg.get("dot_tick", 0.5))
 	var ticks := maxi(1, int(round(dur / period)))
 	add_status(tgt, kind, 0.0, ticks * period + EPS, src.cid,
-		{"next_tick": t + period, "tick_amount": total / ticks, "ticks_left": ticks, "dtype": dtype})
+		{"next_tick": t + period, "tick_amount": total / ticks, "ticks_left": ticks, "dtype": dtype, "source": source})
 
 
 func cleanse_one(u: CombatUnit) -> String:
@@ -424,7 +508,7 @@ func _update_statuses() -> void:
 				if src == null:
 					src = u
 				if s["kind"] == "dot":
-					deal_damage(src, u, float(s["tick_amount"]), str(s.get("dtype", "physical")), false, true)
+					deal_damage(src, u, float(s["tick_amount"]), str(s.get("dtype", "physical")), str(s.get("source", "skill")), true)
 				elif s["kind"] == "hot":
 					heal(src, u, float(s["tick_amount"]))
 		if not u.alive:
