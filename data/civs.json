@@ -48,7 +48,7 @@
      ]},
     {"id": "oni", "name": "鬼人", "race": "oni",
      "buffs": [
-       {"text": "全軍技能直接傷害 +12%", "effects": [{"stat": "skill_direct_pct", "value": 12}]},
+       {"text": "全軍技能造成的傷害 +12%（物理、法術，含技能造成的燃燒、流血等持續傷害；不含普攻）", "effects": [{"stat": "skill_dmg_pct", "value": 12}]},
        {"text": "攻擊 HP 低於 35% 的敵人時，造成傷害 +8%", "effects": [{"stat": "execute_pct", "value": 8}]}
      ],
      "debuffs": [

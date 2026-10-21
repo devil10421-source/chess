@@ -13,6 +13,7 @@ const KEYS := [
 	"basic_dmg_pct",      # 普攻傷害 %
 	"melee_basic_pct",    # 近戰棋子普攻傷害 %
 	"ranged_basic_pct",   # 遠程棋子普攻傷害 %
+	"skill_dmg_pct",      # 技能造成的所有傷害 %（含技能造成的持續傷害；不含普攻與裝備）
 	"skill_direct_pct",   # 技能直接傷害 %（不含持續傷害）
 	"magic_dmg_pct",      # 造成的法術傷害 %（含持續傷害）
 	"magic_direct_pct",   # 法術直接傷害 %（不含持續傷害）

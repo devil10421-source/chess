@@ -39,19 +39,33 @@ static func full_pool(civ_id: String) -> Array:
 	return out
 
 
-static func roll_slot(rng: SeededRng, level: int, civ_id: String) -> String:
+## excluded：不能再抽到的棋子 id（例如玩家已擁有三星的棋子）。
+## 先依等級機率抽稀有度；若該稀有度排除後已無棋子，改在「仍有棋子的稀有度」中依原機率比例重抽，
+## 不會讓其他稀有度的相對機率失控。全部都沒有可抽棋子時回傳 ""（空格），不會無限迴圈。
+static func roll_slot(rng: SeededRng, level: int, civ_id: String, excluded: Dictionary = {}) -> String:
 	var odds := odds_for_level(level)
-	var tier_index := rng.pick_weighted(odds)
-	# 若該稀有度沒有棋子（理論上不會），往低稀有度退
-	for cost in range(tier_index + 1, 0, -1):
-		var pool := pool_for(civ_id, cost)
-		if not pool.is_empty():
-			return str(pool[rng.randi_range(0, pool.size() - 1)])
-	return ""
+	var pools: Array = []
+	var weights: Array = []
+	for cost in [1, 2, 3, 4]:
+		var pool: Array = pool_for(civ_id, cost).filter(func(id): return not excluded.has(id))
+		pools.append(pool)
+		weights.append(float(odds[cost - 1]) if not pool.is_empty() else 0.0)
+	var total := 0.0
+	for w in weights:
+		total += float(w)
+	if total <= 0.0:
+		# 該等級機率 > 0 的稀有度都被排除光了：退回任何仍有棋子的稀有度（依低費優先）
+		for pool in pools:
+			if not pool.is_empty():
+				return str(pool[rng.randi_range(0, pool.size() - 1)])
+		return ""
+	var tier_index := rng.pick_weighted(weights)
+	var chosen: Array = pools[tier_index]
+	return str(chosen[rng.randi_range(0, chosen.size() - 1)])
 
 
-static func roll(rng: SeededRng, level: int, civ_id: String) -> Array:
+static func roll(rng: SeededRng, level: int, civ_id: String, excluded: Dictionary = {}) -> Array:
 	var out: Array = []
 	for i in slot_count():
-		out.append(roll_slot(rng, level, civ_id))
+		out.append(roll_slot(rng, level, civ_id, excluded))
 	return out

@@ -144,8 +144,18 @@ func begin_round() -> void:
 		if int(r) == round_no:
 			free_rerolls += 1
 	if not shop_locked or shop.is_empty():
-		shop = Shop.roll(shop_rng, level(), civ_id)
+		shop = Shop.roll(shop_rng, level(), civ_id, three_star_ids())
 	_notify()
+
+
+## 已擁有三星版本的棋子 id（商店不再抽出，也不能再購買）。出售該三星後即恢復。
+func three_star_ids() -> Dictionary:
+	var out := {}
+	var max_star := int(GameData.cfg("star").get("max", 3))
+	for u in all_units():
+		if int(u["star"]) >= max_star:
+			out[str(u["id"])] = true
+	return out
 
 
 # ---------- 商店操作 ----------
@@ -155,6 +165,8 @@ func can_buy(slot: int) -> String:
 	if slot < 0 or slot >= shop.size() or str(shop[slot]) == "":
 		return "這格沒有棋子"
 	var id := str(shop[slot])
+	if three_star_ids().has(id):
+		return "已擁有三星，不需要更多"
 	var cost := GameData.unit_cost(id)
 	if gold < cost:
 		return "金幣不足"
@@ -245,7 +257,7 @@ func reroll() -> String:
 		gold -= Economy.reroll_cost()
 	else:
 		return "金幣不足"
-	shop = Shop.roll(shop_rng, level(), civ_id)
+	shop = Shop.roll(shop_rng, level(), civ_id, three_star_ids())
 	_notify()
 	return ""
 
@@ -330,7 +342,42 @@ func move_to_board(uid: int, cell: Vector2i) -> String:
 
 
 # ---------- 戰鬥 ----------
+## 人口不足時自動補位（game_config.json → board.auto_fill，預設開啟）：
+## 從候補區最左側依序補到場上空缺，直到達上限或候補沒有棋子；已在場上的棋子不會被移動。
+## 近戰放最前面的空排、遠程放最後面的空排，同一排優先靠中央，盡量不打亂既有陣型。回傳補上的 uid。
+func auto_fill_board() -> Array:
+	var placed: Array = []
+	if not bool(GameData.cfg("board").get("auto_fill", true)):
+		return placed
+	var col_order := [3, 2, 4, 1, 5, 0, 6]
+	for i in bench.size():
+		if board_count() >= board_limit():
+			break
+		var u = bench[i]
+		if u == null:
+			continue
+		var rows := [4, 5, 6, 7] if GameData.is_melee(str(u["id"])) else [7, 6, 5, 4]
+		var target := HexGrid.INVALID
+		for r in rows:
+			for c in col_order:
+				var cell := Vector2i(c, r)
+				if not board.has(cell):
+					target = cell
+					break
+			if target != HexGrid.INVALID:
+				break
+		if target == HexGrid.INVALID:
+			break
+		bench[i] = null
+		board[target] = u
+		placed.append(int(u["uid"]))
+	if not placed.is_empty():
+		_notify()
+	return placed
+
+
 func start_battle() -> Dictionary:
+	auto_fill_board()
 	gold_at_battle_start = gold
 	var sim := BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
 	return sim.run()

@@ -40,6 +40,12 @@ func _initialize() -> void:
 		"test_assassin_and_taunt",
 		"test_target_lock",
 		"test_round1_all_units_win",
+		"test_three_star_exclusion",
+		"test_auto_fill",
+		"test_interest_ui_data",
+		"test_oni_skill_dot",
+		"test_playback_clock",
+		"test_prep_timer",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -191,7 +197,9 @@ func test_economy() -> void:
 	eq(Economy.interest(10), 1, "利息 10 金")
 	eq(Economy.interest(19), 1, "利息 19 金")
 	eq(Economy.interest(20), 2, "利息 20 金")
-	eq(Economy.interest(99), 2, "利息上限 2")
+	eq(Economy.interest(29), 2, "利息 29 金")
+	eq(Economy.interest(30), 3, "利息 30 金 +3（V0.2）")
+	eq(Economy.interest(99), 3, "利息上限 3（V0.2）")
 	eq(Economy.sell_value(3, 1), 3, "1 星出售")
 	eq(Economy.sell_value(3, 2), 9, "2 星出售 = 3×cost")
 	eq(Economy.sell_value(3, 3), 27, "3 星出售 = 9×cost")
@@ -260,13 +268,16 @@ func test_merge() -> void:
 		run.buy(2)
 	eq(run.copies_of("ORC1", 3), 1, "三隻二星 → 三星")
 	eq(run.all_units().size(), 1, "合成後只剩一隻")
-	# 三星不再往上合成
-	for k in 3:
-		run.shop = ["ORC1", "ORC1", "ORC1", "ORC1", "ORC1"]
-		run.buy(0)
-		run.buy(1)
-		run.buy(2)
-	eq(run.copies_of("ORC1", 3), 2, "最高三星：再湊一組只會多一隻三星")
+	# 最高三星：已有三星後不能再買同名棋子（V0.2），也就不會出現四星
+	run.shop = ["ORC1", "ORC1", "ORC1", "ORC1", "ORC1"]
+	eq(run.buy(0), "已擁有三星，不需要更多", "已有三星時不能再買同名")
+	eq(run.copies_of("ORC1", 3), 1, "仍只有一隻三星")
+	var r4 := RunState.create("orc", 70)
+	for i in 3:
+		r4.bench[i] = {"uid": i + 1, "id": "ORC1", "star": 3}
+	r4.next_uid = 4
+	r4._try_merge("ORC1", 3)
+	eq(r4.copies_of("ORC1", 3), 3, "三星不會再往上合成")
 	# 場上棋子參與合成，結果保留在場上
 	var r2 := RunState.create("orc", 8)
 	r2.gold = 100
@@ -873,3 +884,193 @@ func test_round1_all_units_win() -> void:
 			check(BattleSetup.build([{"uid": 1, "id": id, "star": 1, "cell": cell}], str(c["id"]), 1, 3).run()["cleared"],
 				"%s 文明下 %s 也能打贏第一回合" % [c["id"], id])
 	check(not Shop.full_pool("elf").has("TUT1"), "教學弱敵不會出現在商店")
+
+
+# ================= V0.2 第二批：規則與經濟 =================
+func test_three_star_exclusion() -> void:
+	var run := RunState.create("orc", 50)
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 3}
+	run.next_uid = 2
+	run.gold = 100
+	check(run.three_star_ids().has("ORC1"), "偵測到已擁有三星")
+	for i in 40:
+		run.reroll()
+		check(not run.shop.has("ORC1"), "手動刷新不再出現三星棋子")
+	run.prepared_round = 0
+	run.round_no = 2
+	run.begin_round()
+	check(not run.shop.has("ORC1"), "回合自動刷新也排除")
+	run.shop[0] = "ORC1"   # 既有欄位仍保留該棋子
+	eq(run.can_buy(0), "已擁有三星，不需要更多", "既有欄位的三星棋子不能再買")
+	run.sell(1)
+	check(not run.three_star_ids().has("ORC1"), "出售三星後解除排除")
+	var seen := false
+	for i in 200:
+		run.gold = 100
+		run.reroll()
+		if run.shop.has("ORC1"):
+			seen = true
+			break
+	check(seen, "出售後該棋子重新回到抽取池")
+	# 稀有度比例不失控：排除一隻 1 費後，Lv.5 抽到 1 費的比例仍約 40%
+	var rng := SeededRng.new(9)
+	var ones := 0
+	var n := 6000
+	for i in n:
+		if GameData.unit_cost(Shop.roll_slot(rng, 5, "orc", {"ORC1": true})) == 1:
+			ones += 1
+	var ratio := float(ones) / n
+	check(ratio > 0.37 and ratio < 0.43, "排除後 1 費比例仍約 40%%（實際 %.1f%%）" % (ratio * 100.0))
+	# 抽取池不足：Lv.1 只出 1 費，若 1 費全部排除，改抽其他稀有度、不當機
+	var all_ones := {}
+	for id in Shop.pool_for("orc", 1):
+		all_ones[id] = true
+	var alt := Shop.roll_slot(rng, 1, "orc", all_ones)
+	check(alt != "" and not all_ones.has(alt), "1 費全被排除時改抽其他稀有度（%s）" % alt)
+	var everything := {}
+	for id in Shop.full_pool("orc"):
+		everything[id] = true
+	eq(Shop.roll(rng, 10, "orc", everything), ["", "", "", "", ""], "全部排除時回傳空格，不會無限迴圈")
+
+
+func test_auto_fill() -> void:
+	var run := RunState.create("human", 51)
+	run.xp = 20   # Lv.5
+	var kept := {Vector2i(1, 4): 1, Vector2i(5, 5): 2, Vector2i(3, 7): 3}
+	for c in kept.keys():
+		run.board[c] = {"uid": kept[c], "id": "ORC1", "star": 1}
+	run.bench[0] = {"uid": 10, "id": "HUM2", "star": 1}
+	run.bench[2] = {"uid": 11, "id": "CEN1", "star": 1}
+	run.bench[5] = {"uid": 12, "id": "ELF1", "star": 1}
+	run.bench[7] = {"uid": 13, "id": "ONI1", "star": 1}
+	run.next_uid = 20
+	var placed := run.auto_fill_board()
+	eq(placed, [10, 11], "依候補區由左到右補位，補到上限為止")
+	eq(run.board_count(), 5, "補到 Lv.5 上限")
+	for c in kept.keys():
+		check(run.board.has(c) and int(run.board[c]["uid"]) == kept[c], "原本部署的棋子沒有被移動 %s" % str(c))
+	check(run.bench[5] != null and run.bench[7] != null, "其餘候補棋子留在原位")
+	var uids := {}
+	for c in run.board.keys():
+		check(HexGrid.is_player_cell(c), "補位只放在己方格子")
+		check(not uids.has(run.board[c]["uid"]), "沒有重複棋子")
+		uids[run.board[c]["uid"]] = true
+	eq(run.all_units().size(), 7, "棋子總數不變（沒有消失或複製）")
+	check(run.find_unit(10)["cell"].y == 4, "近戰補在前排")
+	check(run.find_unit(11)["cell"].y == 7, "遠程補在後排")
+	# start_battle 會先補位再建立戰鬥快照
+	var r2 := RunState.create("human", 52)
+	r2.bench[3] = {"uid": 5, "id": "ORC1", "star": 1}
+	r2.next_uid = 6
+	var res := r2.start_battle()
+	eq(res["units"].filter(func(x): return x["side"] == 0).size(), 1, "開戰時自動補位後才建立戰鬥")
+	# 可關閉
+	var board_cfg: Dictionary = GameData.cfg("board")
+	board_cfg["auto_fill"] = false
+	var r3 := RunState.create("human", 53)
+	r3.bench[0] = {"uid": 5, "id": "ORC1", "star": 1}
+	eq(r3.auto_fill_board(), [], "設定關閉時不補位")
+	board_cfg["auto_fill"] = true
+
+
+func test_interest_ui_data() -> void:
+	eq(Economy.next_interest(0), {"next_gold": 10, "need": 10, "next_interest": 1}, "0 金：差 10 金到 +1")
+	eq(Economy.next_interest(25), {"next_gold": 30, "need": 5, "next_interest": 3}, "25 金：差 5 金到 +3")
+	eq(Economy.next_interest(30), {}, "30 金已達上限")
+	# XP 規劃（考慮溢出）
+	var p := Economy.xp_plan(30)   # Lv.6，本級 0/12
+	eq(p["level"], 6, "30 XP = Lv.6")
+	eq([p["cur"], p["need"], p["missing"]], [0, 12, 12], "Lv.6：0/12，還差 12")
+	eq([p["buys"], p["cost"]], [3, 12], "還需購買 3 次、12 金")
+	p = Economy.xp_plan(36)        # Lv.6，6/12
+	eq([p["cur"], p["need"], p["missing"], p["buys"], p["cost"]], [6, 12, 6, 2, 8], "企劃例：6/12 還差 6 → 2 次 8 金")
+	p = Economy.xp_plan(3)         # Lv.2，1/4 → 差 3 → 1 次（溢出 1）
+	eq([p["missing"], p["buys"]], [3, 1], "溢出經驗：差 3 只需買 1 次")
+	check(Economy.xp_plan(90)["max"], "滿級")
+
+
+func test_oni_skill_dot() -> void:
+	var sim := CombatSim.new(1)
+	var oni_mods: Dictionary = Modifiers.for_lineup(["ONI4"], "oni", false)[0]
+	var oni := sim.add_unit("ONI4", 3, Vector2i(3, 6), 0, oni_mods)
+	var plain := sim.add_unit("ONI4", 3, Vector2i(4, 6), 0, Modifiers.empty())
+	var dummy := sim.add_unit("HUM2", 1, Vector2i(3, 1), 1, Modifiers.empty())
+	dummy.armor = 0.0
+	dummy.mr = 0.0
+	dummy.max_hp = 999999.0
+	dummy.hp = 999999.0
+	eq(sim.damage_bonus_pct(oni, dummy, "magic", "skill", true), 12.0, "鬼人：技能持續傷害 +12%")
+	eq(sim.damage_bonus_pct(oni, dummy, "physical", "skill", false), 12.0, "鬼人：物理技能 +12%")
+	eq(sim.damage_bonus_pct(oni, dummy, "magic", "skill", false), 12.0, "鬼人：法術技能 +12%")
+	eq(sim.damage_bonus_pct(oni, dummy, "physical", "basic", false), 0.0, "鬼人：普攻不加成")
+	eq(sim.damage_bonus_pct(oni, dummy, "physical", "item", false), 0.0, "鬼人：裝備獨立傷害不加成（V0.3 預留）")
+	# 實際 DOT：每次結算只乘一次 1.12
+	var total := UnitStats.skill_amount("ONI4", 3, "dot")
+	sim.add_periodic(oni, dummy, "dot", total, 4.0, "magic")
+	sim.add_periodic(plain, dummy, "dot", total, 4.0, "magic")
+	var tick_amount := total / 8.0
+	sim.t = 0.5
+	var before := sim.events.size()
+	sim._update_statuses()
+	var got := {}
+	for i in range(before, sim.events.size()):
+		var e: Dictionary = sim.events[i]
+		if e["k"] == "damage" and e["dot"]:
+			got[e["src"]] = e["v"]
+	eq(got.get(plain.cid), float(roundi(tick_amount)), "一般 DOT 每跳 = 總量 / 跳數")
+	eq(got.get(oni.cid), float(roundi(tick_amount * 1.12)), "鬼人 DOT 每跳只乘一次 1.12")
+	# 流血（物理技能 DOT）也適用
+	var s2 := CombatSim.new(2)
+	var o1 := s2.add_unit("ONI1", 3, Vector2i(3, 4), 0, Modifiers.for_lineup(["ONI1"], "oni", false)[0])
+	var d2 := s2.add_unit("HUM2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	d2.armor = 0.0
+	d2.max_hp = 999999.0
+	d2.hp = 999999.0
+	var bleed := UnitStats.skill_amount("ONI1", 3, "dot")
+	s2.add_periodic(o1, d2, "dot", bleed, 3.0, "physical")
+	s2.t = 0.5
+	s2._update_statuses()
+	var last: Dictionary = s2.events[s2.events.size() - 1]
+	eq(last["v"], float(roundi(bleed / 6.0 * 1.12)), "鬼人流血每跳 +12%")
+	eq(last["source"], "skill", "DOT 的傷害來源標示為技能")
+
+
+func test_playback_clock() -> void:
+	check(is_equal_approx(PlaybackClock.sim_from_real(10.0), 10.0), "0–15 秒 1.0×")
+	check(is_equal_approx(PlaybackClock.sim_from_real(15.0), 15.0), "15 秒時模擬 15 秒")
+	check(is_equal_approx(PlaybackClock.sim_from_real(25.0), 30.0), "15–25 秒 1.5×：25 秒時模擬 30 秒")
+	check(is_equal_approx(PlaybackClock.sim_from_real(32.5), 45.0), "25 秒後 2.0×：45 秒戰鬥約 32.5 秒播完")
+	check(is_equal_approx(PlaybackClock.real_from_sim(45.0), 32.5), "反向換算 45 → 32.5")
+	eq(PlaybackClock.rate_at_real(5.0), 1.0, "5 秒時倍率 1.0")
+	eq(PlaybackClock.rate_at_real(20.0), 1.5, "20 秒時倍率 1.5")
+	eq(PlaybackClock.rate_at_real(30.0), 2.0, "30 秒時倍率 2.0")
+	var prev := -1.0
+	var ok := true
+	for i in 400:
+		var r := i * 0.1
+		var sim_t := PlaybackClock.sim_from_real(r)
+		if sim_t < prev - 1e-9 or not is_equal_approx(PlaybackClock.real_from_sim(sim_t), r):
+			ok = false
+		prev = sim_t
+	check(ok, "時間軸單調遞增且可逆（事件順序不會改變）")
+	# 戰鬥結果與播放速度無關：模擬層完全不讀取播放倍率（實際播放的一致性由冒煙測試檢查）
+	var src := FileAccess.get_file_as_string("res://scripts/core/combat/combat_sim.gd")
+	check(not src.contains("playback") and not src.contains("battle_speed"), "戰鬥模擬不依賴播放速度")
+
+
+func test_prep_timer() -> void:
+	var tm := PrepTimer.new()
+	eq(tm.duration, 15.0, "備戰固定 15 秒")
+	check(not tm.tick(1.0), "未開始不計時")
+	tm.start()
+	check(not tm.tick(9.0), "6 秒前不觸發")
+	check(not tm.is_warning(), "剩 6 秒尚未警示")
+	check(not tm.tick(1.5), "")
+	check(tm.is_warning(), "剩 5 秒內顯示警示")
+	tm.paused = true
+	check(not tm.tick(100.0), "暫停時不計時")
+	tm.paused = false
+	check(tm.tick(4.6), "倒數結束時觸發自動開戰")
+	check(not tm.tick(1.0), "只觸發一次")
+	tm.start()
+	eq(tm.seconds_left(), 15, "每回合重新從 15 秒開始")

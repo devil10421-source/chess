@@ -13,6 +13,8 @@ var debug_enabled := OS.is_debug_build()
 ## 從圖鑑返回時要回去的場景
 var codex_return := SCENE_MENU
 var battle_speed := 1.0
+## 目前實際的播放倍率（戰鬥加速分段 × 玩家選的速度），動畫與狀態倒數都用這個值
+var playback_rate := 1.0
 
 const THEME_PATH := "res://assets/theme/main_theme.tres"
 

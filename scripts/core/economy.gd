@@ -38,7 +38,24 @@ static func natural_xp() -> int:
 ## interest = min(2, floor(gold / 10))
 static func interest(gold: int) -> int:
 	var step := int(_eco("interest_step", 10))
-	return clampi(int(floor(float(maxi(gold, 0)) / float(step))), 0, int(_eco("interest_max", 2)))
+	return clampi(int(floor(float(maxi(gold, 0)) / float(step))), 0, interest_max())
+
+
+static func interest_max() -> int:
+	return int(_eco("interest_max", 3))
+
+
+static func interest_step() -> int:
+	return int(_eco("interest_step", 10))
+
+
+## 下一個利息門檻：{"next_gold": 下一門檻金幣, "need": 還差多少金, "next_interest": 達到後利息}；已達上限回傳空字典
+static func next_interest(gold: int) -> Dictionary:
+	var cur := interest(gold)
+	if cur >= interest_max():
+		return {}
+	var next_gold := (cur + 1) * interest_step()
+	return {"next_gold": next_gold, "need": next_gold - gold, "next_interest": cur + 1}
 
 
 ## 出售回收：1 星 cost、2 星 3×cost、3 星 9×cost
@@ -114,3 +131,17 @@ static func expedition_loss(remaining_threat: int, round_no: int) -> int:
 	var cap := int(GameData.cfg("expedition").get("max_loss_per_round", 10))
 	# 減去極小值，避免 5×1.4=7.0000000001 這類浮點誤差被進位成 8
 	return mini(cap, int(ceil(raw - 1e-6)))
+
+
+## 升級規劃（給 UI）：考慮購買後溢出的經驗（溢出 XP 保留）。
+## 回傳 {level, cur, need, missing, buys, cost, max}：本級已得 cur／本級所需 need／還差 missing XP、
+## 還需購買 buys 次、至少花 cost 金；滿級時 max = true。
+static func xp_plan(xp: int) -> Dictionary:
+	var lv := level_for_xp(xp)
+	if lv >= max_level():
+		return {"level": lv, "cur": 0, "need": 0, "missing": 0, "buys": 0, "cost": 0, "max": true}
+	var prog := xp_progress(xp)
+	var missing := int(prog[1]) - int(prog[0])
+	var buys := int(ceil(float(missing) / float(xp_per_buy())))
+	return {"level": lv, "cur": int(prog[0]), "need": int(prog[1]), "missing": missing, "buys": buys,
+		"cost": buys * xp_cost(), "max": false}

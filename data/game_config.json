@@ -4,14 +4,18 @@
   "rounds": {
     "total": 24,
     "chapter_length": 6,
-    "boss_rounds": [6, 12, 18, 24]
+    "boss_rounds": [6, 12, 18, 24],
+    "_prep_note": "每回合備戰秒數（倒數結束自動開戰；可提前按開始戰鬥）",
+    "prep_seconds": 15,
+    "prep_warning_seconds": 5
   },
   "economy": {
     "start_gold": 5,
     "base_income": 5,
     "clear_bonus": 2,
+    "_interest_note": "利息 = min(interest_max, floor(開戰瞬間金幣 / interest_step))；V0.2 測試值：每 10 金 +1、最多 +3",
     "interest_step": 10,
-    "interest_max": 2,
+    "interest_max": 3,
     "reroll_cost": 2,
     "xp_cost": 4,
     "xp_per_buy": 4,
@@ -55,6 +59,18 @@
       "9": [5, 20, 60, 15],
       "10": [5, 10, 60, 25]
     }
+  },
+  "board": {
+    "_note": "auto_fill：開戰時若上場人數未滿，從候補區最左側依序自動補位",
+    "auto_fill": true
+  },
+  "battle_playback": {
+    "_note": "戰鬥播放加速：依『實際播放經過秒數』決定播放倍率（只影響播放，不影響戰鬥結果）",
+    "segments": [
+      {"from": 0, "rate": 1.0},
+      {"from": 15, "rate": 1.5},
+      {"from": 25, "rate": 2.0}
+    ]
   },
   "star": {
     "max": 3,

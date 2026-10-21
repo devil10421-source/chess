@@ -30,7 +30,7 @@ func ring(pos: Vector2, color: Color, radius: float, dur: float = 0.45) -> void:
 func _process(delta: float) -> void:
 	if _fx.is_empty():
 		return
-	var d := delta * Session.battle_speed
+	var d := delta * Session.playback_rate
 	for f in _fx:
 		f["t"] = float(f["t"]) + d
 	_fx = _fx.filter(func(f): return float(f["t"]) < float(f["dur"]))

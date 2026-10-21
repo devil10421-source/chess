@@ -11,7 +11,9 @@ const DMG_COLORS := {"physical": Color(1.0, 0.72, 0.35), "magic": Color(0.80, 0.
 var board: BoardView
 var _events: Array = []
 var _index := 0
-var _clock := 0.0
+var _clock := 0.0          # 已播放到的模擬秒數
+var _real := 0.0           # 實際播放經過秒數（已乘玩家選的 1×/2×/4×）
+var _delay := 0.0          # 開場前短暫停頓（實際秒）
 var _end_time := 0.0
 var _playing := false
 var _tokens: Dictionary = {}   # cid -> UnitToken
@@ -29,7 +31,9 @@ func play(result: Dictionary, board_view: BoardView) -> void:
 	_events = result.get("events", [])
 	_end_time = float(result.get("time", 0.0)) + 0.6
 	_index = 0
-	_clock = -0.4
+	_clock = 0.0
+	_real = 0.0
+	_delay = 0.4
 	for s in result.get("units", []):
 		var tk: UnitToken = TOKEN_SCENE.instantiate()
 		board.tokens_root.add_child(tk)
@@ -71,7 +75,13 @@ func skip() -> void:
 func _process(delta: float) -> void:
 	if not _playing:
 		return
-	_clock += delta * Session.battle_speed
+	if _delay > 0.0:
+		_delay -= delta
+		return
+	# 播放加速：實際經過秒數 → 模擬秒數（PlaybackClock），再乘上玩家選的速度
+	_real += delta * Session.battle_speed
+	_clock = PlaybackClock.sim_from_real(_real)
+	Session.playback_rate = PlaybackClock.rate_at_real(_real) * Session.battle_speed
 	while _index < _events.size() and float(_events[_index]["t"]) <= _clock:
 		_apply(_events[_index], false)
 		_index += 1
@@ -79,8 +89,18 @@ func _process(delta: float) -> void:
 		_finish()
 
 
+## 目前播放到的模擬秒數與實際秒數（UI 顯示用）
+func sim_time() -> float:
+	return _clock
+
+
+func real_time() -> float:
+	return _real
+
+
 func _finish() -> void:
 	_playing = false
+	Session.playback_rate = Session.battle_speed
 	finished.emit()
 
 
@@ -94,7 +114,7 @@ func _pos(cid: int) -> Vector2:
 
 
 func _apply(e: Dictionary, instant: bool) -> void:
-	var sp := maxf(0.1, Session.battle_speed)
+	var sp := maxf(0.1, Session.playback_rate)
 	match str(e["k"]):
 		"move":
 			var tk: UnitToken = _tokens.get(int(e["cid"]))

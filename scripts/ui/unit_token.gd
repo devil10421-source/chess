@@ -109,7 +109,7 @@ func _process(delta: float) -> void:
 	_time += delta
 	if not statuses.is_empty():
 		for k in statuses.keys():
-			statuses[k] = float(statuses[k]) - delta * Session.battle_speed
+			statuses[k] = float(statuses[k]) - delta * Session.playback_rate
 			if statuses[k] <= 0.0:
 				statuses.erase(k)
 	queue_redraw()
