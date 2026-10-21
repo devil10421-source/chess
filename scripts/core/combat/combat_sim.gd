@@ -540,6 +540,8 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	var hp_damage := _apply_hit(src, tgt, dmg, {"crit": crit, "dtype": dtype, "source": source, "dot": is_dot, "parried": not parry.is_empty()}, true)
 	if crit:
 		ItemPassives.on_crit(self, src, tgt)
+	if source == "skill" and tgt.alive:
+		ItemPassives.on_skill_taken(self, tgt)
 	if tgt.alive and source == "basic":
 		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
 		ItemPassives.on_basic_taken(self, tgt, src, dmg)

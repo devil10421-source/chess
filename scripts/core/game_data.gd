@@ -157,6 +157,26 @@ static func item_slots() -> int:
 
 
 ## 裝備卸除器（V0.4）：名稱與額外獲得的回合
+## 兩個組件的合成結果（順序不拘）；不能合成回傳 ""
+static func recipe(a: String, b: String) -> String:
+	for r in equipment().get("recipes", []):
+		if (r["a"] == a and r["b"] == b) or (r["a"] == b and r["b"] == a):
+			return str(r["result"])
+	return ""
+
+
+static func is_component(id: String) -> bool:
+	return str(item(id).get("source", "")) == "component"
+
+
+static func components() -> Array:
+	return items().filter(func(it): return str(it.get("source", "")) == "component")
+
+
+static func component_drop_cfg() -> Dictionary:
+	return equipment().get("component_drops", {})
+
+
 static func remover_rounds() -> Array:
 	return equipment().get("remover", {}).get("rounds", [])
 

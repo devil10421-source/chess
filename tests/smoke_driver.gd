@@ -427,6 +427,50 @@ func _run() -> void:
 	check(g.leader.row_count() > 0, "戰後保留上一場統計")
 	Session.battle_speed = 1.0
 
+	# ── V0.5 組件合成：背包內合成、拖到棋子身上合成，都先預覽再確認 ──
+	g.prep_timer.remaining = 999.0
+	var inv_keep: Array = run.inventory.duplicate()
+	run.inventory = ["CP_BLADE", "CP_BLADE", "CP_PLATE"]
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	check(g.bag_row_button(0) != null and g.bag_row_button(0).find_children("*", "Label", true, false).any(func(l): return (l as Label).text == "組件・可合成"), "背包列標示「組件・可合成」")
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	g.bag_row_button(1).pressed.emit()
+	await wait(0.1)
+	check(g.is_combine_preview_open(), "點兩件組件 → 合成預覽")
+	check(g.item_body.find_children("*", "", true, false).any(func(n): return n is RichTextLabel and (n as RichTextLabel).text.contains("巨型戰刃")), "預覽顯示合成結果")
+	check(run.inventory.size() == 3, "確認前不會合成")
+	await shot("combine_preview")
+	var confirm_btn: Button = g.item_buttons.get_children().filter(func(b): return (b as Button).text == "確認合成")[0]
+	confirm_btn.pressed.emit()
+	await wait(0.1)
+	check(run.inventory == ["CR_GREATBLADE", "CP_PLATE"], "確認後合成：巨型戰刃（兩件→一件）")
+	# 棋子身上有鐵刃 → 把鐵甲交給它：預覽重裝戰斧
+	var cu_uid := -1
+	for bu in run.bench:
+		if bu != null:
+			cu_uid = int(bu["uid"])
+			bu["items"] = ["CP_BLADE"]
+			break
+	if cu_uid < 0:
+		var bf: Dictionary = run.board.values()[0]
+		cu_uid = int(bf["uid"])
+		bf["items"] = ["CP_BLADE"]
+	g._give_item(cu_uid, 1)
+	await wait(0.1)
+	check(g.is_combine_preview_open(), "把組件交給身上有組件的棋子 → 合成預覽")
+	check(g.item_buttons.get_children().any(func(b): return (b as Button).text == "直接穿上（不合成）"), "還有空欄時可以選擇直接穿上")
+	g.item_buttons.get_children().filter(func(b): return (b as Button).text == "確認合成")[0].pressed.emit()
+	await wait(0.1)
+	check(RunState.unit_items(run.find_unit(cu_uid)["unit"]) == ["CR_HEAVYAXE"], "棋子身上合成重裝戰斧，只佔一格")
+	check(run.inventory == ["CR_GREATBLADE"], "背包扣除鐵甲")
+	RunState.unit_items(run.find_unit(cu_uid)["unit"]).clear()
+	run.inventory = inv_keep
+	g._close_bag()
+	g.item_overlay.visible = false
+	await wait(0.1)
+
 	# ── 裝備回合：三選一（不計備戰時間）──
 	g.prep_timer.remaining = 999.0
 	if Session.debug_enabled:

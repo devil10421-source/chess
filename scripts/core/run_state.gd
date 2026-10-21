@@ -34,6 +34,8 @@ var removers := 0                 # 裝備卸除器數量（V0.4）
 var live_battle: CombatSim = null
 var battle_active := false
 var removers_granted: Array = []  # 已發放卸除器的回合
+## 一般戰鬥的組件掉落紀錄（V0.5）：[{round, id, kind: "drop"／"guarantee"}]
+var component_log: Array = []
 
 
 static func create(civ: String, seed_value: int) -> RunState:
@@ -404,6 +406,87 @@ func equip(uid: int, inv_index: int) -> String:
 	return ""
 
 
+# ---------- 組件合成（V0.5） ----------
+## 背包裡兩件組件合成一件完整裝備（放在較前面的位置）；不能合成時回傳原因
+func combine_inventory(i: int, j: int) -> String:
+	if i == j or i < 0 or j < 0 or i >= inventory.size() or j >= inventory.size():
+		return "請選兩件不同的組件"
+	var res := GameData.recipe(str(inventory[i]), str(inventory[j]))
+	if res == "":
+		return "這兩件不能合成"
+	var lo := mini(i, j)
+	var hi := maxi(i, j)
+	inventory.remove_at(hi)
+	inventory[lo] = res
+	_notify()
+	return ""
+
+
+## 棋子身上第 slot 格是組件、背包第 inv_index 件也是組件 → 合成，結果留在同一格（只佔一格）。
+## 戰鬥中的場上棋子也可以：合成完成後立即生效（組件數值移除、換成完整裝備）。
+func combine_on_unit(uid: int, slot: int, inv_index: int) -> String:
+	if finished:
+		return "遠征已結束"
+	var f := find_unit(uid)
+	if f.is_empty():
+		return "找不到棋子"
+	var items := unit_items(f["unit"])
+	if slot < 0 or slot >= items.size() or inv_index < 0 or inv_index >= inventory.size():
+		return "沒有可以合成的組件"
+	var res := GameData.recipe(str(items[slot]), str(inventory[inv_index]))
+	if res == "":
+		return "這兩件不能合成"
+	items[slot] = res
+	inventory.remove_at(inv_index)
+	_sync_live_items(uid)
+	_notify()
+	return ""
+
+
+## 拖背包第 inv_index 件到棋子身上時，可以和棋子哪一格合成（-1＝不能）
+func combinable_slot(uid: int, inv_index: int) -> int:
+	var f := find_unit(uid)
+	if f.is_empty() or inv_index < 0 or inv_index >= inventory.size():
+		return -1
+	var items := unit_items(f["unit"])
+	for s in items.size():
+		if GameData.recipe(str(items[s]), str(inventory[inv_index])) != "":
+			return s
+	return -1
+
+
+# ---------- 一般戰鬥組件掉落與每章保底（V0.5） ----------
+func chapter_components(chapter_no: int) -> int:
+	return component_log.filter(func(e): return GameData.chapter_of(int(e["round"])) == chapter_no).size()
+
+
+## 戰鬥結束（存活）時呼叫：一般戰鬥依機率掉落；章節第 5 場（第 5、11、17、23 回合）結束時補足保底。回傳這次取得的組件 id。
+func _component_drops(round_done: int) -> Array:
+	var cfg := GameData.component_drop_cfg()
+	if cfg.is_empty():
+		return []
+	var got: Array = []
+	var ch := GameData.chapter_of(round_done)
+	var cap := int(cfg.get("cap", 3))
+	var rng := SeededRng.new(SeededRng.mix(run_seed, 7000 + round_done))
+	var comps := GameData.components()
+	var normal := GameData.reward_for_round(round_done).is_empty() and round_done < GameData.total_rounds()
+	if normal and chapter_components(ch) < cap and rng.randf() < float(cfg.get("chance", 0.35)):
+		got.append({"round": round_done, "id": str(comps[rng.randi_range(0, comps.size() - 1)]["id"]), "kind": "drop"})
+		component_log.append(got[-1])
+	var chapter_len := int(GameData.cfg("rounds").get("chapter_length", 6))
+	var g_round := (ch - 1) * chapter_len + int(cfg.get("guarantee_round_in_chapter", 5))
+	if round_done == g_round:
+		while chapter_components(ch) < int(cfg.get("guarantee", 2)):
+			got.append({"round": round_done, "id": str(comps[rng.randi_range(0, comps.size() - 1)]["id"]), "kind": "guarantee"})
+			component_log.append(got[-1])
+	var ids: Array = []
+	for e in got:
+		inventory.append(str(e["id"]))
+		ids.append(str(e["id"]))
+	return ids
+
+
 ## 使用裝備卸除器：消耗 1 個，把棋子第 slot 件裝備移回背包（星級、位置不變）
 func use_remover(uid: int, slot: int) -> String:
 	if finished:
@@ -638,6 +721,7 @@ func settle(result: Dictionary) -> Dictionary:
 	_maybe_create_reward(round_no)
 	report["reward"] = not pending_reward.is_empty()
 	report["remover"] = _maybe_grant_remover(round_no)
+	report["components"] = _component_drops(round_no)
 	# 7. 進入下一回合或結束
 	if round_no >= GameData.total_rounds():
 		finished = true
@@ -676,6 +760,7 @@ func to_dict() -> Dictionary:
 		"pending_reward": pending_reward.duplicate(true),
 		"pool": pool_remaining(),   # 快照（讀檔時以持有狀態重新計算並核對）
 		"removers": removers, "removers_granted": removers_granted.duplicate(),
+		"component_log": component_log.duplicate(true),
 	}
 
 
@@ -729,6 +814,9 @@ static func from_dict(d: Dictionary) -> RunState:
 		r.pending_reward = {"round": int(pr["round"]), "faction": str(pr["faction"]), "drop": str(pr.get("drop", pr.get("tier", "normal"))),
 			"choices": _items_from(pr.get("choices", []))}
 	r.removers = int(d.get("removers", 0))
+	for e in d.get("component_log", []):
+		if typeof(e) == TYPE_DICTIONARY and GameData.has_item(str(e.get("id", ""))):
+			r.component_log.append({"round": int(e["round"]), "id": str(e["id"]), "kind": str(e.get("kind", "drop"))})
 	for x in d.get("removers_granted", []):
 		r.removers_granted.append(int(x))
 	return r

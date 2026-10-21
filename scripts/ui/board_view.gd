@@ -269,6 +269,11 @@ func _hit(screen_pos: Vector2) -> Dictionary:
 ## 畫面座標上的己方棋子（棋盤或候補區）；沒有回傳 -1。拖曳裝備時用來判斷放在哪隻棋子上
 func unit_at_screen(screen_pos: Vector2) -> int:
 	var hit := _hit(screen_pos)
+	if battle_mode and (hit.is_empty() or hit["where"] != "bench"):
+		# 戰鬥中：場上棋子已移動，用戰鬥單位的位置找（只算我方）
+		var cid := battle_player.cid_at(_local(screen_pos), hex_size * 0.8)
+		var snap := battle_player.unit_snapshot(cid)
+		return int(snap.get("uid", -1)) if not snap.is_empty() and int(snap["side"]) == 0 else -1
 	var uid := _uid_at(hit)
 	if uid < 0 and not hit.is_empty() and hit["where"] == "board":
 		# 棋子圖形比格子大：再找半徑內最近的棋子
@@ -313,6 +318,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 			var cid := battle_player.cid_at(_local(event.position), hex_size * 0.8)
+			# 正在「點裝備再點棋子」：點到我方戰鬥中的棋子就直接裝備
+			var bsnap := battle_player.unit_snapshot(cid)
+			if not bsnap.is_empty() and int(bsnap["side"]) == 0 and tap_interceptor.call(int(bsnap.get("uid", -1))):
+				get_viewport().set_input_as_handled()
+				return
 			# 改看戰場棋子時，清掉候補區的選取外框（不發出取消訊號）
 			_selected_uid = -1
 			for k in _prep_tokens.keys():

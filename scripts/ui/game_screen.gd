@@ -663,6 +663,8 @@ func _toast_report(rep: Dictionary) -> void:
 		_toast("鹿角人：遠征生命 +%d" % rep["deer_heal"], Color(0.55, 0.95, 0.6))
 	if rep["level_after"] != rep["level_before"]:
 		_toast("文明升到 Lv.%d！" % rep["level_after"], Color(0.6, 0.85, 1.0))
+	for cid_ in rep.get("components", []):
+		_toast("戰鬥掉落組件：%s（已放入背包）" % GameData.item(str(cid_)).get("name", ""), Color(0.75, 0.9, 1.0))
 	if bool(rep.get("remover", false)):
 		_toast("獲得 1 個%s（現有 %d 個）" % [GameData.remover_name(), run.removers], UiStyle.GOLD)
 	if rep["outcome"] == "victory":
@@ -734,7 +736,76 @@ func _item_text(id: String) -> String:
 	var u := Equipment.unique_of(id)
 	if not u.is_empty():
 		lines.append("[b][color=#ffd34d]唯一特性・%s[/color][/b]：%s" % [u.get("name", ""), u.get("desc", "")])
+	elif str(GameData.item(id).get("source", "")) == "craft":
+		lines.append("[color=#9aa3ad]純數值裝備：可以和其他裝備的數值疊加[/color]")
+	if GameData.is_component(id):
+		var parts: Array = []
+		for rc in Equipment.recipes_for(id):
+			parts.append("＋%s→%s" % [GameData.item(rc["with"]).get("name", ""), GameData.item(rc["result"]).get("name", "")])
+		lines.append("[color=#9aa3ad]基礎組件，可合成：%s[/color]" % "、".join(parts))
 	return "\n".join(lines)
+
+
+# ---------- 合成（V0.5） ----------
+## 合成預覽：顯示結果的名稱、屬性與唯一特性；確認後才合成（避免手機誤觸）。
+## alt_text／alt_cb：另一個選項（例如棋子還有空欄時「直接穿上」）
+func _preview_combine(a_id: String, b_id: String, on_confirm: Callable, alt_text: String = "", alt_cb: Callable = Callable()) -> void:
+	var res := GameData.recipe(a_id, b_id)
+	if res == "":
+		_toast("這兩件不能合成")
+		return
+	_open_item_overlay("合成預覽")
+	item_body.add_child(InfoView.make_rich("%s ＋ %s → [b]%s[/b]（合成後只佔一格）" % [GameData.item(a_id).get("name", ""), GameData.item(b_id).get("name", ""), GameData.item(res).get("name", "")], 15))
+	item_body.add_child(_item_card(res, "", Callable()))
+	_overlay_button("確認合成", func():
+		item_overlay.visible = false
+		on_confirm.call(), true)
+	if alt_text != "":
+		_overlay_button(alt_text, func():
+			item_overlay.visible = false
+			alt_cb.call())
+	_overlay_button("取消", func(): item_overlay.visible = false)
+
+
+func is_combine_preview_open() -> bool:
+	return item_overlay.visible and item_title.text == "合成預覽"
+
+
+## 背包裡兩件組件合成
+func _combine_in_bag(i: int, j: int) -> void:
+	var a_id := str(run.inventory[i])
+	var b_id := str(run.inventory[j])
+	_preview_combine(a_id, b_id, func():
+		var r := run.combine_inventory(i, j)
+		if r == "":
+			_toast("合成了 %s" % GameData.item(GameData.recipe(a_id, b_id)).get("name", ""), UiStyle.GOLD)
+			_pending_item = -1
+		_report(r)
+		_refresh_bag())
+
+
+## 背包裡的裝備交給棋子：能和棋子身上的組件合成時先預覽（有空欄時也可選擇直接穿上）；否則直接穿上
+func _give_item(uid: int, inv_index: int) -> void:
+	var slot := run.combinable_slot(uid, inv_index)
+	if slot < 0:
+		if _try_equip(uid, inv_index):
+			_close_bag()
+			board.select(uid)
+		return
+	var f := run.find_unit(uid)
+	var items := RunState.unit_items(f["unit"])
+	var a_id := str(items[slot])
+	var b_id := str(run.inventory[inv_index])
+	var has_free := items.size() < GameData.item_slots()
+	_preview_combine(a_id, b_id, func():
+		var r := run.combine_on_unit(uid, slot, inv_index)
+		if r == "":
+			_toast("%s 合成了 %s" % [GameData.unit(str(f["unit"]["id"])).get("name", ""), GameData.item(GameData.recipe(a_id, b_id)).get("name", "")], UiStyle.GOLD)
+			_close_bag()
+		_report(r),
+		"直接穿上（不合成）" if has_free else "", func():
+			if _try_equip(uid, inv_index):
+				_close_bag())
 
 
 # ---------- 裝備欄與背包 ----------
@@ -876,9 +947,9 @@ func _refresh_bag() -> void:
 	elif not _equip_allowed():
 		bag_hint.text = "戰鬥中只能查看；備戰時才能裝備。"
 	elif _pending_item >= 0:
-		bag_hint.text = "已選取：點棋盤或候補區上的棋子即可裝備（再點一次裝備取消）。"
+		bag_hint.text = "已選取：點棋子即可裝備；點另一件組件可預覽合成（再點一次取消）。"
 	else:
-		bag_hint.text = "把裝備拖到棋子上；或先點裝備、再點棋子。裝上後鎖定，需要卸除器才能取下。"
+		bag_hint.text = "把裝備拖到棋子上，或拖到另一件組件上合成；也可以先點裝備再點棋子。裝上後鎖定，需要卸除器才能取下。"
 	for c in bag_list.get_children():
 		bag_list.remove_child(c)
 		c.queue_free()
@@ -926,7 +997,8 @@ func _bag_row(i: int) -> Button:
 	s.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
 	s.clip_text = true
 	var u := Label.new()
-	u.text = "唯一・" + str(Equipment.unique_of(id).get("name", ""))
+	var uq := str(Equipment.unique_of(id).get("name", ""))
+	u.text = ("唯一・" + uq) if uq != "" else ("組件・可合成" if GameData.is_component(id) else "純數值")
 	u.add_theme_font_size_override("font_size", 12)
 	u.add_theme_color_override("font_color", Color(1.0, 0.83, 0.3))
 	u.clip_text = true
@@ -965,10 +1037,12 @@ func _bag_click(i: int) -> void:
 		_toast("戰鬥中不能更換裝備")
 		return
 	if _bag_target_uid >= 0:
-		var target := _bag_target_uid
-		if _try_equip(target, i):
-			_close_bag()
-			board.select(target)
+		_give_item(_bag_target_uid, i)
+		return
+	# 已選取一件組件、再點另一件可合成的組件 → 合成預覽
+	if _pending_item >= 0 and _pending_item != i and _pending_item < run.inventory.size() \
+			and GameData.recipe(str(run.inventory[_pending_item]), str(run.inventory[i])) != "":
+		_combine_in_bag(_pending_item, i)
 		return
 	_pending_item = -1 if _pending_item == i else i
 	_refresh_bag()
@@ -980,10 +1054,8 @@ func _intercept_unit_tap(uid: int) -> bool:
 		return false
 	var idx := _pending_item
 	_pending_item = -1
-	if _try_equip(uid, idx):
-		_close_bag()
-	else:
-		_refresh_bag()
+	_give_item(uid, idx)
+	_refresh_bag()
 	return true
 
 
@@ -1026,13 +1098,21 @@ func _drag_input(event: InputEvent) -> bool:
 			# 放開位置若剛好還在原本那一列上，按鈕會再發出 pressed：標記略過這一次
 			var row := bag_row_button(idx)
 			_drag_consumed = row != null and row.get_global_rect().has_point(event.position)
+			# 放到背包裡另一件組件上 → 合成預覽
+			for c in bag_list.get_children():
+				if c is Button and c.get_global_rect().has_point(event.position) and int(c.get_meta("inv_index", -1)) != idx:
+					var j := int(c.get_meta("inv_index", -1))
+					if GameData.recipe(str(run.inventory[idx]), str(run.inventory[j])) != "":
+						_combine_in_bag(idx, j)
+					else:
+						_toast("這兩件不能合成")
+					get_viewport().set_input_as_handled()
+					return true
 			var uid := board.unit_at_screen(event.position)
 			if uid >= 0:
-				if _try_equip(uid, idx):
-					_close_bag()
-					board.select(uid)
+				_give_item(uid, idx)
 			else:
-				_toast("把裝備放到棋盤或候補區的棋子上")
+				_toast("把裝備放到棋子上，或放到另一件組件上合成")
 			get_viewport().set_input_as_handled()
 			return true
 	return false

@@ -1,13 +1,14 @@
 class_name Equipment
 extends RefCounted
 ## 裝備資料查詢與三選一抽取（V0.4：沒有品質分級；固定屬性＋唯一特性）。
+## V0.5：基礎組件（component）、合成裝備（craft）、特殊首領裝備（special）。三選一只從特殊首領裝備抽。
 ## drop（normal／advanced）只決定各回合從哪個掉落池抽，不在介面顯示。
 
 
 static func pool(faction: String, drop: String) -> Array:
 	var out: Array = []
 	for it in GameData.items():
-		if str(it["faction"]) == faction and str(it.get("drop", "normal")) == drop:
+		if str(it.get("source", "special")) == "special" and str(it.get("faction", "")) == faction and str(it.get("drop", "normal")) == drop:
 			out.append(str(it["id"]))
 	return out
 
@@ -25,7 +26,7 @@ static func roll_choices(rng: SeededRng, faction: String, drop: String) -> Array
 		for it in GameData.items():
 			if out.size() >= n:
 				break
-			if str(it.get("drop", "normal")) == drop and not out.has(it["id"]):
+			if str(it.get("source", "special")) == "special" and str(it.get("drop", "normal")) == drop and not out.has(it["id"]):
 				out.append(str(it["id"]))
 	return out
 
@@ -33,6 +34,27 @@ static func roll_choices(rng: SeededRng, faction: String, drop: String) -> Array
 static func type_info(item_id: String) -> Dictionary:
 	var it := GameData.item(item_id)
 	return GameData.equipment().get("types", {}).get(str(it.get("type", "")), {})
+
+
+## 這個組件可以合成哪些裝備：[{with, result}]
+static func recipes_for(component_id: String) -> Array:
+	var out: Array = []
+	for r in GameData.equipment().get("recipes", []):
+		if r["a"] == component_id:
+			out.append({"with": str(r["b"]), "result": str(r["result"])})
+		elif r["b"] == component_id:
+			out.append({"with": str(r["a"]), "result": str(r["result"])})
+	return out
+
+
+## 來源說明（組件／合成裝備／特殊首領裝備）
+static func source_name(item_id: String) -> String:
+	match str(GameData.item(item_id).get("source", "special")):
+		"component":
+			return "基礎組件"
+		"craft":
+			return "合成裝備"
+	return faction_name(item_id)
 
 
 static func faction_name(item_id: String) -> String:

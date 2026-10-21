@@ -82,6 +82,9 @@ func _initialize() -> void:
 		"test_projectile_and_windup",
 		"test_prep_seconds_by_round",
 		"test_battle_shop_ops",
+		"test_component_recipes",
+		"test_component_combine_ops",
+		"test_component_drops",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -2284,6 +2287,10 @@ func test_equipment_v04() -> void:
 	for it in GameData.items():
 		check(not it.has("tier"), "%s 沒有品質欄位" % it["id"])
 		check(not it.get("stats", {}).is_empty(), "%s 有固定屬性" % it["id"])
+		if not it.has("unique"):
+			# V0.5：基礎組件與純數值合成裝備沒有唯一特性
+			check(str(it.get("source", "")) in ["component", "craft"] and not it.has("passive"), "%s 是純數值裝備" % it["id"])
+			continue
 		var u: Dictionary = it.get("unique", {})
 		check(u.has("id") and u.has("name") and u.has("desc"), "%s 有唯一特性（id／名稱／描述）" % it["id"])
 		check(Equipment.unique_line(str(it["id"])).begins_with("唯一特性・"), "%s 唯一特性固定格式" % it["id"])
@@ -2624,3 +2631,133 @@ func test_battle_shop_ops() -> void:
 	check(not main.is_empty() and main["where"] == "board" and int(main["unit"]["star"]) == 2, "下一次備戰：三隻合成二星，保留場上棋子（位置不變）")
 	eq(run.copies_of("ORC1", 1), 0, "材料已合併")
 	_pool_ok(run, "合成後卡池守恆")
+
+
+# ------------------------------------------------------------ V0.5 組件與合成
+func test_component_recipes() -> void:
+	var comps := GameData.components()
+	eq(comps.map(func(c): return str(c["name"])), ["鐵刃", "獵弦", "鐵甲", "法晶", "生命石"], "五種基礎組件")
+	eq(GameData.item("CP_BLADE")["stats"], {"atk_flat": 12.0}, "鐵刃 攻擊 +12")
+	eq(GameData.item("CP_STRING")["stats"], {"atk_speed_pct": 10.0}, "獵弦 攻速 +10%")
+	eq(GameData.item("CP_PLATE")["stats"], {"armor_flat": 12.0}, "鐵甲 物防 +12")
+	eq(GameData.item("CP_CRYSTAL")["stats"], {"skill_dmg_pct": 12.0}, "法晶 技能傷害 +12%")
+	eq(GameData.item("CP_STONE")["stats"], {"hp_flat": 150.0}, "生命石 生命 +150")
+	for c in comps:
+		check(not c.has("unique") and not c.has("passive"), "%s 沒有唯一特性" % c["name"])
+	var names := {"CP_BLADE+CP_BLADE": "巨型戰刃", "CP_BLADE+CP_STRING": "連擊刃", "CP_BLADE+CP_PLATE": "重裝戰斧", "CP_BLADE+CP_CRYSTAL": "魔刃",
+		"CP_BLADE+CP_STONE": "血契刃", "CP_STRING+CP_STRING": "疾風雙弓", "CP_STRING+CP_PLATE": "游擊甲", "CP_STRING+CP_CRYSTAL": "魔導弓",
+		"CP_STRING+CP_STONE": "獵人披風", "CP_PLATE+CP_PLATE": "堡壘重甲", "CP_PLATE+CP_CRYSTAL": "法術護甲", "CP_PLATE+CP_STONE": "荊棘護甲",
+		"CP_CRYSTAL+CP_CRYSTAL": "星輝法杖", "CP_CRYSTAL+CP_STONE": "守護法典", "CP_STONE+CP_STONE": "巨人腰帶"}
+	var results := {}
+	for k in names.keys():
+		var ab: PackedStringArray = k.split("+")
+		var res := GameData.recipe(ab[0], ab[1])
+		eq(str(GameData.item(res).get("name", "")), names[k], "%s 配方" % k)
+		eq(GameData.recipe(ab[1], ab[0]), res, "%s 配方順序不拘" % k)
+		results[res] = true
+		# 不倒退：成品在每個組件屬性上都不低於材料加總
+		var sum := Modifiers.item_mods([ab[0], ab[1]])
+		var st: Dictionary = GameData.item(res)["stats"]
+		for key in sum.keys():
+			check(float(st.get(key, 0.0)) >= float(sum[key]), "%s 的 %s 不低於材料（%s ≥ %s）" % [names[k], key, st.get(key, 0), sum[key]])
+	eq(results.size(), 15, "十五種不同的合成裝備")
+	eq(GameData.equipment()["recipes"].size(), 15, "配方表 15 條")
+	eq(GameData.recipe("CP_BLADE", "DM_AXE"), "", "特殊裝備不能當材料")
+	# 純數值裝備可疊加；特效裝備相同唯一特性只生效一次
+	var m := Modifiers.item_mods(["CR_GREATBLADE", "CR_GREATBLADE"])
+	eq(float(m["atk_flat"]), 60.0, "兩把巨型戰刃攻擊 +60（純數值疊加）")
+	eq(ItemPassives.unique_passives(["CR_GREATBLADE", "CR_GREATBLADE"]).size(), 0, "純數值裝備沒有特性")
+	eq(ItemPassives.unique_passives(["CR_COMBO", "CR_COMBO"]).size(), 1, "兩把連擊刃：連擊只生效一次")
+	eq(float(Modifiers.item_mods(["CR_COMBO", "CR_COMBO"])["atk_flat"]), 28.0, "但數值照樣累加")
+	# 連擊：每第 3 次普攻追加一次
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CR_COMBO"])
+	var b := sim.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
+	var n0 := sim.events.size()
+	for i in 3:
+		sim.basic_attack(a, b)
+	eq(sim.events.slice(n0).filter(func(e): return e["k"] == "damage" and e["source"] == "item").size(), 1, "連擊刃：3 次普攻追加 1 次")
+	# 法盾：受到技能傷害後護盾，有冷卻
+	var s2 := CombatSim.new(2)
+	var t := s2.add_unit("HUM2", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CR_SPELLPLATE"])
+	var c := s2.add_unit("ONI2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	t.max_hp = 9999.0
+	t.hp = 9999.0
+	s2.deal_damage(c, t, 50.0, "magic", "skill", false)
+	eq(t.shield_total(), 70.0, "法術護甲：被技能命中獲得 70 護盾")
+	s2.deal_damage(c, t, 1.0, "magic", "skill", false)
+	check(t.shield_total() < 70.0, "冷卻中不重複觸發")
+
+
+func test_component_combine_ops() -> void:
+	var run := RunState.create("orc", 601)
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CP_BLADE", "DM_RING"]}
+	run.next_uid = 2
+	run.inventory = ["CP_STRING", "OG_EYE", "CP_STRING", "CP_PLATE"]
+	var total := run.all_items().size()
+	check(run.combine_inventory(1, 2) != "", "特殊裝備不能合成")
+	eq(run.inventory.size(), 4, "失敗時背包不變")
+	eq(run.combine_inventory(0, 2), "", "背包兩件獵弦合成")
+	eq(run.inventory, ["CR_TWINBOW", "OG_EYE", "CP_PLATE"], "疾風雙弓放在前面的位置")
+	eq(run.combinable_slot(1, 2), 0, "鐵甲可以和棋子身上的鐵刃合成")
+	eq(run.combinable_slot(1, 1), -1, "虛空之眼不能合成")
+	eq(run.combine_on_unit(1, 0, 2), "", "棋子身上合成（兩格已滿也可以）")
+	eq(_unit_with_items(run, 1), ["CR_HEAVYAXE", "DM_RING"], "合成後只佔一格")
+	eq(run.inventory, ["CR_TWINBOW", "OG_EYE"], "背包扣除材料")
+	eq(run.all_items().size(), total - 2, "兩次合成各少一件（2→1），沒有複製或遺失")
+	# 存讀檔
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(run.to_dict())))
+	eq(loaded.all_items(), run.all_items(), "存讀檔後裝備一致")
+	# 戰鬥中合成：組件數值移除，只算成品
+	var r2 := RunState.create("orc", 602)
+	r2.board[Vector2i(3, 4)] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CP_BLADE"]}
+	r2.next_uid = 2
+	r2.inventory = ["CP_BLADE"]
+	var sim := r2.create_battle()
+	sim.step_to(0.5)
+	var cu: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var base_atk: float = float(UnitStats.base_stats("ORC1", 1)["atk"])
+	check(is_equal_approx(cu.atk, base_atk + 12.0), "開戰時：鐵刃 +12")
+	eq(r2.combine_on_unit(1, 0, 0), "", "戰鬥中在場上棋子身上合成")
+	sim.step()
+	check(is_equal_approx(cu.atk, base_atk + 30.0), "合成後立即生效：只算巨型戰刃 +30，沒有和組件重複計算（%.1f）" % cu.atk)
+	eq(cu.items, ["CR_GREATBLADE"], "戰鬥中的裝備已換成成品")
+
+
+func test_component_drops() -> void:
+	var logs := {}
+	for sd in 300:
+		var run := RunState.create("elf", 7000 + sd)
+		for rd in range(1, 25):
+			run._component_drops(rd)
+		var ok := true
+		for ch in [1, 2, 3, 4]:
+			var n := run.chapter_components(ch)
+			if n < 2 or n > 3:
+				ok = false
+		check(ok, "種子 %d：每章 2～3 個組件" % sd)
+		for e in run.component_log:
+			var rd := int(e["round"])
+			check(GameData.reward_for_round(rd).is_empty() and rd < 24, "只有一般戰鬥會掉落（第 %d 回合）" % rd)
+			if e["kind"] == "guarantee":
+				check(rd in [5, 11, 17, 23], "保底在章末最後一場戰鬥前發放（第 %d 回合）" % rd)
+			check(GameData.is_component(str(e["id"])), "掉落的是基礎組件")
+		check(run.component_log.filter(func(e): return GameData.chapter_of(int(e["round"])) == 4).all(func(e): return int(e["round"]) <= 23), "第四章最晚第 23 回合發完（可用於第 24 回合）")
+		eq(run.inventory.size(), run.component_log.size(), "掉落都放進背包")
+		if sd < 3:
+			logs[sd] = JSON.stringify(run.component_log)
+	for sd in 3:
+		var again := RunState.create("elf", 7000 + sd)
+		for rd in range(1, 25):
+			again._component_drops(rd)
+		eq(JSON.stringify(again.component_log), logs[sd], "相同種子掉落相同（可重播）")
+	# 經由結算發放、存讀檔保留
+	var r := RunState.create("human", 77)
+	for rd in range(1, 6):
+		r.round_no = rd
+		r.pending_reward = {}
+		r.start_battle()
+		r.settle(_fake_result(true))
+	check(r.chapter_components(1) >= 2, "第一章第 5 回合結束時已達保底（%d 個）" % r.chapter_components(1))
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(r.to_dict())))
+	eq(JSON.stringify(loaded.component_log), JSON.stringify(r.component_log), "存讀檔後掉落紀錄一致")

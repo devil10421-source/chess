@@ -6,7 +6,8 @@ extends RefCounted
 ## 不會互相無限觸發：反彈、持續傷害、虛空彈都是「裝備」來源，不是普攻，所以不會再觸發受到普攻／普攻命中類的效果。
 
 const KINDS := ["on_hit_bleed", "on_hit_burn", "on_hit_dot", "lifesteal", "blood_pact", "curse_on_hit", "thorns",
-	"berserk", "on_cast_shield", "mana_on_hit", "cast_stun", "void_bolt", "on_hit_slow", "on_battle_shield", "on_crit_wound"]
+	"berserk", "on_cast_shield", "mana_on_hit", "cast_stun", "void_bolt", "on_hit_slow", "on_battle_shield", "on_crit_wound",
+	"combo_strike", "on_hit_magic", "after_move_armor", "on_skill_hit_shield", "on_cast_ally_shield"]
 
 
 ## 依唯一特性去重：同 id 只保留效果最強的一件（數值相同時保留較前面的欄位）
@@ -19,11 +20,13 @@ static func unique_passives(items: Array) -> Array:
 		if p.is_empty():
 			continue
 		var uid := str(it.get("unique", {}).get("id", str(item_id)))
+		var pp := p.duplicate()
+		pp["_uid"] = uid
 		if not best.has(uid):
-			best[uid] = p
+			best[uid] = pp
 			order.append(uid)
-		elif _power(p) > _power(best[uid]):
-			best[uid] = p
+		elif _power(pp) > _power(best[uid]):
+			best[uid] = pp
 	var out: Array = []
 	for k in order:
 		out.append(best[k])
@@ -63,9 +66,15 @@ static func on_basic_hit(sim: CombatSim, u: CombatUnit, tgt: CombatUnit) -> void
 			"mana_on_hit":
 				sim.gain_mana(u, float(p.get("amount", 5)))
 			"void_bolt":
-				u.item_counter += 1
-				if u.item_counter % int(p.get("every", 3)) == 0 and tgt.alive:
+				if _count(u, p) % int(p.get("every", 3)) == 0 and tgt.alive:
 					sim.deal_damage(u, tgt, float(p.get("damage", 40)), "magic", "item", false)
+			"combo_strike":
+				# 連擊：每第 n 次普攻追加一次攻擊力 x% 的物理傷害（裝備來源，不算普攻，不會再觸發普攻類效果）
+				if _count(u, p) % int(p.get("every", 3)) == 0 and tgt.alive:
+					sim.deal_damage(u, tgt, u.effective_atk() * float(p.get("atk_pct", 50)) / 100.0, "physical", "item", false)
+			"on_hit_magic":
+				if tgt.alive:
+					sim.deal_damage(u, tgt, float(p.get("damage", 20)), "magic", "item", false)
 
 
 ## 移動一格後（游擊等）
@@ -82,6 +91,25 @@ static func on_crit(sim: CombatSim, u: CombatUnit, tgt: CombatUnit) -> void:
 	for p in u.passives:
 		if p["kind"] == "on_crit_wound":
 			sim.add_status(tgt, "wound", 0.0, float(p.get("dur", 3)), u.cid)
+
+
+## 每個唯一特性各自的普攻計數
+static func _count(u: CombatUnit, p: Dictionary) -> int:
+	var key := "cnt:" + str(p.get("_uid", p["kind"]))
+	u.item_cd[key] = int(u.item_cd.get(key, 0)) + 1
+	return int(u.item_cd[key])
+
+
+## 受到技能傷害後（法盾，有冷卻）
+static func on_skill_taken(sim: CombatSim, u: CombatUnit) -> void:
+	if not u.alive:
+		return
+	for p in u.passives:
+		if p["kind"] == "on_skill_hit_shield":
+			var key := "cd:" + str(p.get("_uid", p["kind"]))
+			if sim.t + 0.0001 >= float(u.item_cd.get(key, -1.0)):
+				u.item_cd[key] = sim.t + float(p.get("cd", 4))
+				sim.add_shield(u, u, float(p.get("amount", 70)), float(p.get("dur", 4)))
 
 
 ## 造成有效 HP 傷害後（吸血）
@@ -112,6 +140,14 @@ static func on_cast(sim: CombatSim, u: CombatUnit) -> void:
 		match str(p["kind"]):
 			"on_cast_shield":
 				sim.add_shield(u, u, float(p.get("amount", 100)), float(p.get("dur", 4)))
+			"on_cast_ally_shield":
+				var allies: Array = sim.allies_of(u).filter(func(a: CombatUnit) -> bool: return a != u)
+				allies.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
+					if not is_equal_approx(a.hp_ratio(), b.hp_ratio()):
+						return a.hp_ratio() < b.hp_ratio()
+					return a.cid < b.cid)
+				if not allies.is_empty():
+					sim.add_shield(u, allies[0], float(p.get("amount", 80)), float(p.get("dur", 4)))
 			"cast_stun":
 				var tgt := sim.unit_by_cid(u.target_cid)
 				if tgt != null and tgt.alive and tgt.side != u.side:
