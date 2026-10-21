@@ -1375,11 +1375,11 @@ func _info_prep_unit(uid: int) -> void:
 		for p in lineup:
 			ids.append(p["id"])
 			its.append(p["items"])
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		var all_sources := _lineup_sources(lineup, ids, its)
 		for i in lineup.size():
 			if int(lineup[i]["uid"]) == uid:
 				sources = all_sources[i]
-		note = "場上：已含文明、羈絆與裝備"
+		note = _board_note()
 	else:
 		sources = Modifiers.sources_for_lineup([id], "", false, [items])[0]
 		note = "候補區：只計裝備（上場後才套用文明與羈絆）"
@@ -1391,6 +1391,15 @@ func _info_prep_unit(uid: int) -> void:
 	if _shop_open() and not run.is_fighting(uid):
 		sell_btn.visible = true
 		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, int(u["star"]))
+
+
+## 場上棋子的修正來源（《氏族爭霸》會再加上國家制度）
+func _lineup_sources(_lineup: Array, ids: Array, its: Array) -> Array:
+	return Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+
+
+func _board_note() -> String:
+	return "場上：已含文明、羈絆與裝備"
 
 
 func _info_enemy(ref: Dictionary) -> void:
@@ -1415,7 +1424,7 @@ func _info_battle(cid: int) -> void:
 		for p in lineup:
 			ids.append(p["id"])
 			its.append(p.get("items", []))
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		var all_sources := _lineup_sources(lineup, ids, its)
 		for i in lineup.size():
 			if int(lineup[i]["cid"]) == cid:
 				sources = all_sources[i]

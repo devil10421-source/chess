@@ -31,7 +31,23 @@ func _ready() -> void:
 		Session.goto(Session.SCENE_CIV))
 	# 手機平台沒有「離開」的慣例
 	quit_btn.visible = not (OS.has_feature("android") or OS.has_feature("ios") or OS.has_feature("web"))
+	_add_clash_button()
 	new_btn.grab_focus()
+
+
+## 《氏族爭霸》10 人 PvPvE 原型入口（單人《六族遠征》保留不變，作為可回退的穩定版本）
+func _add_clash_button() -> void:
+	Session.end_clash()
+	var b := Button.new()
+	b.name = "ClashButton"
+	b.text = "氏族爭霸（10 人 PvPvE 原型）"
+	b.custom_minimum_size = Vector2(0, 56)
+	UiStyle.style_button(b, Color(0.42, 0.12, 0.14), Color(1.0, 0.45, 0.4), 20)
+	b.pressed.connect(func(): Session.goto(Session.SCENE_CLASH_SETUP))
+	var box := new_btn.get_parent()
+	box.add_child(b)
+	box.move_child(b, new_btn.get_index() + 1)
+	new_btn.text = "六族遠征（單人 PvE）"
 
 
 func _on_new() -> void:

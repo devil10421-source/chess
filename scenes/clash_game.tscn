@@ -1,0 +1,653 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/clash_screen.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/ui/board_view.gd" id="2_board"]
+[ext_resource type="Script" path="res://scripts/ui/battle_fx.gd" id="3_fx"]
+[ext_resource type="Script" path="res://scripts/ui/battle_player.gd" id="4_player"]
+[ext_resource type="Script" path="res://scripts/ui/reward_dots.gd" id="5_dots"]
+
+[node name="ClashGame" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_game")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.07, 0.08, 0.11, 1)
+
+[node name="BoardView" type="Node2D" parent="."]
+script = ExtResource("2_board")
+
+[node name="Tokens" type="Node2D" parent="BoardView"]
+
+[node name="Fx" type="Node2D" parent="BoardView"]
+z_index = 20
+script = ExtResource("3_fx")
+
+[node name="BattlePlayer" type="Node" parent="BoardView"]
+script = ExtResource("4_player")
+
+[node name="TopBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 6.0
+offset_top = 6.0
+offset_right = -6.0
+offset_bottom = 44.0
+grow_horizontal = 2
+
+[node name="HBox" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="RoundBox" type="VBoxContainer" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(118, 0)
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="RoundLabel" type="Label" parent="TopBar/HBox/RoundBox"]
+layout_mode = 2
+text = "1/24"
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+
+[node name="RewardDots" type="Control" parent="TopBar/HBox/RoundBox"]
+custom_minimum_size = Vector2(112, 8)
+layout_mode = 2
+script = ExtResource("5_dots")
+
+[node name="Countdown" type="Control" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+
+[node name="Bar" type="ProgressBar" parent="TopBar/HBox/Countdown"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+max_value = 30.0
+value = 30.0
+show_percentage = false
+
+[node name="BarText" type="HBoxContainer" parent="TopBar/HBox/Countdown"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="BarLeft" type="Label" parent="TopBar/HBox/Countdown/BarText"]
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+vertical_alignment = 1
+
+[node name="BarRight" type="Label" parent="TopBar/HBox/Countdown/BarText"]
+layout_mode = 2
+text = ""
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+vertical_alignment = 1
+
+[node name="SpeedButton" type="Button" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(52, 30)
+layout_mode = 2
+text = "1×"
+
+[node name="SkipButton" type="Button" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(60, 30)
+layout_mode = 2
+text = "略過"
+
+[node name="DebugButton" type="Button" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(56, 30)
+layout_mode = 2
+text = "除錯"
+
+[node name="MenuBtn" type="Button" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(56, 30)
+layout_mode = 2
+text = "選單"
+
+[node name="LeftPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_left = 6.0
+offset_top = 48.0
+offset_right = 162.0
+offset_bottom = -130.0
+grow_vertical = 2
+
+[node name="Scroll" type="ScrollContainer" parent="LeftPanel"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="LeftPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 3
+
+[node name="CivButton" type="Button" parent="LeftPanel/Scroll/List"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = ""
+alignment = 0
+clip_text = true
+
+[node name="TraitList" type="VBoxContainer" parent="LeftPanel/Scroll/List"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="RightPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -286.0
+offset_top = 48.0
+offset_right = -6.0
+offset_bottom = -130.0
+grow_horizontal = 0
+grow_vertical = 2
+
+[node name="Stack" type="VBoxContainer" parent="RightPanel"]
+layout_mode = 2
+
+[node name="LeaderHost" type="VBoxContainer" parent="RightPanel/Stack"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DetailBox" type="VBoxContainer" parent="RightPanel/Stack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Header" type="HBoxContainer" parent="RightPanel/Stack/DetailBox"]
+layout_mode = 2
+
+[node name="DetailTitle" type="Label" parent="RightPanel/Stack/DetailBox/Header"]
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+clip_text = true
+
+[node name="CloseDetail" type="Button" parent="RightPanel/Stack/DetailBox/Header"]
+custom_minimum_size = Vector2(40, 32)
+layout_mode = 2
+text = "×"
+
+[node name="Scroll" type="ScrollContainer" parent="RightPanel/Stack/DetailBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="RightPanel/Stack/DetailBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SellButton" type="Button" parent="RightPanel/Stack/DetailBox"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "出售"
+
+[node name="BagBox" type="VBoxContainer" parent="RightPanel/Stack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Header" type="HBoxContainer" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+
+[node name="BagTitle" type="Label" parent="RightPanel/Stack/BagBox/Header"]
+layout_mode = 2
+text = "背包"
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+clip_text = true
+
+[node name="CloseBag" type="Button" parent="RightPanel/Stack/BagBox/Header"]
+custom_minimum_size = Vector2(40, 32)
+layout_mode = 2
+text = "×"
+
+[node name="BagHint" type="Label" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
+
+[node name="Scroll" type="ScrollContainer" parent="RightPanel/Stack/BagBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="List" type="VBoxContainer" parent="RightPanel/Stack/BagBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="TraitPopover" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 170.0
+offset_top = 60.0
+offset_right = 500.0
+offset_bottom = 200.0
+mouse_filter = 0
+
+[node name="Scroll" type="ScrollContainer" parent="TraitPopover"]
+custom_minimum_size = Vector2(330, 0)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Text" type="RichTextLabel" parent="TraitPopover/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+theme_override_font_sizes/normal_font_size = 14
+theme_override_font_sizes/bold_font_size = 14
+
+[node name="BottomBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 6.0
+offset_top = -126.0
+offset_right = -6.0
+offset_bottom = -6.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="RowA" type="HBoxContainer" parent="BottomBar/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ResBox" type="HBoxContainer" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(230, 28)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="XpBox" type="Control" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="XpBar" type="ProgressBar" parent="BottomBar/VBox/RowA/XpBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+max_value = 2.0
+show_percentage = false
+
+[node name="XpText" type="HBoxContainer" parent="BottomBar/VBox/RowA/XpBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="XpLeft" type="Label" parent="BottomBar/VBox/RowA/XpBox/XpText"]
+layout_mode = 2
+text = " 0/2 XP"
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+
+[node name="XpRight" type="HBoxContainer" parent="BottomBar/VBox/RowA/XpBox/XpText"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
+
+[node name="BagButton" type="Button" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(150, 28)
+layout_mode = 2
+text = "背包 0"
+
+[node name="RowB" type="HBoxContainer" parent="BottomBar/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="LeftButtons" type="VBoxContainer" parent="BottomBar/VBox/RowB"]
+custom_minimum_size = Vector2(230, 0)
+layout_mode = 2
+
+[node name="RerollButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = ""
+size_flags_vertical = 3
+
+[node name="CivUpButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = ""
+size_flags_vertical = 3
+
+[node name="ShopSlots" type="HBoxContainer" parent="BottomBar/VBox/RowB"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="Slot0" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 76)
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+
+[node name="Slot1" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 76)
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+
+[node name="Slot2" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 76)
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+
+[node name="Slot3" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 76)
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+
+[node name="Slot4" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 76)
+layout_mode = 2
+text = ""
+size_flags_horizontal = 3
+clip_text = true
+
+[node name="RightButtons" type="VBoxContainer" parent="BottomBar/VBox/RowB"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+
+[node name="LockButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
+custom_minimum_size = Vector2(0, 76)
+layout_mode = 2
+text = ""
+size_flags_vertical = 3
+
+[node name="BigCountdown" type="Label" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 230.0
+offset_right = 80.0
+offset_bottom = 340.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.4, 0.35, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 10
+theme_override_font_sizes/font_size = 84
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "5"
+
+[node name="RewardOverlay" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+visible = false
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="RewardOverlay"]
+custom_minimum_size = Vector2(720, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="RewardOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RewardTitle" type="Label" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+text = "裝備獎勵"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+
+[node name="Cards" type="HBoxContainer" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RewardHint" type="Label" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+text = "選擇一件加入背包（倒數不暫停；時間到會從三件中隨機發放一件）"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
+
+[node name="ItemOverlay" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+visible = false
+mouse_filter = 0
+
+[node name="Panel" type="PanelContainer" parent="ItemOverlay"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="ItemOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ItemTitle" type="Label" parent="ItemOverlay/Panel/VBox"]
+layout_mode = 2
+text = ""
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+
+[node name="ItemScroll" type="ScrollContainer" parent="ItemOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 240)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ItemBody" type="VBoxContainer" parent="ItemOverlay/Panel/VBox/ItemScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="ItemButtons" type="HBoxContainer" parent="ItemOverlay/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="MenuOverlay" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+visible = false
+mouse_filter = 0
+
+[node name="Panel" type="PanelContainer" parent="MenuOverlay"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="MenuOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="MenuTitle" type="Label" parent="MenuOverlay/Panel/VBox"]
+layout_mode = 2
+text = "暫停（備戰倒數已暫停）"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+
+[node name="ResumeButton" type="Button" parent="MenuOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "繼續遊戲"
+
+[node name="CodexButton" type="Button" parent="MenuOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "規則／棋子圖鑑"
+
+[node name="SaveQuitButton" type="Button" parent="MenuOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "存檔並回主選單"
+
+[node name="AbandonButton" type="Button" parent="MenuOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "放棄這局（清除存檔）"
+
+[node name="DebugPanel" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -230.0
+offset_top = 64.0
+offset_right = 230.0
+offset_bottom = 340.0
+grow_horizontal = 2
+
+[node name="VBox" type="VBoxContainer" parent="DebugPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DebugTitle" type="Label" parent="DebugPanel/VBox"]
+layout_mode = 2
+text = "除錯工具（正式版不會出現；開啟時倒數暫停）"
+theme_override_colors/font_color = Color(1, 0.6, 0.4, 1)
+
+[node name="RoundRow" type="HBoxContainer" parent="DebugPanel/VBox"]
+layout_mode = 2
+
+[node name="RoundLabel" type="Label" parent="DebugPanel/VBox/RoundRow"]
+layout_mode = 2
+text = "跳到回合"
+
+[node name="RoundSpin" type="SpinBox" parent="DebugPanel/VBox/RoundRow"]
+layout_mode = 2
+min_value = 1.0
+max_value = 24.0
+value = 1.0
+
+[node name="JumpButton" type="Button" parent="DebugPanel/VBox/RoundRow"]
+custom_minimum_size = Vector2(80, 40)
+layout_mode = 2
+text = "選關"
+
+[node name="Row2" type="HBoxContainer" parent="DebugPanel/VBox"]
+layout_mode = 2
+
+[node name="GoldButton" type="Button" parent="DebugPanel/VBox/Row2"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "+20 金幣"
+size_flags_horizontal = 3
+
+[node name="LevelButton" type="Button" parent="DebugPanel/VBox/Row2"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "文明 +1 級"
+size_flags_horizontal = 3
+
+[node name="Row3" type="HBoxContainer" parent="DebugPanel/VBox"]
+layout_mode = 2
+
+[node name="ItemButton" type="Button" parent="DebugPanel/VBox/Row3"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "+1 隨機裝備"
+size_flags_horizontal = 3
+
+[node name="WinButton" type="Button" parent="DebugPanel/VBox/Row3"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "直接過關→下一關"
+size_flags_horizontal = 3
+
+[node name="CloseDebugButton" type="Button" parent="DebugPanel/VBox"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "關閉"
+
+[node name="AbandonConfirm" type="ConfirmationDialog" parent="."]
+title = "放棄這局"
+size = Vector2i(380, 150)
+ok_button_text = "放棄並回主選單"
+cancel_button_text = "取消"
+dialog_text = "確定要放棄目前的遠征嗎？存檔會被清除。"
+
+[node name="Toasts" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -300.0
+offset_top = 66.0
+offset_right = 300.0
+offset_bottom = 200.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_constants/separation = 4

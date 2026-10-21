@@ -33,13 +33,17 @@ func is_playing() -> bool:
 
 
 var _sim: CombatSim
+## 《氏族爭霸》：推進器（ClashBattle）。設定時由它推進（合作 PvE 會同時推進兩張棋盤並處理援軍），
+## 畫面只播放 _sim（自己棋盤）的事件；整場在推進器結束時才算結束。
+var _driver: Object = null
 
 
 ## 開始播放即時戰鬥（sim 尚未推進或只推進到 0 秒）
-func play_live(sim: CombatSim, board_view: BoardView) -> void:
+func play_live(sim: CombatSim, board_view: BoardView, driver: Object = null) -> void:
 	board = board_view
 	clear()
 	_sim = sim
+	_driver = driver
 	sim.start()
 	_events = sim.events
 	_end_time = INF
@@ -66,6 +70,27 @@ func play_live(sim: CombatSim, board_view: BoardView) -> void:
 	_playing = true
 
 
+## 戰鬥中途加入的單位（《氏族爭霸》援軍）
+func _spawn_token(s: Dictionary, instant: bool) -> void:
+	var tk: UnitToken = TOKEN_SCENE.instantiate()
+	board.tokens_root.add_child(tk)
+	tk.setup(s["id"], int(s["star"]), int(s["side"]), board.hex_size * 0.72)
+	tk.cid = int(s["cid"])
+	tk.position = board.cell_center(s["cell"])
+	tk.show_bars = true
+	tk.mana = float(s["mana"])
+	tk.mana_max = float(s["mana_max"])
+	tk.set_bars(float(s["hp"]), float(s["max_hp"]), 0.0)
+	tk.items = s.get("items", [])
+	tk.ally_tag = str(s.get("origin", ""))
+	_tokens[tk.cid] = tk
+	_units[tk.cid] = s
+	if not instant:
+		tk.position += Vector2(0, board.hex_size * 1.5)
+		tk.move_to(board.cell_center(s["cell"]), 0.35)
+		board.fx.ring(board.cell_center(s["cell"]), Color(0.5, 0.9, 1.0), board.hex_size * 1.1, 0.6)
+
+
 func clear() -> void:
 	for t in _tokens.values():
 		t.queue_free()
@@ -83,7 +108,9 @@ func clear() -> void:
 func skip() -> void:
 	if not _playing:
 		return
-	if _sim:
+	if _driver:
+		_driver.run()
+	elif _sim:
 		_sim.run()   # 略過：直接算完（之後不再接受操作）
 	while _index < _events.size():
 		_apply(_events[_index], true)
@@ -101,7 +128,11 @@ func _process(delta: float) -> void:
 	_real += delta * Session.battle_speed
 	_clock = PlaybackClock.sim_from_real(_real)
 	Session.playback_rate = PlaybackClock.rate_at_real(_real) * Session.battle_speed
-	if _sim:
+	if _driver:
+		_driver.step_to(_clock)
+		if _driver.is_finished():
+			_end_time = maxf(_clock, float(_sim.result().get("time", _clock))) + 0.6
+	elif _sim:
 		_sim.step_to(_clock)
 		if _sim.finished:
 			_end_time = float(_sim.result().get("time", _clock)) + 0.6
@@ -289,6 +320,23 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			var tk: UnitToken = _tokens.get(int(e["cid"]))
 			if tk:
 				tk.set_bars(float(e["hp"]), tk.max_hp, tk.shield)
+		"spawn":
+			_spawn_token(e["snap"], instant)
+		"villager":
+			var tk: UnitToken = _tokens.get(int(e["cid"]))
+			if tk:
+				tk.villagers = int(e["n"])
+				if not instant:
+					board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 1.1), "村民 +1", Color(0.75, 0.95, 0.6), 14, 0.9)
+		"villager_hit":
+			if instant:
+				return
+			var src: UnitToken = _tokens.get(int(e["cid"]))
+			var dst: UnitToken = _tokens.get(int(e["tgt"]))
+			if src and dst:
+				board.fx.projectile(src.position + Vector2(0, board.hex_size * 0.4), dst.position, Color(0.7, 1.0, 0.55), 0.18, sp)
+		"hold":
+			pass
 		"end":
 			pass
 

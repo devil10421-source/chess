@@ -32,6 +32,10 @@ var dragging := false
 var bump := Vector2.ZERO
 var flash_color := Color(1, 1, 1, 0)
 var statuses: Dictionary = {}   # kind -> 剩餘秒數（畫面時間）
+## 《氏族爭霸》：村民數（人民的力量）、核心標記（朕即是國家）、援軍來源（隊友國家名）
+var villagers := 0
+var is_core := false
+var ally_tag := ""
 var _time := 0.0
 var _move_tween: Tween
 var _has_art := false
@@ -191,6 +195,23 @@ func _draw() -> void:
 		_draw_bench_star(o, r)
 	elif show_head:
 		_draw_head(o, r)
+	_draw_clash_marks(o, r)
+
+
+## 《氏族爭霸》：核心（金色王冠點）、村民（環繞的綠色小點）、援軍（青色外框）
+func _draw_clash_marks(o: Vector2, r: float) -> void:
+	if is_core:
+		var c := o + Vector2(r * 0.8, -r * 0.75)
+		draw_circle(c, r * 0.26, Color(0.1, 0.08, 0.02))
+		draw_circle(c, r * 0.2, Color(1.0, 0.82, 0.3))
+		draw_string(UiStyle.FONT, c + Vector2(-r * 0.2, r * 0.1), "王", HORIZONTAL_ALIGNMENT_CENTER, r * 0.4, int(r * 0.3), Color(0.2, 0.1, 0.0))
+	if ally_tag != "":
+		draw_arc(o, r * 1.2, 0, TAU, 40, Color(0.45, 0.9, 1.0, 0.9), 2.0, true)
+	for i in villagers:
+		var a := _time * 1.6 + TAU * i / maxf(1.0, float(villagers))
+		var c := o + Vector2(cos(a), sin(a) * 0.55) * r * 1.35 + Vector2(0, r * 0.35)
+		draw_circle(c, r * 0.15, Color(0.15, 0.25, 0.1))
+		draw_circle(c, r * 0.11, Color(0.7, 0.95, 0.5))
 
 
 ## 頭上元件的位置（以棋子中心為原點）：bar＝HP＋MP 條、mark＝星級標記中心、items＝每件裝備圖示（沒有裝備＝空陣列）
