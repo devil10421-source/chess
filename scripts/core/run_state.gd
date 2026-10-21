@@ -29,6 +29,8 @@ var history: Array = []        # 每回合結算報告
 var inventory: Array = []      # 裝備背包（裝備 id）
 var rewards_claimed: Array = []  # 已領取裝備獎勵的回合
 var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, drop, choices: [id, id, id]}
+## V0.5：倒數歸零仍未選擇、開戰時自動發放的那一件（畫面提示用；不存檔）
+var last_auto_reward: String = ""
 var removers := 0                 # 裝備卸除器數量（V0.4）
 ## 進行中的即時戰鬥（V0.5）：開戰到結算之間有效；戰鬥中替場上棋子換裝會排入這場模擬
 var live_battle: CombatSim = null
@@ -542,6 +544,8 @@ func has_pending_reward() -> bool:
 func claim_reward(index: int) -> String:
 	if pending_reward.is_empty():
 		return "沒有可領取的獎勵"
+	if battle_active:
+		return "戰鬥已開始，不能再選擇獎勵"
 	var choices: Array = pending_reward["choices"]
 	if index < 0 or index >= choices.size():
 		return "無效的選擇"
@@ -554,6 +558,23 @@ func claim_reward(index: int) -> String:
 	pending_reward = {}
 	_notify()
 	return ""
+
+
+## V0.5：特殊戰鬥的獎勵在下一回合備戰時選擇，倒數不暫停。
+## 倒數歸零仍未選擇 → 開戰前從畫面顯示的三件中隨機發放一件（固定種子，與操作時機無關、可重播）。回傳發放的裝備 id。
+func auto_claim_reward() -> String:
+	if pending_reward.is_empty() or battle_active:
+		return ""
+	var choices: Array = pending_reward["choices"]
+	if choices.is_empty():
+		pending_reward = {}
+		return ""
+	var rng := SeededRng.new(SeededRng.mix(run_seed, 9000 + int(pending_reward["round"])))
+	var idx := rng.randi_range(0, choices.size() - 1)
+	var id := str(choices[idx])
+	if claim_reward(idx) != "":
+		return ""
+	return id
 
 
 # ---------- 佈陣 ----------
@@ -644,6 +665,8 @@ func auto_fill_board() -> Array:
 
 ## 開戰（V0.5 即時模擬）：自動補位 → 記錄開戰金幣 → 建立尚未推進的戰鬥模擬，由畫面依播放時間推進
 func create_battle() -> CombatSim:
+	# 倒數歸零仍未選擇獎勵：開戰前隨機發放（開戰後就不能再選）
+	last_auto_reward = auto_claim_reward()
 	auto_fill_board()
 	gold_at_battle_start = gold
 	live_battle = BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
@@ -717,7 +740,7 @@ func settle(result: Dictionary) -> Dictionary:
 		report["xp_gain"] = Economy.natural_xp()
 	report["level_after"] = level()
 	report["hp_after"] = hp
-	# 裝備獎勵：完成裝備回合（存活）即可三選一，於下一回合備戰前選擇
+	# 裝備獎勵：完成特殊戰鬥（存活）→ 排定三選一，於下一回合備戰時選擇（倒數不暫停）
 	_maybe_create_reward(round_no)
 	report["reward"] = not pending_reward.is_empty()
 	report["remover"] = _maybe_grant_remover(round_no)

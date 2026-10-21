@@ -85,6 +85,7 @@ func _initialize() -> void:
 		"test_component_recipes",
 		"test_component_combine_ops",
 		"test_component_drops",
+		"test_reward_next_round",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -2761,3 +2762,59 @@ func test_component_drops() -> void:
 	check(r.chapter_components(1) >= 2, "第一章第 5 回合結束時已達保底（%d 個）" % r.chapter_components(1))
 	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(r.to_dict())))
 	eq(JSON.stringify(loaded.component_log), JSON.stringify(r.component_log), "存讀檔後掉落紀錄一致")
+
+
+# ------------------------------------------------------------ V0.5 特殊獎勵在下一回合選擇
+func test_reward_next_round() -> void:
+	var picks := {}
+	for sd in 40:
+		var run := RunState.create("human", 8100 + sd)
+		run.round_no = 3
+		run.start_battle()
+		run.settle(_fake_result(true))
+		eq(run.round_no, 4, "第 3 回合結束 → 第 4 回合")
+		check(run.has_pending_reward(), "第 4 回合備戰時才選擇第 3 回合獎勵")
+		run.begin_round()
+		check(run.has_pending_reward(), "進入備戰後獎勵仍待選擇")
+		var shown: Array = run.pending_reward["choices"].duplicate()
+		var inv := run.inventory.size()
+		var sim := run.create_battle()
+		check(sim != null and not run.has_pending_reward(), "倒數歸零開戰：未選擇的獎勵自動發放")
+		eq(run.inventory.size(), inv + 1, "自動發放一件")
+		check(shown.has(run.last_auto_reward) and run.inventory[-1] == run.last_auto_reward, "從顯示的三件中選出")
+		check(run.rewards_claimed.has(3), "記錄第 3 回合已領取")
+		picks[shown.find(run.last_auto_reward)] = true
+		# 重播：同種子同結果
+		var again := RunState.create("human", 8100 + sd)
+		again.round_no = 3
+		again.start_battle()
+		again.settle(_fake_result(true))
+		again.begin_round()
+		again.create_battle()
+		eq(again.last_auto_reward, run.last_auto_reward, "相同種子自動發放相同裝備")
+	check(picks.size() >= 2, "自動發放是隨機的，不是固定第一件（%s）" % str(picks.keys()))
+	# 開戰後不能再選
+	var r := RunState.create("elf", 8200)
+	r.round_no = 6
+	r.start_battle()
+	r.settle(_fake_result(true))
+	r.begin_round()
+	r.battle_active = true
+	check(r.claim_reward(0) != "", "戰鬥開始後不能選擇")
+	eq(r.auto_claim_reward(), "", "戰鬥中不會再自動發放")
+	r.battle_active = false
+	eq(r.claim_reward(2), "", "備戰時手動選擇")
+	r.create_battle()
+	eq(r.last_auto_reward, "", "已手動選擇就不再自動發放")
+	# 整局都不手動選：七個特殊獎勵全部在下一回合開戰前發放，沒有第 25 回合
+	var full := RunState.create("orc", 8300)
+	for rd in range(1, 25):
+		full.begin_round()
+		full.start_battle()
+		full.settle(_fake_result(true))
+		if full.finished:
+			break
+	eq(full.rewards_claimed.size(), 7, "七個特殊獎勵都在下一回合開戰前發放")
+	check(full.finished and full.round_no == 24, "打完第 24 回合即結束，沒有額外回合")
+	check(full.rewards_claimed.has(21), "第 21 回合獎勵已在第 22 回合發放")
+	check(not full.has_pending_reward(), "結束時沒有遺留的獎勵")

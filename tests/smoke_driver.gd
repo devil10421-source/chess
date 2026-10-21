@@ -471,7 +471,7 @@ func _run() -> void:
 	g.item_overlay.visible = false
 	await wait(0.1)
 
-	# ── 裝備回合：三選一（不計備戰時間）──
+	# ── 特殊戰鬥獎勵：下一回合備戰時三選一，倒數不暫停 ──
 	g.prep_timer.remaining = 999.0
 	if Session.debug_enabled:
 		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 3
@@ -481,17 +481,67 @@ func _run() -> void:
 		var inv_before := run.inventory.size()
 		press("DebugPanel/VBox/Row3/WinButton")
 		await wait(0.8)
-		check(g.reward_overlay.visible, "裝備回合完成 → 三選一")
+		g.debug_panel.visible = false
+		await wait(0.1)
+		check(run.round_no == 4 and g.phase == 0, "第 3 回合結束 → 進入第 4 回合備戰")
+		check(g.reward_overlay.visible, "第 4 回合備戰時顯示第 3 回合的三選一")
 		check(g.reward_cards.get_child_count() == 3, "三件裝備可查看")
-		check(not g.prep_timer.running, "選擇裝備時不計備戰時間")
+		check(g.prep_timer.running and not g.prep_timer.paused, "選擇獎勵時倒數不暫停")
+		var r0: float = g.prep_timer.remaining
+		await wait(0.5)
+		check(g.prep_timer.remaining < r0, "倒數持續進行（%.2f → %.2f）" % [r0, g.prep_timer.remaining])
+		check(g.reward_overlay.mouse_filter == Control.MOUSE_FILTER_IGNORE, "面板外的區域可以照常操作")
+		var gold_rw := run.gold
+		g.reroll_btn.pressed.emit()
+		await get_tree().process_frame
+		check(run.gold == gold_rw - Economy.reroll_cost() and g.reward_overlay.visible, "三選一開著也能刷新商店")
 		await shot("reward")
+		var later: Button = g.reward_cards.get_parent().get_node("LaterButton")
+		later.pressed.emit()
+		await wait(0.1)
+		var reopen: Button = g.get_node("RewardReopen")
+		check(not g.reward_overlay.visible and reopen.visible and reopen.text.contains("秒"), "先收起 → 顯示「選擇裝備獎勵（剩 N 秒）」")
+		reopen.pressed.emit()
+		await wait(0.1)
+		check(g.reward_overlay.visible, "再按一次打開三選一")
+		check(g.reward_cards.get_parent().get_children().filter(func(n): return n.name.begins_with("LaterButton")).size() == 1, "重新打開不會重複「先收起」按鈕")
+		g.prep_timer.remaining = 4.5
+		await wait(0.15)
+		check(g.get_node("RewardOverlay/Panel/VBox/RewardHint").text.contains("隨機"), "最後 5 秒強烈提示時間到會隨機發放")
+		await shot("reward_warning")
+		g.prep_timer.remaining = 999.0
 		var pick: Button = g.reward_cards.get_child(0).find_children("*", "Button", true, false)[0]
 		pick.pressed.emit()
 		await wait(0.3)
 		check(run.inventory.size() == inv_before + 1, "選擇後加入背包")
 		check(run.rewards_claimed.has(3), "第 3 回合已領取")
-		check(g.phase == 0 and g.prep_timer.running, "選完才開始第 4 回合倒數")
+		check(not g.reward_overlay.visible and not reopen.visible, "選完關閉三選一")
+		check(g.phase == 0 and g.prep_timer.running, "選擇不影響倒數與備戰")
 		check(g.reward_dots.claimed.has(3), "裝備節點點亮")
+		# 倒數歸零仍未選擇 → 從三件中隨機發放並開戰
+		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 6
+		press("DebugPanel/VBox/RoundRow/JumpButton")
+		await wait(0.3)
+		press("DebugPanel/VBox/Row3/WinButton")
+		await wait(0.8)
+		g.debug_panel.visible = false
+		await wait(0.1)
+		check(run.round_no == 7 and g.reward_overlay.visible, "第 7 回合備戰顯示第 6 回合的三選一")
+		var shown: Array = run.pending_reward["choices"].duplicate()
+		var inv6 := run.inventory.size()
+		g.prep_timer.remaining = 0.3
+		await wait(0.6)
+		check(g.phase == 1, "不選擇也照常開戰")
+		check(run.rewards_claimed.has(6) and run.inventory.size() == inv6 + 1 and shown.has(run.inventory[-1]), "時間到從顯示的三件中隨機發放一件")
+		check(not g.reward_overlay.visible and not run.has_pending_reward(), "開戰後不能再選")
+		check(g.toast_texts().any(func(t): return t.contains("隨機獲得")), "提示隨機獲得的裝備")
+		Session.battle_speed = 4.0
+		g.skip_btn.pressed.emit()
+		var t7 := 0.0
+		while g.phase != 0 and t7 < 40.0:
+			await wait(0.2)
+			t7 += 0.2
+		Session.battle_speed = 1.0
 
 	# ── 收合：右側排行浮在戰場上，開關不推動棋盤 ──
 	g.prep_timer.remaining = 999.0

@@ -115,12 +115,12 @@ node("BigCountdown", "Label", ".", {"visible": "false", "layout_mode": 1, "ancho
      "theme_override_constants/outline_size": 10, "theme_override_font_sizes/font_size": 84, "horizontal_alignment": 1, "vertical_alignment": 1, "text": '"5"'})
 
 # ── 裝備三選一 ──
-node("RewardOverlay", "CenterContainer", ".", dict(FULL, visible="false", mouse_filter=0))
+node("RewardOverlay", "CenterContainer", ".", dict(FULL, visible="false", mouse_filter=2))
 node("Panel", "PanelContainer", "RewardOverlay", {"custom_minimum_size": "Vector2(720, 0)", "layout_mode": 2})
 node("VBox", "VBoxContainer", "RewardOverlay/Panel", {"layout_mode": 2, "theme_override_constants/separation": 10})
 label("RewardTitle", "RewardOverlay/Panel/VBox", "裝備獎勵", {"theme_override_font_sizes/font_size": 22, "horizontal_alignment": 1, "theme_override_colors/font_color": GOLD})
 node("Cards", "HBoxContainer", "RewardOverlay/Panel/VBox", {"layout_mode": 2, "theme_override_constants/separation": 10})
-label("RewardHint", "RewardOverlay/Panel/VBox", "選擇一件加入背包（選擇時不計備戰時間）", {"horizontal_alignment": 1, "theme_override_font_sizes/font_size": 13, "theme_override_colors/font_color": "Color(0.62, 0.66, 0.74, 1)"})
+label("RewardHint", "RewardOverlay/Panel/VBox", "選擇一件加入背包（倒數不暫停；時間到會從三件中隨機發放一件）", {"horizontal_alignment": 1, "theme_override_font_sizes/font_size": 13, "theme_override_colors/font_color": "Color(0.62, 0.66, 0.74, 1)"})
 
 # ── 裝備資訊／背包選擇 ──
 node("ItemOverlay", "CenterContainer", ".", dict(FULL, visible="false", mouse_filter=0))

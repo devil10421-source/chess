@@ -353,6 +353,7 @@ func _connect() -> void:
 	board.tap_interceptor = _intercept_unit_tap
 	leader.collapse_toggled.connect(func(_c: bool): _apply_side_layout())
 	reward_dots.dot_pressed.connect(func(_r: int, text: String): _toast(text))
+	_build_reward_reopen()
 	speed_btn.pressed.connect(_cycle_speed)
 	skip_btn.pressed.connect(func(): battle_player.skip())
 	menu_btn.pressed.connect(func(): _show_menu(true))
@@ -485,10 +486,6 @@ func _sync_bottom_columns() -> void:
 
 # ---------- 階段 ----------
 func _enter_prep() -> void:
-	# 先處理上一回合的裝備三選一（選擇時不計入 30 秒）
-	if run.has_pending_reward():
-		_show_reward()
-		return
 	phase = Phase.PREP
 	reward_overlay.visible = false
 	run.begin_round()
@@ -510,6 +507,9 @@ func _enter_prep() -> void:
 	Session.prep_time_round = -1
 	_last_seconds = -1
 	_update_bar()
+	# V0.5：上一場特殊戰鬥的三選一在這個備戰階段選擇；倒數照常進行，畫面其他操作也不受影響
+	if run.has_pending_reward():
+		_show_reward()
 
 
 func _process(delta: float) -> void:
@@ -521,6 +521,7 @@ func _process(delta: float) -> void:
 				_on_start_battle(true)
 				return
 			_update_bar()
+			_update_reward_countdown()
 		Phase.BATTLE:
 			_update_bar()
 			_info_refresh -= delta
@@ -612,7 +613,12 @@ func _on_start_battle(auto: bool) -> void:
 	board.select(-1)
 	board.interactive = false
 	_last_result = {}
+	var had_reward := run.has_pending_reward()
 	var sim := run.create_battle()
+	_hide_reward()
+	if had_reward and run.last_auto_reward != "":
+		_toast("時間到，隨機獲得裝備：%s（已放入背包）" % GameData.item(run.last_auto_reward).get("name", ""), UiStyle.GOLD)
+		reward_dots.set_state(run.round_no, run.rewards_claimed)
 	board.set_prep_visible(false)
 	board.battle_mode = true
 	battle_player.play_live(sim, board)
@@ -674,13 +680,10 @@ func _toast_report(rep: Dictionary) -> void:
 
 
 # ---------- 裝備三選一 ----------
+## V0.5：在備戰階段顯示三選一，倒數不暫停；面板外的區域可以照常操作（商店、佈陣、背包）
 func _show_reward() -> void:
-	phase = Phase.REWARD
-	prep_timer.stop()
-	big_countdown.visible = false
-	_set_bar_neutral()
-	bar_left.text = " 選擇裝備獎勵（不計備戰時間）"
-	bar_right.text = ""
+	if not run.has_pending_reward() or phase != Phase.PREP:
+		return
 	for c in reward_cards.get_children():
 		reward_cards.remove_child(c)
 		c.queue_free()
@@ -690,17 +693,97 @@ func _show_reward() -> void:
 	var choices: Array = pr["choices"]
 	for i in choices.size():
 		reward_cards.add_child(_item_card(str(choices[i]), "選擇", func(): _claim(i)))
+	var old_later := reward_cards.get_parent().get_node_or_null("LaterButton")
+	if old_later:
+		old_later.get_parent().remove_child(old_later)
+		old_later.queue_free()
+	var later := Button.new()
+	later.name = "LaterButton"
+	later.text = "先收起（稍後再選）"
+	later.custom_minimum_size = Vector2(0, 40)
+	UiStyle.style_button(later, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
+	later.pressed.connect(func():
+		reward_overlay.visible = false
+		_update_reward_countdown())
+	reward_cards.get_parent().add_child(later)
 	reward_overlay.visible = true
+	_reward_reopen.visible = false
+	_update_reward_countdown()
 	_refresh_top()
 
 
+func _hide_reward() -> void:
+	reward_overlay.visible = false
+	_reward_reopen.visible = false
+	var later := reward_cards.get_parent().get_node_or_null("LaterButton")
+	if later:
+		later.get_parent().remove_child(later)
+		later.queue_free()
+
+
+func is_reward_open() -> bool:
+	return reward_overlay.visible
+
+
 func _claim(i: int) -> void:
+	if phase != Phase.PREP or not run.has_pending_reward():
+		_hide_reward()
+		return
 	var id := str(run.pending_reward["choices"][i])
-	if run.claim_reward(i) == "":
-		reward_overlay.visible = false
+	var r := run.claim_reward(i)
+	if r == "":
+		_hide_reward()
 		_toast("獲得裝備：%s（已放入背包）" % GameData.item(id)["name"], UiStyle.GOLD)
+		reward_dots.set_state(run.round_no, run.rewards_claimed)
 		SaveSystem.save_run(run)
-		_enter_prep()
+	else:
+		_toast(r)
+
+
+var _reward_reopen: Button
+
+
+## 收起三選一後，在倒數條下方顯示「選擇獎勵」按鈕（顯示剩餘秒數）
+func _build_reward_reopen() -> void:
+	_reward_reopen = Button.new()
+	_reward_reopen.name = "RewardReopen"
+	_reward_reopen.visible = false
+	_reward_reopen.custom_minimum_size = Vector2(220, 40)
+	UiStyle.style_button(_reward_reopen, Color(0.55, 0.36, 0.08), UiStyle.GOLD, 15)
+	_reward_reopen.pressed.connect(_show_reward)
+	add_child(_reward_reopen)
+
+
+## 三選一面板與收起按鈕上的倒數；最後 5 秒紅色閃爍提醒「時間到會隨機發放」
+func _update_reward_countdown() -> void:
+	if _reward_reopen == null:
+		return
+	var pending := phase == Phase.PREP and run.has_pending_reward()
+	if not pending:
+		if reward_overlay.visible or _reward_reopen.visible:
+			_hide_reward()
+		return
+	var secs := prep_timer.seconds_left()
+	var warn := secs <= 5
+	var hint: Label = $RewardOverlay/Panel/VBox/RewardHint
+	var pulse := 0.5 + 0.5 * absf(sin(Time.get_ticks_msec() / 140.0))
+	if warn:
+		hint.text = "剩 %d 秒！時間到會從三件中隨機發放一件" % secs
+		hint.add_theme_color_override("font_color", Color(1.0, 0.35 + 0.3 * pulse, 0.3))
+		hint.add_theme_font_size_override("font_size", 17)
+	else:
+		hint.text = "選擇一件加入背包・剩 %d 秒（倒數不暫停；時間到會從三件中隨機發放一件）" % secs
+		hint.add_theme_color_override("font_color", Color(0.62, 0.66, 0.74))
+		hint.add_theme_font_size_override("font_size", 13)
+	var panel: Control = $RewardOverlay/Panel
+	panel.modulate = Color(1, 0.85 + 0.15 * pulse, 0.85 + 0.15 * pulse) if warn else Color.WHITE
+	_reward_reopen.visible = not reward_overlay.visible
+	if _reward_reopen.visible:
+		_reward_reopen.text = "選擇裝備獎勵（剩 %d 秒）" % secs
+		_reward_reopen.modulate = Color(1, 0.6 + 0.4 * pulse, 0.6 + 0.4 * pulse) if warn else Color.WHITE
+		var r := board_rect()
+		_reward_reopen.size = _reward_reopen.get_combined_minimum_size()
+		_reward_reopen.position = Vector2(r.get_center().x - _reward_reopen.size.x * 0.5, r.position.y + 4.0)
 
 
 ## 裝備卡片（固定格式）：名稱／基礎屬性／唯一特性・名稱：一句話描述
