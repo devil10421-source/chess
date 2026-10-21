@@ -148,6 +148,7 @@ func begin_round() -> void:
 	if finished or prepared_round == round_no:
 		return
 	prepared_round = round_no
+	resolve_pending_merges()
 	var rounds: Array = GameData.civ_special(civ_id, "free_reroll_rounds", [])
 	for r in rounds:
 		if int(r) == round_no:
@@ -207,9 +208,22 @@ func can_buy(slot: int) -> String:
 	var cost := GameData.unit_cost(id)
 	if gold < cost:
 		return "金幣不足"
-	if bench_free_index() < 0 and copies_of(id, 1) < 2:
+	if bench_free_index() < 0 and _merge_candidates(id, 1).size() < 2:
 		return "候補區已滿"
 	return ""
+
+
+## 戰鬥中買到的棋子若要和場上（正在戰鬥）的棋子合成，延到下一次備戰才合成（V0.5）。
+## 進入備戰時呼叫：依序嘗試每種棋子的一星→二星、二星→三星合成。
+func resolve_pending_merges() -> void:
+	if battle_active:
+		return
+	var ids := {}
+	for u in all_units():
+		ids[str(u["id"])] = true
+	for id in ids.keys():
+		_try_merge(id, 1)
+		_try_merge(id, 2)
 
 
 ## preferred_uid：玩家目前選取的棋子；購買觸發合成時，它優先成為合成主體（若沒有已上場的同名棋子）
@@ -259,6 +273,8 @@ func _merge_candidates(id: String, star: int) -> Array:
 	var found: Array = []
 	for c in _sorted_board_cells():
 		var u: Dictionary = board[c]
+		if battle_active:
+			break   # 戰鬥中不動場上棋子：和它們的合成延到下一次備戰
 		if u["id"] == id and int(u["star"]) == star:
 			found.append({"where": "board", "cell": c, "unit": u})
 	for i in bench.size():
@@ -339,6 +355,8 @@ func sell(uid: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if is_fighting(uid):
+		return "戰鬥中的場上棋子不能出售"
 	var u: Dictionary = f["unit"]
 	gold += UnitStats.sell_value(u["id"], int(u["star"]))
 	# 出售時裝備自動返回背包
@@ -395,6 +413,8 @@ func use_remover(uid: int, slot: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if is_fighting(uid):
+		return "戰鬥中不能卸下場上棋子的裝備"
 	var items := unit_items(f["unit"])
 	if slot < 0 or slot >= items.size():
 		return "這格沒有裝備"
@@ -460,6 +480,8 @@ func move_to_bench(uid: int, index: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if battle_active and f["where"] == "board":
+		return "戰鬥中不能移動場上棋子"
 	var other = bench[index]
 	if f["where"] == "bench":
 		var from := int(f["index"])
@@ -476,6 +498,8 @@ func move_to_bench(uid: int, index: int) -> String:
 
 
 func move_to_board(uid: int, cell: Vector2i) -> String:
+	if battle_active:
+		return "戰鬥中不能改變站位或上場棋子"
 	if not HexGrid.is_player_cell(cell):
 		return "只能部署在己方區域（下方 4 排）"
 	var f := find_unit(uid)

@@ -80,6 +80,8 @@ func _initialize() -> void:
 		"test_live_battle_stepping",
 		"test_live_equip",
 		"test_projectile_and_windup",
+		"test_prep_seconds_by_round",
+		"test_battle_shop_ops",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -2557,3 +2559,68 @@ func test_projectile_and_windup() -> void:
 		var s0: Dictionary = starts[0]
 		var c0: Array = casts.filter(func(e): return int(e["cid"]) == int(s0["cid"]) and float(e["t"]) >= float(s0["t"]))
 		check(not c0.is_empty() and float(c0[0]["t"]) - float(s0["t"]) >= GameData.cfg("combat").get("cast_windup", 0.25) - 0.001, "前搖結束後才施放技能")
+
+
+# ------------------------------------------------------------ V0.5 戰鬥中經營
+func test_prep_seconds_by_round() -> void:
+	var want := {1: 45.0, 2: 30.0, 6: 30.0, 7: 25.0, 12: 25.0, 18: 25.0, 19: 30.0, 24: 30.0}
+	for rd in want.keys():
+		eq(PrepTimer.seconds_for_round(rd), want[rd], "第 %d 回合備戰 %d 秒" % [rd, want[rd]])
+	var pt := PrepTimer.new()
+	pt.start_round(1)
+	eq(pt.remaining, 45.0, "第 1 回合倒數從 45 秒開始")
+	check(pt.tick(46.0), "歸零時回傳 true（自動開戰）")
+
+
+func test_battle_shop_ops() -> void:
+	var run := RunState.create("orc", 501)
+	run.gold = 200
+	run.xp = 8   # Lv.3：場上 3 隻已滿，開戰不會自動補位
+	run.board[Vector2i(3, 4)] = {"uid": 1, "id": "ORC1", "star": 1, "items": []}
+	run.board[Vector2i(4, 4)] = {"uid": 2, "id": "ORC1", "star": 1, "items": []}
+	run.board[Vector2i(3, 7)] = {"uid": 3, "id": "CEN1", "star": 1, "items": []}
+	run.bench[0] = {"uid": 4, "id": "HUM1", "star": 1, "items": []}
+	run.bench[1] = {"uid": 5, "id": "ELF1", "star": 1, "items": []}
+	run.next_uid = 10
+	run.begin_round()
+	var sim := run.create_battle()
+	var board_before := JSON.stringify(run.board_lineup())
+	var syn_before := run.synergy_counts()
+	check(run.battle_active and run.is_fighting(1) and not run.is_fighting(4), "開戰後：場上棋子在戰鬥中、候補不在")
+	# 商店操作
+	eq(run.reroll(), "", "戰鬥中可以刷新")
+	eq(run.buy_xp(), "", "戰鬥中可以買經驗")
+	run.toggle_lock()
+	check(run.shop_locked, "戰鬥中可以鎖定商店")
+	run.toggle_lock()
+	eq(run.move_to_bench(4, 6), "", "戰鬥中可以調整候補區順序")
+	eq(run.sell(5), "", "戰鬥中可以出售候補棋子")
+	check(run.sell(1) != "", "戰鬥中的場上棋子不能出售")
+	check(run.move_to_board(4, Vector2i(1, 5)) != "", "戰鬥中不能讓候補棋子上場")
+	check(run.move_to_bench(1, 8) != "", "戰鬥中不能把場上棋子移回候補")
+	check(run.move_to_board(1, Vector2i(1, 5)) != "", "戰鬥中不能改變站位")
+	# 買到和場上棋子同名的第 3 隻：延到下一次備戰才合成
+	run.shop = ["ORC1", "", "", "", ""]
+	eq(run.buy(0), "", "戰鬥中可以購買")
+	eq(run.copies_of("ORC1", 1), 3, "場上棋子沒有被合成（待合成）")
+	eq(JSON.stringify(run.board_lineup()), board_before, "本回合場上棋子、星級與站位沒有改變")
+	eq(run.synergy_counts(), syn_before, "羈絆沒有改變")
+	_pool_ok(run, "戰鬥中商店操作後卡池守恆")
+	# 戰鬥中替場上棋子穿裝備：立即進入即時模擬
+	sim.step_to(1.0)
+	var cu: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var atk0 := cu.atk
+	run.inventory = ["DM_GREATAXE"]
+	eq(run.equip(1, 0), "", "戰鬥中可以替場上棋子穿裝備")
+	sim.step()
+	check(is_equal_approx(cu.atk, atk0 + 22.0), "裝備立即影響本場戰鬥（攻擊 %.1f → %.1f）" % [atk0, cu.atk])
+	check(run.use_remover(1, 0) != "", "戰鬥中不能卸下場上棋子的裝備")
+	# 結算 → 下一回合備戰時完成合成（保留場上棋子為主體）
+	var res := sim.run()
+	run.settle(res)
+	check(not run.battle_active, "結算後戰鬥結束")
+	run.begin_round()
+	var main := run.find_unit(1)
+	check(not main.is_empty() and main["where"] == "board" and int(main["unit"]["star"]) == 2, "下一次備戰：三隻合成二星，保留場上棋子（位置不變）")
+	eq(run.copies_of("ORC1", 1), 0, "材料已合併")
+	_pool_ok(run, "合成後卡池守恆")

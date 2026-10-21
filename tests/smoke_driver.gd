@@ -131,7 +131,7 @@ func _run() -> void:
 	# ── 版面 ──
 	check(g.round_label.text == "1/24", "上方顯示回合 1/24")
 	check(GameData.reward_rounds().size() == 7, "七個裝備節點")
-	check(g.prep_timer.running and g.prep_timer.duration == 30.0, "30 秒備戰倒數開始")
+	check(g.prep_timer.running and g.prep_timer.duration == 45.0, "第 1 回合 45 秒備戰倒數開始")
 	check(g._gold_label.text == "5" and g._lv_label.text == "Lv.1" and g._hp_label.text == "40/40" and g._pop_label.text == "0/1", "底部顯示 金幣｜Lv｜生命｜人口")
 	check(g.xp_left.text.strip_edges() == "0/2 XP" and g._xp_cost_label.text == "4" and g._xp_word.text == "升級", "XP 條：0/2 XP、4 金升級")
 	# 文明升級圖示：商店左側、文明代表色徽章；點擊＝購買 4 XP、花 4 金
@@ -328,6 +328,44 @@ func _run() -> void:
 	check(g.phase == 1, "倒數歸零自動開戰")
 	check(run.board_count() >= 1, "自動補位")
 	check(g.bar_left.text.contains("戰鬥中"), "開戰後倒數條改為戰鬥狀態")
+	check(not g.has_node("BottomBar/VBox/RowB/RightButtons/StartButton"), "沒有開始戰鬥按鈕（倒數歸零自動開戰）")
+
+	# ── V0.5：戰鬥中經營商店與即時裝備 ──
+	var bpl: BattlePlayer = g.battle_player
+	# 第 1 回合的稻草兵太脆，讓它耐打一點，確保以下檢查都在戰鬥進行中完成（只改這場測試的模擬）
+	for eu in bpl.sim().units:
+		if eu.side == 1:
+			eu.max_hp = 2500.0
+			eu.hp = 2500.0
+	run.gold = 40
+	run.changed.emit()
+	var gold_r := run.gold
+	g.reroll_btn.pressed.emit()
+	await get_tree().process_frame
+	check(run.gold == gold_r - Economy.reroll_cost(), "戰鬥中可以刷新商店")
+	var bench_n := run.all_units().size()
+	for i in run.shop.size():
+		if run.can_buy(i) == "":
+			(g.get_node("BottomBar/VBox/RowB/ShopSlots/Slot%d" % i) as Button).pressed.emit()
+			break
+	await get_tree().process_frame
+	check(run.all_units().size() >= bench_n, "戰鬥中可以購買棋子")
+	var fight_uid := int(run.board_lineup()[0]["uid"])
+	RunState.unit_items(run.find_unit(fight_uid)["unit"]).clear()   # 確保有空裝備欄（之前測試穿過的裝備直接清掉）
+	run._sync_live_items(fight_uid)
+	await wait(0.2)
+	var live_cu: CombatUnit = bpl.sim().units.filter(func(x): return x.uid == fight_uid)[0]
+	var atk_live0 := live_cu.atk
+	run.inventory.append("DM_GREATAXE")
+	run.changed.emit()
+	g._open_bag(fight_uid)
+	await get_tree().process_frame
+	var axe_i := run.inventory.find("DM_GREATAXE")
+	g.bag_row_button(axe_i).pressed.emit()
+	await wait(0.3)
+	check(is_equal_approx(live_cu.atk, atk_live0 + 22.0), "戰鬥中替場上棋子穿裝備：攻擊力立即 +22（%.1f → %.1f）" % [atk_live0, live_cu.atk])
+	check(bpl.token(live_cu.cid).items.has("DM_GREATAXE"), "棋盤上的棋子裝備圖示即時更新")
+	check(run.sell(fight_uid) != "", "戰鬥中的場上棋子不能出售")
 
 	# ── 戰鬥中：整理候補、查看雙方、即時貢獻 ──
 	var bp: BattlePlayer = g.battle_player
@@ -351,7 +389,7 @@ func _run() -> void:
 		if int(bp._units[cid]["side"]) == 1:
 			foe_cid = int(cid)
 	await click_at(screen_pos(board, bp.token(my_cid).position))
-	check(g._info_mode == "battle" and card.visible, "戰鬥中點己方棋子顯示資訊卡")
+	check(g._info_mode == "battle" and card.visible, "戰鬥中點己方棋子顯示資訊卡（%s, %s, phase %d）" % [g._info_mode, str(card.visible), g.phase])
 	check(card._hp_label.text.begins_with("生命"), "資訊卡顯示即時生命")
 	card.cell_button("atk").pressed.emit()
 	await get_tree().process_frame
@@ -367,6 +405,7 @@ func _run() -> void:
 
 	# ── 戰後：沒有結算視窗、自動回到備戰 ──
 	Session.battle_speed = 4.0
+	g.skip_btn.pressed.emit()   # 略過動畫（直接算完，結果與正常播放相同）
 	var t1 := 0.0
 	while g.phase == 1 and t1 < 40.0:
 		await wait(0.2)

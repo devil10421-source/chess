@@ -60,7 +60,6 @@ const STATE_MARK := {
 @onready var reroll_btn: Button = $BottomBar/VBox/RowB/LeftButtons/RerollButton
 @onready var civup_btn: Button = $BottomBar/VBox/RowB/LeftButtons/CivUpButton
 @onready var shop_slots: HBoxContainer = $BottomBar/VBox/RowB/ShopSlots
-@onready var start_btn: Button = $BottomBar/VBox/RowB/RightButtons/StartButton
 @onready var lock_btn: Button = $BottomBar/VBox/RowB/RightButtons/LockButton
 @onready var big_countdown: Label = $BigCountdown
 @onready var reward_overlay: Control = $RewardOverlay
@@ -131,7 +130,7 @@ func _ready() -> void:
 	_style()
 	_connect()
 	get_viewport().size_changed.connect(_layout)
-	board.is_over_sell_zone = func(p: Vector2) -> bool: return bottom_bar.get_global_rect().has_point(p) and phase == Phase.PREP
+	board.is_over_sell_zone = func(p: Vector2) -> bool: return bottom_bar.get_global_rect().has_point(p) and _shop_open()
 	run.changed.connect(_on_run_changed)
 	debug_btn.visible = Session.debug_enabled
 	_apply_side_layout()
@@ -177,7 +176,6 @@ func _build_bottom() -> void:
 	xp_right.add_child(pad)
 	_decorate(reroll_btn, "refresh", Color(0.85, 0.92, 1.0), "刷新 2")
 	_decorate(civup_btn, _civ_icon(), civ_col, "+4 XP", 28)
-	_decorate(start_btn, "play", Color(1.0, 0.95, 0.8), "開戰")
 	_decorate(lock_btn, "unlock", Color(0.85, 0.88, 0.95), "鎖定")
 	_decorate(bag_btn, "bag", Color(0.85, 0.75, 0.55), "背包 0")
 
@@ -306,7 +304,6 @@ func _style() -> void:
 	UiStyle.style_button(reroll_btn, Color(0.16, 0.30, 0.52))
 	UiStyle.style_button(civup_btn, _civ_color().darkened(0.55), _civ_color())
 	UiStyle.style_button(lock_btn, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 15)
-	UiStyle.style_button(start_btn, Color(0.62, 0.38, 0.06), UiStyle.GOLD, 19)
 	UiStyle.style_button(sell_btn, Color(0.50, 0.20, 0.18))
 	UiStyle.style_button(bag_btn, Color(0.22, 0.19, 0.14), Color(0.85, 0.75, 0.55, 0.6), 15)
 	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
@@ -347,9 +344,8 @@ func _connect() -> void:
 	reroll_btn.pressed.connect(_on_reroll)
 	civup_btn.pressed.connect(_on_buy_xp)
 	lock_btn.pressed.connect(func():
-		if phase == Phase.PREP:
+		if _shop_open():
 			run.toggle_lock())
-	start_btn.pressed.connect(func(): _on_start_battle(false))
 	sell_btn.pressed.connect(_on_sell_selected)
 	bag_btn.pressed.connect(_show_bag)
 	close_detail_btn.pressed.connect(_close_detail)
@@ -383,10 +379,8 @@ func _connect() -> void:
 		if phase == Phase.PREP:
 			_report(run.move_to_board(uid, cell)))
 	board.move_to_bench_requested.connect(func(uid: int, idx: int):
-		# 戰鬥中也能整理候補區（只影響下一回合）
-		var f := run.find_unit(uid)
-		if phase == Phase.PREP or (not f.is_empty() and f["where"] == "bench"):
-			_report(run.move_to_bench(uid, idx)))
+		# 戰鬥中也能整理候補區（只影響下一回合）；場上棋子由 RunState 擋下
+		_report(run.move_to_bench(uid, idx)))
 	board.sell_requested.connect(func(uid: int): _sell(uid))
 	battle_player.finished.connect(_on_battle_finished)
 	$DebugPanel/VBox/RoundRow/JumpButton.pressed.connect(_debug_jump)
@@ -509,8 +503,8 @@ func _enter_prep() -> void:
 	menu_btn.visible = true
 	_set_info("none", null)
 	_refresh()
-	# 介面與棋盤初始化完成後才開始 30 秒倒數（從圖鑑返回同一回合時接續剩餘秒數）
-	prep_timer.start()
+	# 介面與棋盤初始化完成、上一場戰鬥結束後才開始倒數（秒數依回合設定；從圖鑑返回同一回合時接續剩餘秒數）
+	prep_timer.start_round(run.round_no)
 	if Session.prep_time_round == run.round_no and Session.prep_time_left > 0.0:
 		prep_timer.remaining = Session.prep_time_left
 	Session.prep_time_round = -1
@@ -521,7 +515,8 @@ func _enter_prep() -> void:
 func _process(delta: float) -> void:
 	match phase:
 		Phase.PREP:
-			prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible or item_overlay.visible
+			# V0.5：裝備資訊、合成確認、三選一都不暫停倒數；只有選單、除錯、放棄確認會暫停
+			prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible
 			if prep_timer.tick(delta):
 				_on_start_battle(true)
 				return
@@ -597,22 +592,19 @@ func _on_run_changed() -> void:
 		SaveSystem.save_run(run)
 	else:
 		_refresh_bottom()
+		_refresh_shop()
 		_refresh_info()
 
 
-## auto = 倒數結束自動開戰
+## 倒數結束自動開戰（V0.5 沒有開始戰鬥按鈕）
 func _on_start_battle(auto: bool) -> void:
 	if phase != Phase.PREP:
 		return
 	board.cancel_drag()
-	item_overlay.visible = false
 	_pending_item = -1
 	_bag_target_uid = -1
 	_refresh_bag()
 	var placed := run.auto_fill_board()
-	if run.board_count() == 0 and not auto:
-		_toast("場上與候補區都沒有棋子，請先招募")
-		return
 	prep_timer.stop()
 	big_countdown.visible = false
 	phase = Phase.BATTLE
@@ -634,8 +626,8 @@ func _on_start_battle(auto: bool) -> void:
 	_refresh()
 	if not placed.is_empty():
 		_toast("人口未滿：已從候補區自動補上 %d 隻" % placed.size())
-	elif auto:
-		_toast("備戰時間到，自動開戰")
+	else:
+		_toast("備戰時間到，開戰！")
 
 
 func _on_battle_finished() -> void:
@@ -758,21 +750,39 @@ var _drag_consumed := false
 var _ghost: Control
 
 
+## 商店、候補區、背包在備戰與戰鬥中都可以操作（V0.5）；戰鬥中的場上棋子由 RunState 限制
+func _shop_open() -> bool:
+	return phase == Phase.PREP or phase == Phase.BATTLE or phase == Phase.AFTER
+
+
 func _equip_allowed() -> bool:
-	return phase == Phase.PREP
+	return _shop_open()
 
 
 func _on_equip_slot(slot: int) -> void:
 	var items: Array = _current_items()
-	var editable := _equip_allowed() and _info_mode == "unit"
+	var uid_now := _info_uid()
+	var editable := _equip_allowed() and uid_now >= 0
 	if slot < items.size():
 		_show_item_info(str(items[slot]), slot, editable)
 	elif not editable:
-		_toast("戰鬥中不能更換裝備" if phase == Phase.BATTLE else "只能在備戰時替自己的棋子裝備")
+		_toast("只能替自己的棋子裝備")
 	elif run.inventory.is_empty():
 		_toast("背包沒有裝備（裝備回合完成後可三選一）")
 	else:
 		_open_bag(int(_info_ref))
+
+
+## 目前資訊卡顯示的是哪一隻自己的棋子（備戰選取或戰鬥中點選我方）；不是自己的棋子回傳 -1
+func _info_uid() -> int:
+	match _info_mode:
+		"unit":
+			return int(_info_ref)
+		"battle":
+			var snap := battle_player.unit_snapshot(int(_info_ref))
+			if not snap.is_empty() and int(snap["side"]) == 0:
+				return int(snap.get("uid", -1))
+	return -1
 
 
 func _current_items() -> Array:
@@ -781,6 +791,9 @@ func _current_items() -> Array:
 			var f := run.find_unit(int(_info_ref))
 			return RunState.unit_items(f["unit"]) if not f.is_empty() else []
 		"battle":
+			var uid := _info_uid()
+			if uid >= 0 and not run.find_unit(uid).is_empty():
+				return RunState.unit_items(run.find_unit(uid)["unit"])
 			return battle_player.unit_snapshot(int(_info_ref)).get("items", [])
 	return []
 
@@ -812,7 +825,7 @@ func _show_item_info(id: String, slot: int, editable: bool) -> void:
 	_open_item_overlay(str(GameData.item(id).get("name", id)))
 	item_body.add_child(_item_card(id, "", Callable()))
 	if editable:
-		var uid := int(_info_ref)
+		var uid := _info_uid()
 		var hint := InfoView.make_rich("[color=#9aa3ad]裝備裝上後會鎖定。使用 1 個%s可取下這件並放回背包（星級與位置不變）。目前持有 %d 個。[/color]" % [GameData.remover_name(), run.removers], 13)
 		item_body.add_child(hint)
 		_overlay_button("使用卸除器（剩 %d）" % run.removers, func():
@@ -1045,17 +1058,17 @@ func _report(reason: String) -> void:
 
 
 func _on_buy(slot: int) -> void:
-	if phase == Phase.PREP:
-		_report(run.buy(slot))
+	if _shop_open():
+		_report(run.buy(slot, board.selected_uid()))
 
 
 func _on_reroll() -> void:
-	if phase == Phase.PREP:
+	if _shop_open():
 		_report(run.reroll())
 
 
 func _on_buy_xp() -> void:
-	if phase == Phase.PREP:
+	if _shop_open():
 		_report(run.buy_xp())
 
 
@@ -1066,7 +1079,10 @@ func _on_sell_selected() -> void:
 
 
 func _sell(uid: int) -> void:
-	if phase != Phase.PREP:
+	if not _shop_open():
+		return
+	if run.is_fighting(uid):
+		_toast("戰鬥中的場上棋子不能出售")
 		return
 	var f := run.find_unit(uid)
 	if f.is_empty():
@@ -1106,9 +1122,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_on_buy_xp()
 		KEY_E:
 			_on_sell_selected()
-		KEY_SPACE:
-			if phase == Phase.PREP:
-				_on_start_battle(false)
 		KEY_ESCAPE:
 			if item_overlay.visible:
 				item_overlay.visible = false
@@ -1207,12 +1220,12 @@ func _info_prep_unit(uid: int) -> void:
 	else:
 		sources = Modifiers.sources_for_lineup([id], "", false, [items])[0]
 		note = "候補區：只計裝備（上場後才套用文明與羈絆）"
-	if phase == Phase.BATTLE:
-		note += "。戰鬥中只能查看"
+	if run.is_fighting(uid):
+		note += "。戰鬥中：可以穿裝備（立即生效），不能出售或移動"
 	detail_title.text = "棋子資訊"
 	card.visible = true
 	card.show_unit({"ref": "u%d" % uid, "id": id, "star": int(u["star"]), "side": 0, "sources": sources, "items": items, "note": note})
-	if phase == Phase.PREP:
+	if _shop_open() and not run.is_fighting(uid):
 		sell_btn.visible = true
 		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, int(u["star"]))
 
@@ -1300,7 +1313,7 @@ func _refresh_bottom() -> void:
 
 
 func _refresh_shop() -> void:
-	var prep := phase == Phase.PREP
+	var prep := _shop_open()
 	var three := run.three_star_ids()
 	for i in _shop_buttons.size():
 		var b := _shop_buttons[i]
@@ -1332,8 +1345,6 @@ func _refresh_shop() -> void:
 		civup_btn.disabled = not prep or run.gold < Economy.xp_cost()
 	_btn_text(lock_btn, "已鎖定" if run.shop_locked else "鎖定", "lock" if run.shop_locked else "unlock")
 	lock_btn.disabled = not prep
-	start_btn.disabled = not prep
-	_btn_text(start_btn, "戰鬥中" if phase == Phase.BATTLE else "開戰")
 
 
 ## 文明列不再常駐顯示 Buff／Debuff（改由浮動說明顯示）

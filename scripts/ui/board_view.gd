@@ -153,7 +153,9 @@ func _place_token(u: Dictionary, pos: Vector2, show: bool) -> void:
 		tk.uid = uid
 		tk.setup(str(u["id"]), int(u["star"]), 0, hex_size * 0.72)
 		_prep_tokens[uid] = tk
-	tk.radius = hex_size * 0.72
+	var on_bench: bool = _run != null and _run.find_unit(uid).get("where", "") == "bench"
+	tk.on_bench = on_bench
+	tk.radius = hex_size * (0.6 if on_bench else 0.72)
 	tk.set_star(int(u["star"]))
 	tk.selected = uid == _selected_uid
 	tk.items = RunState.unit_items(u)
@@ -382,9 +384,11 @@ func _input(event: InputEvent) -> void:
 			tk.z_index = 0
 		get_viewport().set_input_as_handled()
 		if was_drag and battle_mode:
-			# 戰鬥中只能在候補格之間移動，不能上場、不能出售
+			# 戰鬥中：候補棋子可在候補格之間移動或拖到商店列出售，不能上場
 			var bh := _hit(event.position)
-			if not bh.is_empty() and bh["where"] == "bench":
+			if is_over_sell_zone.call(event.position):
+				sell_requested.emit(uid)
+			elif not bh.is_empty() and bh["where"] == "bench":
 				move_to_bench_requested.emit(uid, int(bh["index"]))
 		elif was_drag:
 			if is_over_sell_zone.call(event.position):

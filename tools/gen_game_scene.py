@@ -106,8 +106,8 @@ node("ShopSlots", "HBoxContainer", "BottomBar/VBox/RowB", {"layout_mode": 2, "si
 for i in range(5):
     btn(f"Slot{i}", "BottomBar/VBox/RowB/ShopSlots", "", "Vector2(90, 76)", {"size_flags_horizontal": 3, "clip_text": "true"})
 node("RightButtons", "VBoxContainer", "BottomBar/VBox/RowB", {"custom_minimum_size": f"Vector2({RIGHT_W}, 0)", "layout_mode": 2})
-btn("StartButton", "BottomBar/VBox/RowB/RightButtons", "", "Vector2(0, 42)", {"size_flags_vertical": 3})
-btn("LockButton", "BottomBar/VBox/RowB/RightButtons", "", "Vector2(0, 30)")
+# V0.5：取消開始戰鬥按鈕（倒數歸零自動開戰）
+btn("LockButton", "BottomBar/VBox/RowB/RightButtons", "", "Vector2(0, 76)", {"size_flags_vertical": 3})
 
 node("BigCountdown", "Label", ".", {"visible": "false", "layout_mode": 1, "anchors_preset": 5, "anchor_left": 0.5, "anchor_right": 0.5,
      "offset_left": -80.0, "offset_top": 230.0, "offset_right": 80.0, "offset_bottom": 340.0, "grow_horizontal": 2,

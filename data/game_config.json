@@ -10,10 +10,32 @@
       18,
       24
     ],
-    "_prep_note": "每回合備戰秒數（倒數結束自動開戰；可提前按開始戰鬥）",
+    "_prep_note": "每回合備戰秒數（V0.5：依回合設定；倒數結束自動開戰，沒有開始戰鬥按鈕）",
     "prep_seconds": 30,
     "prep_caution_seconds": 10,
-    "prep_warning_seconds": 5
+    "prep_warning_seconds": 5,
+    "prep_by_round": [
+      {
+        "from": 1,
+        "to": 1,
+        "seconds": 45
+      },
+      {
+        "from": 2,
+        "to": 6,
+        "seconds": 30
+      },
+      {
+        "from": 7,
+        "to": 18,
+        "seconds": 25
+      },
+      {
+        "from": 19,
+        "to": 24,
+        "seconds": 30
+      }
+    ]
   },
   "economy": {
     "start_gold": 5,
