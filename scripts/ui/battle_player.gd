@@ -21,6 +21,8 @@ var _units: Dictionary = {}    # cid -> snapshot
 var _alive_enemy: Dictionary = {}
 ## 戰鬥中即時狀態（只由事件重建，給資訊面板查看）：cid -> [{kind, value, until}]
 var _live_status: Dictionary = {}
+## 即時貢獻統計（由事件累加；結束時等於戰鬥模擬的 stats）：cid -> {damage, taken, shielded, healing}
+var _live_stats: Dictionary = {}
 var _selected_cid := -1
 
 
@@ -47,6 +49,7 @@ func play(result: Dictionary, board_view: BoardView) -> void:
 		tk.mana = float(s["mana"])
 		tk.mana_max = float(s["mana_max"])
 		tk.set_bars(float(s["hp"]), float(s["max_hp"]), 0.0)
+		tk.items = s.get("items", [])
 		_tokens[tk.cid] = tk
 		_units[tk.cid] = s
 		if int(s["side"]) == 1:
@@ -62,6 +65,7 @@ func clear() -> void:
 	_units.clear()
 	_alive_enemy.clear()
 	_live_status.clear()
+	_live_stats.clear()
 	_selected_cid = -1
 	_playing = false
 	if board:
@@ -140,6 +144,10 @@ func _apply(e: Dictionary, instant: bool) -> void:
 				else:
 					src.lunge(dst.position, 0.22 / sp)
 		"damage":
+			_acc(int(e["src"]), "damage", float(e.get("hp_dmg", 0.0)))
+			_acc(int(e["tgt"]), "taken", float(e.get("hp_dmg", 0.0)))
+			for pair in e.get("absorb_by", []):
+				_acc(int(pair[0]), "shielded", float(pair[1]))
 			var tk: UnitToken = _tokens.get(int(e["tgt"]))
 			if tk:
 				tk.set_bars(float(e["hp"]), tk.max_hp, float(e["shield"]))
@@ -154,6 +162,7 @@ func _apply(e: Dictionary, instant: bool) -> void:
 					else:
 						tk.flash(Color(1, 0.2, 0.2, 0.35), 0.2)
 		"heal":
+			_acc(int(e["src"]), "healing", float(e["v"]))
 			var tk: UnitToken = _tokens.get(int(e["tgt"]))
 			if tk:
 				tk.set_bars(float(e["hp"]), tk.max_hp, tk.shield)
@@ -209,6 +218,10 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			if _alive_enemy.has(cid):
 				_alive_enemy.erase(cid)
 				_emit_threat()
+		"item":
+			var tk: UnitToken = _tokens.get(int(e["cid"]))
+			if tk:
+				tk.set_bars(float(e["hp"]), tk.max_hp, tk.shield)
 		"end":
 			pass
 
@@ -269,4 +282,22 @@ func player_lineup() -> Array:
 		if int(snap["side"]) == 0:
 			out.append(snap)
 	out.sort_custom(func(a, b) -> bool: return int(a["cid"]) < int(b["cid"]))
+	return out
+
+
+func _acc(cid: int, key: String, v: float) -> void:
+	var a: Dictionary = _live_stats.get(cid, {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+	a[key] = float(a[key]) + v
+	_live_stats[cid] = a
+
+
+## 即時統計，格式與 CombatSim 的 stats 相同（給 Leaderboard 使用）
+func live_stats() -> Array:
+	var out: Array = []
+	for cid in _units.keys():
+		var snap: Dictionary = _units[cid]
+		var a: Dictionary = _live_stats.get(cid, {"damage": 0.0, "taken": 0.0, "shielded": 0.0, "healing": 0.0})
+		out.append({"cid": int(cid), "side": int(snap["side"]), "id": snap["id"], "star": int(snap["star"]),
+			"damage": roundi(a["damage"]), "taken": roundi(a["taken"]), "shielded": roundi(a["shielded"]), "healing": roundi(a["healing"])})
+	out.sort_custom(func(x, y) -> bool: return int(x["cid"]) < int(y["cid"]))
 	return out

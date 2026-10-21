@@ -1,6 +1,6 @@
 {
   "_note": "《六族遠征》V0.1 原型測試值。所有數值皆可在此調整，不需修改程式。",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "rounds": {
     "total": 24,
     "chapter_length": 6,

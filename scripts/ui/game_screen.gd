@@ -1,89 +1,103 @@
 extends Control
-## 遊戲主畫面：備戰（15 秒倒數，可提前開戰）→ 自動戰鬥播放 → 結算與貢獻排行 → 下一回合。
-## 這裡只負責把玩家操作轉給 RunState，並把狀態畫出來；規則都在 scripts/core。
-## 電腦快捷鍵：D 刷新、F 買經驗、E 出售選取棋子、空白鍵 開始戰鬥／繼續、Esc 選單。
+## 遊戲主畫面（V0.3，手機橫向優先）。
+## 上：回合 X/24＋七個裝備節點、30 秒備戰倒數條。左：文明（置頂、點擊展開）＋羈絆。
+## 右：可收合的戰鬥貢獻面板；選取棋子／羈絆時改顯示詳細資訊卡。下：資源列、XP 條（與商店同寬）、商店。
+## 每回合不再彈出結算畫面：戰後以不擋操作的提示顯示收入、生命與升級；裝備回合結束後先三選一再進入備戰。
+## 電腦快捷鍵：D 刷新、F 買經驗、E 出售、空白鍵 開戰、Esc 選單。
 
-enum Phase { PREP, BATTLE, RESULT }
+enum Phase { PREP, BATTLE, AFTER, REWARD }
 
-const CIV_W := 170.0
-const TRAIT_W := 190.0
-const COLLAPSED_W := 52.0
+const LEFT_W := 190.0
+const RIGHT_W := 280.0
+const COLLAPSED_W := 56.0
 const COLOR_UP := "#5aa9ff"
 const COLOR_DOWN := "#ff6b6b"
 const STATE_MARK := {
 	"board": "[color=#6bdc85]● 已上場[/color]",
 	"bench": "[color=#ffd24d]◐ 候補區[/color]",
 	"none": "[color=#9aa3ad]○ 尚未持有[/color]",
-	"unavailable": "[color=#7a6f73]× 本文明商店無法取得[/color]",
+	"unavailable": "[color=#7a6f73]× 本文明無法招募[/color]",
 }
 
 @onready var board: BoardView = $BoardView
 @onready var battle_player: BattlePlayer = $BoardView/BattlePlayer
 @onready var top_bar: PanelContainer = $TopBar
-@onready var round_label: Label = $TopBar/HBox/RoundLabel
-@onready var hp_label: Label = $TopBar/HBox/HpLabel
-@onready var gold_label: Label = $TopBar/HBox/GoldLabel
-@onready var threat_label: Label = $TopBar/HBox/ThreatLabel
-@onready var timer_label: Label = $TopBar/HBox/TimerLabel
-@onready var report_btn: Button = $TopBar/HBox/ReportButton
+@onready var round_label: Label = $TopBar/HBox/RoundBox/RoundLabel
+@onready var reward_dots: RewardDots = $TopBar/HBox/RoundBox/RewardDots
+@onready var bar: ProgressBar = $TopBar/HBox/Countdown/Bar
+@onready var bar_left: Label = $TopBar/HBox/Countdown/BarText/BarLeft
+@onready var bar_right: Label = $TopBar/HBox/Countdown/BarText/BarRight
 @onready var speed_btn: Button = $TopBar/HBox/SpeedButton
 @onready var skip_btn: Button = $TopBar/HBox/SkipButton
 @onready var debug_btn: Button = $TopBar/HBox/DebugButton
 @onready var menu_btn: Button = $TopBar/HBox/MenuBtn
-@onready var civ_panel: PanelContainer = $CivPanel
-@onready var civ_title: Label = $CivPanel/VBox/Header/CivTitle
-@onready var civ_toggle: Button = $CivPanel/VBox/Header/CivToggle
-@onready var civ_scroll: ScrollContainer = $CivPanel/VBox/CivScroll
-@onready var civ_text: RichTextLabel = $CivPanel/VBox/CivScroll/CivText
-@onready var trait_panel: PanelContainer = $TraitPanel
-@onready var trait_title: Label = $TraitPanel/VBox/Header/TraitTitle
-@onready var trait_toggle: Button = $TraitPanel/VBox/Header/TraitToggle
-@onready var trait_scroll: ScrollContainer = $TraitPanel/VBox/TraitScroll
-@onready var trait_list: VBoxContainer = $TraitPanel/VBox/TraitScroll/TraitList
-@onready var info_panel: PanelContainer = $InfoPanel
-@onready var info_title: Label = $InfoPanel/VBox/Header/InfoTitle
-@onready var info_body: VBoxContainer = $InfoPanel/VBox/InfoScroll/InfoBody
-@onready var close_info_btn: Button = $InfoPanel/VBox/Header/CloseInfoButton
-@onready var sell_btn: Button = $InfoPanel/VBox/SellButton
-@onready var shop_bar: PanelContainer = $ShopBar
-@onready var level_label: Label = $ShopBar/HBox/LevelBox/LevelRow/LevelLabel
-@onready var pop_label: Label = $ShopBar/HBox/LevelBox/LevelRow/PopLabel
-@onready var xp_bar: ProgressBar = $ShopBar/HBox/LevelBox/XpBar
-@onready var xp_text: Label = $ShopBar/HBox/LevelBox/XpText
-@onready var reroll_btn: Button = $ShopBar/HBox/LeftButtons/RerollButton
-@onready var xp_btn: Button = $ShopBar/HBox/LeftButtons/XpButton
-@onready var lock_btn: Button = $ShopBar/HBox/RightButtons/LockButton
-@onready var start_btn: Button = $ShopBar/HBox/RightButtons/StartButton
+@onready var left_panel: PanelContainer = $LeftPanel
+@onready var left_title: Label = $LeftPanel/VBox/Header/Title
+@onready var left_toggle: Button = $LeftPanel/VBox/Header/Toggle
+@onready var left_scroll: ScrollContainer = $LeftPanel/VBox/Scroll
+@onready var civ_btn: Button = $LeftPanel/VBox/Scroll/List/CivButton
+@onready var civ_detail: RichTextLabel = $LeftPanel/VBox/Scroll/List/CivDetail
+@onready var trait_list: VBoxContainer = $LeftPanel/VBox/Scroll/List/TraitList
+@onready var right_panel: PanelContainer = $RightPanel
+@onready var leader_host: VBoxContainer = $RightPanel/Stack/LeaderHost
+@onready var detail_box: VBoxContainer = $RightPanel/Stack/DetailBox
+@onready var detail_title: Label = $RightPanel/Stack/DetailBox/Header/DetailTitle
+@onready var close_detail_btn: Button = $RightPanel/Stack/DetailBox/Header/CloseDetail
+@onready var detail_body: VBoxContainer = $RightPanel/Stack/DetailBox/Scroll/Body
+@onready var sell_btn: Button = $RightPanel/Stack/DetailBox/SellButton
+@onready var bottom_bar: PanelContainer = $BottomBar
+@onready var res_box: HBoxContainer = $BottomBar/VBox/RowA/ResBox
+@onready var xp_bar: ProgressBar = $BottomBar/VBox/RowA/XpBox/XpBar
+@onready var xp_left: Label = $BottomBar/VBox/RowA/XpBox/XpText/XpLeft
+@onready var xp_right: HBoxContainer = $BottomBar/VBox/RowA/XpBox/XpText/XpRight
+@onready var bag_btn: Button = $BottomBar/VBox/RowA/BagButton
+@onready var reroll_btn: Button = $BottomBar/VBox/RowB/LeftButtons/RerollButton
+@onready var civup_btn: Button = $BottomBar/VBox/RowB/LeftButtons/CivUpButton
+@onready var shop_slots: HBoxContainer = $BottomBar/VBox/RowB/ShopSlots
+@onready var start_btn: Button = $BottomBar/VBox/RowB/RightButtons/StartButton
+@onready var lock_btn: Button = $BottomBar/VBox/RowB/RightButtons/LockButton
 @onready var big_countdown: Label = $BigCountdown
-@onready var result_overlay: Control = $ResultOverlay
-@onready var result_title: Label = $ResultOverlay/Panel/VBox/ResultTitle
-@onready var result_text: RichTextLabel = $ResultOverlay/Panel/VBox/ResultText
-@onready var leader_list: VBoxContainer = $ResultOverlay/Panel/VBox/LeaderList
-@onready var result_btn: Button = $ResultOverlay/Panel/VBox/ResultButton
+@onready var reward_overlay: Control = $RewardOverlay
+@onready var reward_title: Label = $RewardOverlay/Panel/VBox/RewardTitle
+@onready var reward_cards: HBoxContainer = $RewardOverlay/Panel/VBox/Cards
+@onready var item_overlay: Control = $ItemOverlay
+@onready var item_title: Label = $ItemOverlay/Panel/VBox/ItemTitle
+@onready var item_body: VBoxContainer = $ItemOverlay/Panel/VBox/ItemScroll/ItemBody
+@onready var item_buttons: HBoxContainer = $ItemOverlay/Panel/VBox/ItemButtons
 @onready var menu_overlay: Control = $MenuOverlay
 @onready var debug_panel: PanelContainer = $DebugPanel
 @onready var round_spin: SpinBox = $DebugPanel/VBox/RoundRow/RoundSpin
 @onready var abandon_confirm: ConfirmationDialog = $AbandonConfirm
-@onready var toast: Label = $Toast
+@onready var toasts: VBoxContainer = $Toasts
 
 var run: RunState
 var phase := Phase.PREP
 var prep_timer := PrepTimer.new()
+var leader: LeaderPanel
+var card: UnitCard
+var _detail_text: RichTextLabel
 var _shop_buttons: Array[Button] = []
-var _leader_tabs: Array[Button] = []
 var _last_result: Dictionary = {}
-var _last_report: Dictionary = {}
-var _result_view_only := false
-var _leader_metric := "damage"
-var _civ_collapsed := false
-var _trait_collapsed := false
-var _toast_tween: Tween
-var _info: InfoView
-## 資訊面板目前顯示的對象：none / unit（備戰棋子 uid）/ enemy（敵方預覽）/ battle（戰鬥中 cid）/ trait（羈絆名單）
+var _left_collapsed := false
+var _civ_open := false
+## 右側詳細資訊目前顯示的對象：none / unit（備戰棋子 uid）/ enemy（敵方預覽）/ battle（戰鬥中 cid）/ trait（羈絆）
 var _info_mode := "none"
 var _info_ref: Variant = null
 var _info_refresh := 0.0
+var _leader_refresh := 0.0
+var _after_time := 0.0
 var _last_seconds := -1
+# 底部資源列與按鈕上的文字
+var _gold_label: Label
+var _interest_label: Label
+var _lv_label: Label
+var _civ_badge: UiIcon
+var _hp_label: Label
+var _pop_label: Label
+var _xp_cost_label: Label
+var _xp_coin: UiIcon
+var _xp_word: Label
+var _btn_labels: Dictionary = {}
 
 
 func _ready() -> void:
@@ -92,15 +106,19 @@ func _ready() -> void:
 		# 直接在編輯器執行此場景（F6）時，自動建立一局測試用遠征
 		run = RunState.create("human", 20240601)
 		Session.run = run
-	_info = InfoView.new(info_body)
 	for i in 5:
-		_shop_buttons.append(get_node("ShopBar/HBox/ShopSlots/Slot%d" % i))
-	for i in 4:
-		_leader_tabs.append(get_node("ResultOverlay/Panel/VBox/LeaderTabs/Tab%d" % i))
+		_shop_buttons.append(get_node("BottomBar/VBox/RowB/ShopSlots/Slot%d" % i))
+	leader = LeaderPanel.new()
+	leader_host.add_child(leader)
+	card = UnitCard.new()
+	detail_body.add_child(card)
+	_detail_text = InfoView.make_rich("", 14)
+	detail_body.add_child(_detail_text)
+	_build_bottom()
 	_style()
 	_connect()
 	get_viewport().size_changed.connect(_layout)
-	board.is_over_sell_zone = func(p: Vector2) -> bool: return shop_bar.get_global_rect().has_point(p)
+	board.is_over_sell_zone = func(p: Vector2) -> bool: return bottom_bar.get_global_rect().has_point(p) and phase == Phase.PREP
 	run.changed.connect(_on_run_changed)
 	debug_btn.visible = Session.debug_enabled
 	_apply_side_layout()
@@ -109,69 +127,172 @@ func _ready() -> void:
 	_layout()
 
 
+# ---------- 建立底部資源列與圖示按鈕 ----------
+func _build_bottom() -> void:
+	var civ_col := _civ_color()
+	_gold_label = _res_item("coin", UiStyle.GOLD, "0")
+	_interest_label = Label.new()
+	_interest_label.add_theme_font_size_override("font_size", 12)
+	_interest_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	_interest_label.add_theme_color_override("font_color", Color(1, 0.85, 0.5, 0.85))
+	res_box.add_child(_interest_label)
+	_sep()
+	_civ_badge = UiIcon.make("civ", civ_col, 20)
+	res_box.add_child(_civ_badge)
+	_lv_label = Label.new()
+	_lv_label.add_theme_font_size_override("font_size", 17)
+	_lv_label.add_theme_color_override("font_color", Color(0.75, 0.88, 1.0))
+	res_box.add_child(_lv_label)
+	_sep()
+	_hp_label = _res_item("heart", Color(1.0, 0.45, 0.45), "40/40")
+	_sep()
+	_pop_label = _res_item("people", Color(0.75, 0.85, 1.0), "0/1")
+	_xp_cost_label = Label.new()
+	_xp_coin = UiIcon.make("coin", UiStyle.GOLD, 16)
+	_xp_word = Label.new()
+	for l in [_xp_cost_label, _xp_word]:
+		l.add_theme_font_size_override("font_size", 15)
+		l.add_theme_color_override("font_outline_color", Color.BLACK)
+		l.add_theme_constant_override("outline_size", 4)
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_xp_coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	xp_right.add_child(_xp_cost_label)
+	xp_right.add_child(_xp_coin)
+	xp_right.add_child(_xp_word)
+	var pad := Control.new()
+	pad.custom_minimum_size = Vector2(6, 0)
+	xp_right.add_child(pad)
+	_decorate(reroll_btn, "refresh", Color(0.85, 0.92, 1.0), "刷新 2")
+	_decorate(civup_btn, "civ", civ_col, "+4 XP")
+	_decorate(start_btn, "play", Color(1.0, 0.95, 0.8), "開戰")
+	_decorate(lock_btn, "unlock", Color(0.85, 0.88, 0.95), "鎖定")
+	_decorate(bag_btn, "bag", Color(0.85, 0.75, 0.55), "背包 0")
+
+
+func _res_item(kind: String, tint: Color, text: String) -> Label:
+	var ic := UiIcon.make(kind, tint, 20)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	res_box.add_child(ic)
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 16)
+	res_box.add_child(l)
+	return l
+
+
+func _sep() -> void:
+	var l := Label.new()
+	l.text = "｜"
+	l.add_theme_color_override("font_color", Color(1, 1, 1, 0.25))
+	res_box.add_child(l)
+
+
+## 在按鈕中放「圖示＋文字」（文字之後由 _btn_text 更新）
+func _decorate(b: Button, kind: String, tint: Color, text: String) -> void:
+	b.text = ""
+	var h := HBoxContainer.new()
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_theme_constant_override("separation", 6)
+	var ic := UiIcon.make(kind, tint, 22)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 16)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	h.add_child(ic)
+	h.add_child(l)
+	b.add_child(h)
+	_btn_labels[b] = {"label": l, "icon": ic}
+
+
+func _btn_text(b: Button, text: String, icon_kind: String = "") -> void:
+	var it: Dictionary = _btn_labels.get(b, {})
+	if it.is_empty():
+		b.text = text
+		return
+	(it["label"] as Label).text = text
+	if icon_kind != "":
+		(it["icon"] as UiIcon).set_icon(icon_kind, (it["icon"] as UiIcon).tint)
+
+
+func btn_label(b: Button) -> String:
+	var it: Dictionary = _btn_labels.get(b, {})
+	return (it["label"] as Label).text if not it.is_empty() else b.text
+
+
+func _civ_color() -> Color:
+	return Color(str(GameData.civ(run.civ_id).get("color", "#888888")))
+
+
 func _style() -> void:
-	for p in [top_bar, civ_panel, trait_panel, info_panel, shop_bar, $MenuOverlay/Panel, debug_panel]:
+	for p in [top_bar, left_panel, right_panel, bottom_bar, $MenuOverlay/Panel, debug_panel, $ItemOverlay/Panel]:
 		UiStyle.apply_panel(p)
-	UiStyle.apply_panel(civ_panel, Color(0.10, 0.13, 0.20, 0.95), Color(0.35, 0.5, 0.8, 0.6))
-	UiStyle.apply_panel($ResultOverlay/Panel, Color(0.10, 0.12, 0.17, 0.98), UiStyle.GOLD)
+	UiStyle.apply_panel($RewardOverlay/Panel, Color(0.10, 0.12, 0.17, 0.98), UiStyle.GOLD)
 	UiStyle.style_button(reroll_btn, Color(0.16, 0.30, 0.52))
-	UiStyle.style_button(xp_btn, Color(0.22, 0.40, 0.28))
+	UiStyle.style_button(civup_btn, _civ_color().darkened(0.55), _civ_color())
 	UiStyle.style_button(lock_btn, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 15)
 	UiStyle.style_button(start_btn, Color(0.62, 0.38, 0.06), UiStyle.GOLD, 19)
 	UiStyle.style_button(sell_btn, Color(0.50, 0.20, 0.18))
-	UiStyle.style_button(result_btn, Color(0.62, 0.38, 0.06), UiStyle.GOLD, 19)
-	for b in [report_btn, speed_btn, skip_btn, debug_btn, menu_btn, civ_toggle, trait_toggle, close_info_btn]:
+	UiStyle.style_button(bag_btn, Color(0.22, 0.19, 0.14), Color(0.85, 0.75, 0.55, 0.6), 15)
+	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
+	for b in [speed_btn, skip_btn, debug_btn, menu_btn, left_toggle, close_detail_btn]:
 		UiStyle.style_button(b, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
 	for b in $MenuOverlay/Panel/VBox.get_children():
 		if b is Button:
 			UiStyle.style_button(b, Color(0.18, 0.21, 0.28))
 	for b in [$DebugPanel/VBox/RoundRow/JumpButton, $DebugPanel/VBox/Row2/GoldButton, $DebugPanel/VBox/Row2/LevelButton,
-			$DebugPanel/VBox/Row3/WinButton, $DebugPanel/VBox/Row3/CloseDebugButton]:
+			$DebugPanel/VBox/Row3/WinButton, $DebugPanel/VBox/Row3/ItemButton, $DebugPanel/VBox/CloseDebugButton]:
 		UiStyle.style_button(b, Color(0.35, 0.22, 0.14), Color(1, 0.6, 0.4, 0.5), 15)
-	for l in [round_label, hp_label, gold_label, threat_label, timer_label]:
-		l.add_theme_font_size_override("font_size", 16)
-	hp_label.add_theme_color_override("font_color", Color(1.0, 0.55, 0.55))
-	gold_label.add_theme_color_override("font_color", UiStyle.GOLD)
-	threat_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.5))
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(0.40, 0.70, 1.0)
-	fill.set_corner_radius_all(4)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(1, 1, 1, 0.10)
-	bg.set_corner_radius_all(4)
-	xp_bar.add_theme_stylebox_override("fill", fill)
-	xp_bar.add_theme_stylebox_override("background", bg)
+	var xfill := StyleBoxFlat.new()
+	xfill.bg_color = Color(0.30, 0.55, 0.95)
+	xfill.set_corner_radius_all(6)
+	var xbg := StyleBoxFlat.new()
+	xbg.bg_color = Color(1, 1, 1, 0.08)
+	xbg.set_corner_radius_all(6)
+	xp_bar.add_theme_stylebox_override("fill", xfill)
+	xp_bar.add_theme_stylebox_override("background", xbg)
+	var bbg := StyleBoxFlat.new()
+	bbg.bg_color = Color(1, 1, 1, 0.07)
+	bbg.set_corner_radius_all(6)
+	bar.add_theme_stylebox_override("background", bbg)
+	_set_bar_color(Color(0.35, 0.6, 0.95))
+
+
+func _set_bar_color(c: Color) -> void:
+	var f := StyleBoxFlat.new()
+	f.bg_color = c
+	f.set_corner_radius_all(6)
+	bar.add_theme_stylebox_override("fill", f)
 
 
 func _connect() -> void:
 	for i in _shop_buttons.size():
 		var idx := i
 		_shop_buttons[i].pressed.connect(func(): _on_buy(idx))
-	for i in _leader_tabs.size():
-		var metric: String = Leaderboard.ORDER[i]
-		_leader_tabs[i].pressed.connect(func(): _set_leader_metric(metric))
 	reroll_btn.pressed.connect(_on_reroll)
-	xp_btn.pressed.connect(_on_buy_xp)
-	lock_btn.pressed.connect(func(): run.toggle_lock())
+	civup_btn.pressed.connect(_on_buy_xp)
+	lock_btn.pressed.connect(func():
+		if phase == Phase.PREP:
+			run.toggle_lock())
 	start_btn.pressed.connect(func(): _on_start_battle(false))
 	sell_btn.pressed.connect(_on_sell_selected)
-	close_info_btn.pressed.connect(func():
-		info_panel.visible = false
-		_layout())
-	civ_toggle.pressed.connect(func():
-		_civ_collapsed = not _civ_collapsed
+	bag_btn.pressed.connect(_show_bag)
+	close_detail_btn.pressed.connect(_close_detail)
+	left_toggle.pressed.connect(func():
+		_left_collapsed = not _left_collapsed
 		_apply_side_layout())
-	trait_toggle.pressed.connect(func():
-		_trait_collapsed = not _trait_collapsed
-		_apply_side_layout())
-	report_btn.pressed.connect(func():
-		if not _last_report.is_empty():
-			_show_result(_last_report, true))
+	civ_btn.pressed.connect(func():
+		_civ_open = not _civ_open
+		_refresh_civ())
+	leader.collapse_toggled.connect(func(_c: bool): _apply_side_layout())
+	reward_dots.dot_pressed.connect(func(_r: int, text: String): _toast(text))
 	speed_btn.pressed.connect(_cycle_speed)
 	skip_btn.pressed.connect(func(): battle_player.skip())
 	menu_btn.pressed.connect(func(): _show_menu(true))
 	debug_btn.pressed.connect(func(): debug_panel.visible = not debug_panel.visible)
-	result_btn.pressed.connect(_on_result_continue)
+	card.equip_slot_pressed.connect(_on_equip_slot)
 	$MenuOverlay/Panel/VBox/ResumeButton.pressed.connect(func(): _show_menu(false))
 	$MenuOverlay/Panel/VBox/CodexButton.pressed.connect(func():
 		Session.prep_time_left = prep_timer.remaining
@@ -186,45 +307,43 @@ func _connect() -> void:
 		SaveSystem.clear()
 		Session.run = null
 		Session.goto(Session.SCENE_MENU))
-	board.unit_selected.connect(_on_unit_selected)
-	board.enemy_selected.connect(_on_enemy_selected)
-	board.battle_unit_selected.connect(_on_battle_unit_selected)
-	board.move_to_board_requested.connect(func(uid: int, cell: Vector2i): _report(run.move_to_board(uid, cell)))
-	board.move_to_bench_requested.connect(func(uid: int, idx: int): _report(run.move_to_bench(uid, idx)))
+	board.unit_selected.connect(func(uid: int): _set_info("unit" if uid >= 0 else "none", uid if uid >= 0 else null))
+	board.enemy_selected.connect(func(id: String, star: int): _set_info("enemy", {"id": id, "star": star}))
+	board.battle_unit_selected.connect(func(cid: int): _set_info("battle" if cid >= 0 else "none", cid if cid >= 0 else null))
+	board.move_to_board_requested.connect(func(uid: int, cell: Vector2i):
+		if phase == Phase.PREP:
+			_report(run.move_to_board(uid, cell)))
+	board.move_to_bench_requested.connect(func(uid: int, idx: int):
+		# 戰鬥中也能整理候補區（只影響下一回合）
+		var f := run.find_unit(uid)
+		if phase == Phase.PREP or (not f.is_empty() and f["where"] == "bench"):
+			_report(run.move_to_bench(uid, idx)))
 	board.sell_requested.connect(func(uid: int): _sell(uid))
 	battle_player.finished.connect(_on_battle_finished)
-	battle_player.threat_changed.connect(func(t: int):
-		threat_label.text = "敵方威脅 %d（未全清扣 %d 生命）" % [t, Economy.expedition_loss(t, run.round_no)])
 	$DebugPanel/VBox/RoundRow/JumpButton.pressed.connect(_debug_jump)
 	$DebugPanel/VBox/Row2/GoldButton.pressed.connect(func():
 		run.gold += 20
 		run.changed.emit())
 	$DebugPanel/VBox/Row2/LevelButton.pressed.connect(_debug_level)
+	$DebugPanel/VBox/Row3/ItemButton.pressed.connect(func():
+		var all := GameData.items()
+		run.inventory.append(str(all[randi() % all.size()]["id"]))
+		run.changed.emit())
 	$DebugPanel/VBox/Row3/WinButton.pressed.connect(_debug_win)
-	$DebugPanel/VBox/Row3/CloseDebugButton.pressed.connect(func(): debug_panel.visible = false)
+	$DebugPanel/VBox/CloseDebugButton.pressed.connect(func(): debug_panel.visible = false)
 
 
 # ---------- 版面 ----------
-## 文明面板固定在羈絆面板左側；兩者都可收合成窄條（仍維持左右相對位置）
 func _apply_side_layout() -> void:
-	var civ_w := COLLAPSED_W if _civ_collapsed else CIV_W
-	var trait_w := COLLAPSED_W if _trait_collapsed else TRAIT_W
-	civ_panel.offset_left = 6.0
-	civ_panel.offset_right = 6.0 + civ_w
-	trait_panel.offset_left = civ_panel.offset_right + 6.0
-	trait_panel.offset_right = trait_panel.offset_left + trait_w
-	civ_scroll.visible = not _civ_collapsed
-	trait_scroll.visible = not _trait_collapsed
-	civ_title.visible = not _civ_collapsed
-	trait_title.visible = not _trait_collapsed
-	civ_toggle.text = "文▶" if _civ_collapsed else "◀"
-	trait_toggle.text = "羈▶" if _trait_collapsed else "◀"
-	civ_toggle.custom_minimum_size = Vector2(40 if _civ_collapsed else 34, 32)
-	trait_toggle.custom_minimum_size = Vector2(40 if _trait_collapsed else 34, 32)
-	# 面板不能小於內容最小寬度：等一個畫面後，依文明面板「實際」右緣擺放羈絆面板，避免重疊
-	await get_tree().process_frame
-	trait_panel.offset_left = civ_panel.get_global_rect().end.x + 6.0
-	trait_panel.offset_right = trait_panel.offset_left + trait_w
+	var lw := COLLAPSED_W if _left_collapsed else LEFT_W
+	left_panel.offset_right = 6.0 + lw
+	left_scroll.visible = not _left_collapsed
+	left_title.visible = not _left_collapsed
+	left_toggle.text = "▶" if _left_collapsed else "◀"
+	var detail := detail_box.visible
+	var rw := COLLAPSED_W if (leader.collapsed and not detail) else RIGHT_W
+	right_panel.offset_left = -6.0 - rw
+	leader_host.visible = not detail
 	_layout_deferred()
 
 
@@ -236,18 +355,37 @@ func _layout_deferred() -> void:
 func _layout() -> void:
 	if not is_inside_tree():
 		return
-	var vp := get_viewport_rect().size
-	var left := trait_panel.get_global_rect().end.x + 8.0
-	var right := info_panel.get_global_rect().position.x - 8.0 if info_panel.visible else vp.x - 8.0
+	var left := left_panel.get_global_rect().end.x + 8.0
+	var right := right_panel.get_global_rect().position.x - 8.0
 	var top := top_bar.get_global_rect().end.y + 6.0
-	var bottom := shop_bar.get_global_rect().position.y - 6.0
+	var bottom := bottom_bar.get_global_rect().position.y - 6.0
+	_sync_bottom_columns()
 	board.fit(Rect2(left, top, maxf(100.0, right - left), maxf(100.0, bottom - top)))
 	big_countdown.position.y = top + (bottom - top) * 0.35
 
 
+## 底部兩列使用相同的左右欄寬，讓 XP 條與五格商店完全等寬
+func _sync_bottom_columns() -> void:
+	var left_btns: Control = $BottomBar/VBox/RowB/LeftButtons
+	var right_btns: Control = $BottomBar/VBox/RowB/RightButtons
+	res_box.custom_minimum_size.x = 0
+	left_btns.custom_minimum_size.x = 0
+	var lw := maxf(maxf(res_box.get_combined_minimum_size().x, left_btns.get_combined_minimum_size().x), 220.0)
+	res_box.custom_minimum_size.x = lw
+	left_btns.custom_minimum_size.x = lw
+	var rw := maxf(maxf(bag_btn.get_combined_minimum_size().x, right_btns.get_combined_minimum_size().x), 150.0)
+	bag_btn.custom_minimum_size.x = rw
+	right_btns.custom_minimum_size.x = rw
+
+
 # ---------- 階段 ----------
 func _enter_prep() -> void:
+	# 先處理上一回合的裝備三選一（選擇時不計入 30 秒）
+	if run.has_pending_reward():
+		_show_reward()
+		return
 	phase = Phase.PREP
+	reward_overlay.visible = false
 	run.begin_round()
 	SaveSystem.save_run(run)
 	battle_player.clear()
@@ -255,62 +393,99 @@ func _enter_prep() -> void:
 	board.interactive = true
 	board.set_prep_visible(true)
 	board.show_prep(run)
-	result_overlay.visible = false
 	speed_btn.visible = false
 	skip_btn.visible = false
 	menu_btn.visible = true
-	report_btn.visible = not _last_report.is_empty()
 	_set_info("none", null)
 	_refresh()
-	# 商店與棋盤初始化完成後才開始 15 秒倒數（從圖鑑返回同一回合時接續剩餘秒數）
+	# 介面與棋盤初始化完成後才開始 30 秒倒數（從圖鑑返回同一回合時接續剩餘秒數）
 	prep_timer.start()
 	if Session.prep_time_round == run.round_no and Session.prep_time_left > 0.0:
 		prep_timer.remaining = Session.prep_time_left
 	Session.prep_time_round = -1
 	_last_seconds = -1
-	_update_timer_ui()
+	_update_bar()
 
 
 func _process(delta: float) -> void:
-	if phase == Phase.PREP:
-		prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible
-		if prep_timer.tick(delta):
-			_on_start_battle(true)
-			return
-		_update_timer_ui()
-	elif phase == Phase.BATTLE:
-		timer_label.text = "戰鬥 %.1f 秒・播放 %.1f×" % [battle_player.sim_time(), Session.playback_rate]
-		_info_refresh -= delta
-		if _info_mode == "battle" and _info_refresh <= 0.0:
-			_info_refresh = 0.2
-			_refresh_info()
+	match phase:
+		Phase.PREP:
+			prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible or item_overlay.visible
+			if prep_timer.tick(delta):
+				_on_start_battle(true)
+				return
+			_update_bar()
+		Phase.BATTLE:
+			_update_bar()
+			_info_refresh -= delta
+			if _info_mode == "battle" and _info_refresh <= 0.0:
+				_info_refresh = 0.2
+				_refresh_info()
+			_leader_refresh -= delta
+			if _leader_refresh <= 0.0:
+				_leader_refresh = 0.5
+				leader.set_stats(battle_player.live_stats())
+		Phase.AFTER:
+			_after_time -= delta
+			if _after_time <= 0.0:
+				if run.finished:
+					Session.goto(Session.SCENE_END)
+					phase = Phase.REWARD
+				else:
+					_enter_prep()
 
 
-func _update_timer_ui() -> void:
-	var secs := prep_timer.seconds_left()
-	var warn := prep_timer.is_warning()
-	big_countdown.visible = warn and not prep_timer.paused
-	if warn:
-		var pulse := 1.0 + 0.12 * absf(sin(Time.get_ticks_msec() / 150.0))
-		big_countdown.scale = Vector2(pulse, pulse)
-		big_countdown.pivot_offset = big_countdown.size * 0.5
-	if secs == _last_seconds:
-		return
-	_last_seconds = secs
-	var paused := "（暫停）" if prep_timer.paused else ""
-	timer_label.text = "備戰 %d 秒%s" % [secs, paused]
-	timer_label.add_theme_color_override("font_color", Color(1, 0.4, 0.35) if warn else Color(0.75, 0.9, 1.0))
-	big_countdown.text = str(secs)
-	start_btn.text = "開始戰鬥（%d）" % secs
+func _stage_text() -> String:
+	var st := GameData.stage(run.round_no)
+	var fac := str(st.get("faction", ""))
+	var tag := ""
+	if fac != "":
+		tag = "（%s）" % GameData.phase(fac).get("name", fac)
+	return "%s%s" % [st.get("name", ""), tag]
+
+
+func _update_bar() -> void:
+	match phase:
+		Phase.PREP:
+			bar.max_value = prep_timer.duration
+			bar.value = prep_timer.remaining
+			var secs := prep_timer.seconds_left()
+			var warn := prep_timer.is_warning()
+			big_countdown.visible = warn and not prep_timer.paused
+			if warn:
+				var pulse := 1.0 + 0.12 * absf(sin(Time.get_ticks_msec() / 150.0))
+				big_countdown.scale = Vector2(pulse, pulse)
+				big_countdown.pivot_offset = big_countdown.size * 0.5
+			if secs == _last_seconds:
+				return
+			_last_seconds = secs
+			_set_bar_color(Color(0.92, 0.3, 0.28) if warn else (Color(0.95, 0.78, 0.2) if prep_timer.is_caution() else Color(0.35, 0.6, 0.95)))
+			bar_left.text = " " + _stage_text()
+			bar_right.text = ("%d 秒（暫停）" % secs) if prep_timer.paused else ("%d 秒" % secs)
+			big_countdown.text = str(secs)
+		Phase.BATTLE:
+			bar.max_value = 1.0
+			bar.value = 1.0
+			bar_left.text = " 戰鬥中・" + _stage_text()
+			bar_right.text = "%.1f 秒 ×%.1f " % [battle_player.sim_time(), Session.playback_rate]
+		_:
+			bar.max_value = 1.0
+			bar.value = 1.0
+			bar_right.text = ""
+
+
+func _set_bar_neutral() -> void:
+	_set_bar_color(Color(0.30, 0.34, 0.42))
 
 
 func _on_run_changed() -> void:
-	if phase != Phase.PREP:
-		_refresh_top()
-		return
 	board.sync_prep()
-	_refresh()
-	SaveSystem.save_run(run)
+	if phase == Phase.PREP:
+		_refresh()
+		SaveSystem.save_run(run)
+	else:
+		_refresh_bottom()
+		_refresh_info()
 
 
 ## auto = 倒數結束自動開戰
@@ -318,7 +493,7 @@ func _on_start_battle(auto: bool) -> void:
 	if phase != Phase.PREP:
 		return
 	board.cancel_drag()
-	# 人口不足時從候補區最左側自動補位（補位完成後才建立戰鬥快照）
+	item_overlay.visible = false
 	var placed := run.auto_fill_board()
 	if run.board_count() == 0 and not auto:
 		_toast("場上與候補區都沒有棋子，請先招募")
@@ -326,16 +501,17 @@ func _on_start_battle(auto: bool) -> void:
 	prep_timer.stop()
 	big_countdown.visible = false
 	phase = Phase.BATTLE
+	_set_bar_neutral()
 	board.select(-1)
 	board.interactive = false
 	_last_result = run.start_battle()
 	board.set_prep_visible(false)
 	board.battle_mode = true
 	battle_player.play(_last_result, board)
+	leader.set_stats(battle_player.live_stats())
 	speed_btn.visible = true
 	skip_btn.visible = true
 	menu_btn.visible = false
-	report_btn.visible = false
 	debug_panel.visible = false
 	_update_speed_label()
 	_set_info("none", null)
@@ -349,81 +525,190 @@ func _on_start_battle(auto: bool) -> void:
 func _on_battle_finished() -> void:
 	if phase != Phase.BATTLE:
 		return
-	var report := run.settle(_last_result)
-	report["stats"] = _last_result.get("stats", [])
-	_last_report = report
+	var rep := run.settle(_last_result)
+	leader.set_stats(_last_result.get("stats", []))   # 保留上一場統計，直到下一場開始
 	if run.finished:
 		SaveSystem.clear()
 	else:
 		SaveSystem.save_run(run)
-	phase = Phase.RESULT
+	_toast_report(rep)
+	board.battle_mode = false
 	skip_btn.visible = false
-	_show_result(report, false)
+	phase = Phase.AFTER
+	_after_time = 2.5 if run.finished else 1.0
 	_refresh()
 
 
-func _on_result_continue() -> void:
-	result_overlay.visible = false
-	if _result_view_only:
-		_result_view_only = false
+## 不擋操作的戰後提示：收入、生命變化、升級
+func _toast_report(rep: Dictionary) -> void:
+	if rep["outcome"] == "defeat":
+		_toast("遠征生命歸零……", Color(1, 0.5, 0.5))
 		return
-	board.battle_mode = false
-	if run.finished:
-		Session.goto(Session.SCENE_END)
+	if rep["cleared"]:
+		_toast("全清敵軍", Color(0.55, 0.95, 0.6))
 	else:
+		_toast("未全清：遠征生命 −%d（剩 %d）" % [rep["hp_loss"], rep["hp_after"]], Color(1, 0.6, 0.55))
+	var total := int(rep["income_base"]) + int(rep["income_interest"]) + int(rep["income_clear"])
+	_toast("+%d 金（固定 %d・利息 %d・全清 %d）" % [total, rep["income_base"], rep["income_interest"], rep["income_clear"]], UiStyle.GOLD)
+	if int(rep["deer_heal"]) > 0:
+		_toast("鹿角人：遠征生命 +%d" % rep["deer_heal"], Color(0.55, 0.95, 0.6))
+	if rep["level_after"] != rep["level_before"]:
+		_toast("文明升到 Lv.%d！" % rep["level_after"], Color(0.6, 0.85, 1.0))
+	if rep["outcome"] == "victory":
+		_toast("遠征完成！", UiStyle.GOLD)
+	elif rep["outcome"] == "incomplete":
+		_toast("第 24 回合未能全清，遠征未完成", Color(1, 0.6, 0.55))
+
+
+# ---------- 裝備三選一 ----------
+func _show_reward() -> void:
+	phase = Phase.REWARD
+	prep_timer.stop()
+	big_countdown.visible = false
+	_set_bar_neutral()
+	bar_left.text = " 選擇裝備獎勵（不計備戰時間）"
+	bar_right.text = ""
+	for c in reward_cards.get_children():
+		reward_cards.remove_child(c)
+		c.queue_free()
+	var pr := run.pending_reward
+	var tier := str(GameData.equipment().get("tiers", {}).get(pr["tier"], {}).get("name", ""))
+	var fac := str(GameData.equipment().get("factions", {}).get(pr["faction"], {}).get("name", ""))
+	reward_title.text = "第 %d 回合獎勵：%s（%s）" % [int(pr["round"]), fac, tier]
+	var choices: Array = pr["choices"]
+	for i in choices.size():
+		reward_cards.add_child(_item_card(str(choices[i]), "選擇", func(): _claim(i)))
+	reward_overlay.visible = true
+	_refresh_top()
+
+
+func _claim(i: int) -> void:
+	var id := str(run.pending_reward["choices"][i])
+	if run.claim_reward(i) == "":
+		reward_overlay.visible = false
+		_toast("獲得裝備：%s（已放入背包）" % GameData.item(id)["name"], UiStyle.GOLD)
+		SaveSystem.save_run(run)
 		_enter_prep()
 
 
-func _show_result(rep: Dictionary, view_only: bool) -> void:
-	_result_view_only = view_only
-	var lines: Array = []
-	var cleared: bool = rep["cleared"]
-	if view_only:
-		result_title.text = "第 %d 回合戰報" % rep["round"]
-		result_title.add_theme_color_override("font_color", UiStyle.GOLD)
-	elif rep["outcome"] == "defeat":
-		result_title.text = "遠征失敗"
-		result_title.add_theme_color_override("font_color", UiStyle.BAD)
-	elif rep["outcome"] == "victory":
-		result_title.text = "遠征完成！"
-		result_title.add_theme_color_override("font_color", UiStyle.GOLD)
-	elif rep["outcome"] == "incomplete":
-		result_title.text = "遠征未完成"
-		result_title.add_theme_color_override("font_color", UiStyle.BAD)
-	else:
-		result_title.text = "第 %d 回合：%s" % [rep["round"], "全清敵軍" if cleared else "未能全清"]
-		result_title.add_theme_color_override("font_color", UiStyle.GOOD if cleared else UiStyle.BAD)
-	if cleared:
-		lines.append("[color=#6bdc85]敵軍全滅，遠征生命不受損。[/color]")
-	else:
-		lines.append("剩餘敵軍威脅 [b]%d[/b] × 回合倍率 %.1f → 遠征生命 [color=#ff6b6b]-%d[/color]" % [
-			rep["threat"], Economy.round_multiplier(int(rep["round"])), rep["hp_loss"]])
-	if int(rep["deer_heal"]) > 0:
-		lines.append("鹿角人文明：遠征生命 +%d" % rep["deer_heal"])
-	lines.append("遠征生命：%d → [b]%d[/b] / %d" % [rep["hp_before"], rep.get("hp_after", run.hp), Economy.max_hp()])
-	if rep["outcome"] != "defeat":
-		var total := int(rep["income_base"]) + int(rep["income_interest"]) + int(rep["income_clear"])
-		lines.append("收入 [color=#ffd24d]+%d 金[/color]（固定 %d、利息 %d、全清獎勵 %d）" % [
-			total, rep["income_base"], rep["income_interest"], rep["income_clear"]])
-		if int(rep["xp_gain"]) > 0:
-			lines.append("自然經驗 +%d XP" % rep["xp_gain"] + ("　[color=#8fd0ff]文明升到 Lv.%d！[/color]" % rep["level_after"] if rep["level_after"] != rep["level_before"] else ""))
-	result_text.text = "\n".join(lines)
-	_leader_metric = "damage"
-	_set_leader_metric(_leader_metric)
-	if view_only:
-		result_btn.text = "關閉"
-	else:
-		result_btn.text = "查看遠征結算" if run.finished else "進入第 %d 回合備戰" % run.round_no
-	result_overlay.visible = true
+func _item_card(id: String, action: String, on_press: Callable) -> Control:
+	var it := GameData.item(id)
+	var tinfo := Equipment.type_info(id)
+	var tier := Equipment.tier_info(id)
+	var p := PanelContainer.new()
+	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UiStyle.apply_panel(p, Color(0.12, 0.14, 0.19), Color(str(tier.get("color", "#888"))))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	var h := HBoxContainer.new()
+	h.add_child(UiIcon.make(str(it.get("type", "weapon")), Color(str(tinfo.get("color", "#fff"))), 34))
+	var nm := Label.new()
+	nm.text = str(it.get("name", id))
+	nm.add_theme_font_size_override("font_size", 18)
+	nm.add_theme_color_override("font_color", Color(str(tier.get("color", "#fff"))))
+	h.add_child(nm)
+	v.add_child(h)
+	v.add_child(InfoView.make_rich(_item_text(id), 13))
+	if action != "":
+		var b := Button.new()
+		b.text = action
+		b.custom_minimum_size = Vector2(0, 44)
+		UiStyle.style_button(b, Color(0.55, 0.36, 0.08), UiStyle.GOLD, 16)
+		b.pressed.connect(on_press)
+		v.add_child(b)
+	p.add_child(v)
+	return p
 
 
-func _set_leader_metric(metric: String) -> void:
-	_leader_metric = metric
-	for i in _leader_tabs.size():
-		var active: bool = Leaderboard.ORDER[i] == metric
-		UiStyle.style_button(_leader_tabs[i], Color(0.55, 0.36, 0.08) if active else Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
-	var stats: Array = _last_report.get("stats", _last_result.get("stats", []))
-	LeaderboardView.build(leader_list, stats, metric)
+func _item_text(id: String) -> String:
+	var it := GameData.item(id)
+	var tinfo := Equipment.type_info(id)
+	var tier := Equipment.tier_info(id)
+	var fac := str(GameData.equipment().get("factions", {}).get(it.get("faction", ""), {}).get("name", ""))
+	var lines: Array = ["[color=#9aa3ad]%s・%s・%s[/color]" % [tier.get("name", ""), tinfo.get("name", ""), fac]]
+	for l in Equipment.stat_lines(id):
+		lines.append("[color=%s]%s[/color]" % [COLOR_UP, l])
+	if it.has("passive"):
+		lines.append("[color=#ffd34d]被動[/color]：%s" % it.get("desc", ""))
+	return "\n".join(lines)
+
+
+# ---------- 裝備欄與背包 ----------
+func _on_equip_slot(slot: int) -> void:
+	var items: Array = _current_items()
+	var editable := phase == Phase.PREP and _info_mode == "unit"
+	if slot < items.size():
+		_show_item_info(str(items[slot]), slot, editable)
+	elif not editable:
+		_toast("戰鬥中不能更換裝備" if phase == Phase.BATTLE else "只能在備戰時穿戴自己的棋子")
+	elif run.inventory.is_empty():
+		_toast("背包沒有裝備（裝備回合完成後可三選一）")
+	else:
+		_show_picker(slot)
+
+
+func _current_items() -> Array:
+	match _info_mode:
+		"unit":
+			var f := run.find_unit(int(_info_ref))
+			return RunState.unit_items(f["unit"]) if not f.is_empty() else []
+		"battle":
+			return battle_player.unit_snapshot(int(_info_ref)).get("items", [])
+	return []
+
+
+func _open_item_overlay(title: String) -> void:
+	item_title.text = title
+	for c in item_body.get_children():
+		item_body.remove_child(c)
+		c.queue_free()
+	for c in item_buttons.get_children():
+		item_buttons.remove_child(c)
+		c.queue_free()
+	item_overlay.visible = true
+
+
+func _overlay_button(text: String, cb: Callable, primary: bool = false) -> void:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(110, 44)
+	UiStyle.style_button(b, Color(0.55, 0.36, 0.08) if primary else Color(0.18, 0.21, 0.28), UiStyle.GOLD if primary else Color(1, 1, 1, 0.15), 15)
+	b.pressed.connect(cb)
+	item_buttons.add_child(b)
+
+
+func _show_item_info(id: String, slot: int, editable: bool) -> void:
+	_open_item_overlay(str(GameData.item(id).get("name", id)))
+	item_body.add_child(_item_card(id, "", Callable()))
+	if editable:
+		var uid := int(_info_ref)
+		_overlay_button("卸下", func():
+			_report(run.unequip(uid, slot))
+			item_overlay.visible = false)
+		if not run.inventory.is_empty():
+			_overlay_button("更換", func(): _show_picker(slot))
+	_overlay_button("關閉", func(): item_overlay.visible = false, true)
+
+
+## 從背包選一件穿到目前選取的棋子（slot 有裝備時互換）
+func _show_picker(slot: int) -> void:
+	var uid := int(_info_ref)
+	_open_item_overlay("選擇裝備（背包 %d 件）" % run.inventory.size())
+	for i in run.inventory.size():
+		var idx := i
+		item_body.add_child(_item_card(str(run.inventory[i]), "穿上", func():
+			_report(run.equip(uid, idx, slot))
+			item_overlay.visible = false))
+	_overlay_button("取消", func(): item_overlay.visible = false)
+
+
+func _show_bag() -> void:
+	_open_item_overlay("背包（%d 件）" % run.inventory.size())
+	if run.inventory.is_empty():
+		item_body.add_child(InfoView.make_rich("[color=#9aa3ad]目前沒有裝備。完成第 3、6、9、12、15、18、21 回合後可以三選一。\n選取棋子後，點資訊卡下方的空裝備欄即可穿上。[/color]", 14))
+	for id in run.inventory:
+		item_body.add_child(_item_card(str(id), "", Callable()))
+	_overlay_button("關閉", func(): item_overlay.visible = false, true)
 
 
 # ---------- 操作 ----------
@@ -460,8 +745,9 @@ func _sell(uid: int) -> void:
 	if f.is_empty():
 		return
 	var value := UnitStats.sell_value(f["unit"]["id"], int(f["unit"]["star"]))
+	var n_items := RunState.unit_items(f["unit"]).size()
 	if run.sell(uid) == "":
-		_toast("出售 %s，+%d 金" % [GameData.unit(f["unit"]["id"])["name"], value])
+		_toast("出售 %s，+%d 金%s" % [GameData.unit(f["unit"]["id"])["name"], value, "（裝備已回到背包）" if n_items > 0 else ""])
 		board.select(-1)
 
 
@@ -473,7 +759,7 @@ func _cycle_speed() -> void:
 
 
 func _update_speed_label() -> void:
-	speed_btn.text = "速度 %d×" % int(Session.battle_speed)
+	speed_btn.text = "%d×" % int(Session.battle_speed)
 
 
 func _show_menu(v: bool) -> void:
@@ -496,54 +782,194 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_SPACE:
 			if phase == Phase.PREP:
 				_on_start_battle(false)
-			elif phase == Phase.RESULT:
-				_on_result_continue()
 		KEY_ESCAPE:
-			if phase != Phase.BATTLE:
+			if item_overlay.visible:
+				item_overlay.visible = false
+			elif phase != Phase.BATTLE:
 				_show_menu(not menu_overlay.visible)
 
 
-func _toast(msg: String) -> void:
-	toast.text = msg
-	toast.visible = true
-	toast.modulate.a = 1.0
-	if _toast_tween and _toast_tween.is_valid():
-		_toast_tween.kill()
-	_toast_tween = create_tween()
-	_toast_tween.tween_interval(1.4)
-	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.4)
-	_toast_tween.tween_callback(func(): toast.visible = false)
+## 不擋操作的短暫提示（可堆疊）
+func _toast(msg: String, color: Color = Color(1, 0.95, 0.75)) -> void:
+	var l := Label.new()
+	l.text = msg
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 18)
+	l.add_theme_color_override("font_color", color)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 6)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toasts.add_child(l)
+	while toasts.get_child_count() > 4:
+		var old := toasts.get_child(0)
+		toasts.remove_child(old)
+		old.queue_free()
+	var tw := l.create_tween()
+	tw.tween_interval(2.2)
+	tw.tween_property(l, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(l.queue_free)
 
 
-# ---------- 選取 ----------
+func last_toast() -> String:
+	var n := toasts.get_child_count()
+	return (toasts.get_child(n - 1) as Label).text if n > 0 else ""
+
+
+func toast_texts() -> Array:
+	var out: Array = []
+	for c in toasts.get_children():
+		out.append((c as Label).text)
+	return out
+
+
+# ---------- 右側詳細資訊 ----------
 func _set_info(mode: String, ref: Variant) -> void:
-	var changed: bool = mode != _info_mode or ref != _info_ref
 	_info_mode = mode
 	_info_ref = ref
-	if mode != "none" and not info_panel.visible:
-		info_panel.visible = true
-		_layout_deferred()
-	if changed:
-		_info.clear()
+	var show := mode != "none"
+	if show != detail_box.visible:
+		detail_box.visible = show
+		_apply_side_layout()
 	_refresh_info()
 
 
-func _on_unit_selected(uid: int) -> void:
-	_set_info("unit" if uid >= 0 else "none", uid if uid >= 0 else null)
+func _close_detail() -> void:
+	board.select(-1)
+	board.select_battle(-1)
+	board.select_enemy_cell(HexGrid.INVALID)
+	_set_info("none", null)
 
 
-func _on_enemy_selected(unit_id: String, star: int) -> void:
-	_set_info("enemy", {"id": unit_id, "star": star})
+func _refresh_info() -> void:
+	sell_btn.visible = false
+	card.visible = false
+	_detail_text.visible = false
+	match _info_mode:
+		"unit":
+			_info_prep_unit(int(_info_ref))
+		"enemy":
+			_info_enemy(_info_ref)
+		"battle":
+			_info_battle(int(_info_ref))
+		"trait":
+			_info_trait(_info_ref)
 
 
-func _on_battle_unit_selected(cid: int) -> void:
-	_set_info("battle" if cid >= 0 else "none", cid if cid >= 0 else null)
+func _info_prep_unit(uid: int) -> void:
+	var f := run.find_unit(uid)
+	if f.is_empty():
+		_set_info("none", null)
+		return
+	var u: Dictionary = f["unit"]
+	var id := str(u["id"])
+	var items: Array = RunState.unit_items(u)
+	var sources: Array = []
+	var note := ""
+	if f["where"] == "board":
+		var lineup := run.board_lineup()
+		var ids: Array = []
+		var its: Array = []
+		for p in lineup:
+			ids.append(p["id"])
+			its.append(p["items"])
+		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		for i in lineup.size():
+			if int(lineup[i]["uid"]) == uid:
+				sources = all_sources[i]
+		note = "場上：已含文明、羈絆與裝備"
+	else:
+		sources = Modifiers.sources_for_lineup([id], "", false, [items])[0]
+		note = "候補區：只計裝備（上場後才套用文明與羈絆）"
+	if phase == Phase.BATTLE:
+		note += "。戰鬥中只能查看"
+	detail_title.text = "棋子資訊"
+	card.visible = true
+	card.show_unit({"ref": "u%d" % uid, "id": id, "star": int(u["star"]), "side": 0, "sources": sources, "items": items, "note": note})
+	if phase == Phase.PREP:
+		sell_btn.visible = true
+		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, int(u["star"]))
+
+
+func _info_enemy(ref: Dictionary) -> void:
+	detail_title.text = "敵方資訊"
+	card.visible = true
+	card.show_unit({"ref": "e%s" % str(ref), "id": str(ref["id"]), "star": int(ref["star"]), "side": 1, "sources": [], "items": [],
+		"note": "敵軍沒有文明加成；敵方羈絆預設關閉"})
+
+
+## 戰鬥中查看：以 cid 讀取戰鬥單位的即時狀態（唯讀，不影響戰鬥）
+func _info_battle(cid: int) -> void:
+	var snap := battle_player.unit_snapshot(cid)
+	if snap.is_empty():
+		_set_info("none", null)
+		return
+	var side := int(snap["side"])
+	var sources: Array = []
+	if side == 0:
+		var lineup := battle_player.player_lineup()
+		var ids: Array = []
+		var its: Array = []
+		for p in lineup:
+			ids.append(p["id"])
+			its.append(p.get("items", []))
+		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true, its)
+		for i in lineup.size():
+			if int(lineup[i]["cid"]) == cid:
+				sources = all_sources[i]
+	var tk := battle_player.token(cid)
+	var live := {"hp": tk.hp if tk else 0.0, "max_hp": tk.max_hp if tk else 1.0, "shield": tk.shield if tk else 0.0, "mana": tk.mana if tk else 0.0}
+	if not battle_player.is_alive(cid):
+		live["hp"] = 0.0
+	var st_names: Array = []
+	for st in battle_player.live_statuses(cid):
+		st_names.append("%s %.1f 秒" % [StatBreakdown.STATUS_NAMES.get(st["kind"], st["kind"]), float(st["left"])])
+	detail_title.text = "敵方（戰鬥中）" if side == 1 else "我方（戰鬥中）"
+	card.visible = true
+	card.show_unit({"ref": "c%d" % cid, "id": str(snap["id"]), "star": int(snap["star"]), "side": side, "sources": sources,
+		"statuses": battle_player.live_statuses(cid), "live": live, "items": snap.get("items", []),
+		"note": ("已陣亡。" if not battle_player.is_alive(cid) else "") + ("狀態：" + "、".join(st_names) if not st_names.is_empty() else "目前沒有增益或負面狀態")})
+
+
+func _info_trait(ref: Dictionary) -> void:
+	var board_units: Array = []
+	for p in run.board_lineup():
+		board_units.append({"id": p["id"], "star": p["star"]})
+	var bench_units: Array = []
+	for b in run.bench:
+		if b != null:
+			bench_units.append({"id": b["id"], "star": b["star"]})
+	var d := Synergy.detail(str(ref["group"]), str(ref["key"]), board_units, bench_units, run.civ_id)
+	var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[d["group"]]
+	detail_title.text = "羈絆：%s（%s）" % [d["name"], group_name]
+	var lines: Array = []
+	var tier := int(d["tier"])
+	lines.append("[color=#ffd24d]已啟動第 %d 階（上場 %d 種）[/color]" % [tier + 1, d["count"]] if tier >= 0 else "[color=#9aa3ad]未啟動（上場 %d 種）[/color]" % d["count"])
+	var th: Array = d["thresholds"]
+	var next_need := -1
+	for t in th:
+		if int(d["count"]) < int(t):
+			next_need = int(t)
+			break
+	lines.append("下一階：需要 %d 種，還差 %d 種" % [next_need, next_need - int(d["count"])] if next_need > 0 else "已達最高階")
+	lines.append("")
+	for i in th.size():
+		lines.append("%s[b]%d 種[/b]：%s[/color]" % ["[color=#ffd24d]" if i == tier else "[color=#9aa3ad]", th[i], d["texts"][i]])
+	lines.append("")
+	lines.append("[b]成員[/b]　[color=#8a90a0]（只計已上場且不同名稱）[/color]")
+	for m in d["members"]:
+		var stars := ""
+		if not m["stars"].is_empty():
+			stars = "　" + "、".join(m["stars"].map(func(s): return "★".repeat(int(s))))
+		var nm := "[s]%s[/s]" % m["name"] if m["state"] == "unavailable" else str(m["name"])
+		lines.append("%s　%s %d 費%s" % [STATE_MARK[m["state"]], nm, m["cost"], stars])
+	_detail_text.visible = true
+	_detail_text.text = "\n".join(lines)
 
 
 # ---------- 畫面更新 ----------
 func _refresh() -> void:
 	_refresh_top()
-	_refresh_level()
+	_refresh_bottom()
 	_refresh_shop()
 	_refresh_civ()
 	_refresh_traits()
@@ -551,36 +977,35 @@ func _refresh() -> void:
 
 
 func _refresh_top() -> void:
-	var boss := "・首領" if GameData.is_boss_round(run.round_no) else ""
-	round_label.text = "回合 %d/%d・第%d章%s" % [run.round_no, GameData.total_rounds(), run.chapter(), boss]
-	hp_label.text = "生命 %d/%d" % [run.hp, Economy.max_hp()]
+	round_label.text = "%d/%d" % [run.round_no, GameData.total_rounds()]
+	reward_dots.set_state(run.round_no, run.rewards_claimed)
+
+
+## 底部：金幣｜Lv｜生命｜人口，XP 條（右側顯示升到下一級至少要花的金幣）
+func _refresh_bottom() -> void:
+	_gold_label.text = str(run.gold)
 	var nxt := Economy.next_interest(run.gold)
-	if nxt.is_empty():
-		gold_label.text = "金幣 %d（利息 +%d・已達上限）" % [run.gold, run.current_interest()]
-	else:
-		gold_label.text = "金幣 %d（利息 +%d・再 %d 金 → +%d）" % [run.gold, run.current_interest(), nxt["need"], nxt["next_interest"]]
-	if phase == Phase.PREP:
-		var st := GameData.stage(run.round_no)
-		var stars: Array = []
-		for e in st.get("units", []):
-			stars.append(int(e["star"]))
-		threat_label.text = "%s：敵 %d・威脅 %d" % [st.get("name", ""), stars.size(), Economy.threat(stars)]
-
-
-## 文明等級與經驗：顯示在商店旁（小而清楚）
-func _refresh_level() -> void:
+	_interest_label.text = "+%d" % run.current_interest()
+	_interest_label.tooltip_text = "利息 +%d" % run.current_interest() + ("（已達上限）" if nxt.is_empty() else "；再 %d 金 → +%d" % [int(nxt["need"]), int(nxt["next_interest"])])
+	_lv_label.text = "Lv.%d" % run.level()
+	_hp_label.text = "%d/%d" % [run.hp, Economy.max_hp()]
+	_pop_label.text = "%d/%d" % [run.board_count(), run.board_limit()]
 	var plan := Economy.xp_plan(run.xp)
-	level_label.text = "Lv.%d" % run.level()
-	pop_label.text = "上場 %d/%d" % [run.board_count(), run.board_limit()]
 	if plan["max"]:
 		xp_bar.max_value = 1
 		xp_bar.value = 1
-		xp_text.text = "已達最高等級"
-		return
-	xp_bar.max_value = plan["need"]
-	xp_bar.value = plan["cur"]
-	xp_text.text = "經驗 %d/%d・還差 %d XP\n購買 +%d XP／%d 金：再 %d 次（%d 金）" % [
-		plan["cur"], plan["need"], plan["missing"], Economy.xp_per_buy(), Economy.xp_cost(), plan["buys"], plan["cost"]]
+		xp_left.text = " Lv.%d" % run.level()
+		_xp_cost_label.text = ""
+		_xp_coin.visible = false
+		_xp_word.text = "MAX"
+	else:
+		xp_bar.max_value = plan["need"]
+		xp_bar.value = plan["cur"]
+		xp_left.text = " %d/%d XP" % [plan["cur"], plan["need"]]
+		_xp_cost_label.text = str(plan["cost"])
+		_xp_coin.visible = true
+		_xp_word.text = "升級"
+	_btn_text(bag_btn, "背包 %d" % run.inventory.size())
 
 
 func _refresh_shop() -> void:
@@ -605,47 +1030,41 @@ func _refresh_shop() -> void:
 		var col := GameData.tier_color(cost)
 		UiStyle.style_button(b, col.darkened(0.62), col, 14)
 		b.disabled = not prep or run.can_buy(i) != ""
-		b.tooltip_text = "%s｜%s\n%s" % [u["name"], UnitStats.skill(id).get("name", ""), UnitStats.skill_text(id, 1)]
-	if run.free_rerolls > 0:
-		reroll_btn.text = "免費刷新（%d）" % run.free_rerolls
-		reroll_btn.disabled = not prep
-	else:
-		reroll_btn.text = "刷新（%d 金）" % Economy.reroll_cost()
-		reroll_btn.disabled = not prep or run.gold < Economy.reroll_cost()
+	var cost_text := "免費 ×%d" % run.free_rerolls if run.free_rerolls > 0 else "刷新 %d" % Economy.reroll_cost()
+	_btn_text(reroll_btn, cost_text)
+	reroll_btn.disabled = not prep or (run.free_rerolls <= 0 and run.gold < Economy.reroll_cost())
 	if run.level() >= Economy.max_level():
-		xp_btn.text = "文明已滿級"
-		xp_btn.disabled = true
+		_btn_text(civup_btn, "MAX")
+		civup_btn.disabled = true
 	else:
-		xp_btn.text = "買經驗 +%d（%d 金）" % [Economy.xp_per_buy(), Economy.xp_cost()]
-		xp_btn.disabled = not prep or run.gold < Economy.xp_cost()
-	lock_btn.text = "已鎖定（點擊解鎖）" if run.shop_locked else "鎖定商店"
+		_btn_text(civup_btn, "+%d XP・%d 金" % [Economy.xp_per_buy(), Economy.xp_cost()])
+		civup_btn.disabled = not prep or run.gold < Economy.xp_cost()
+	_btn_text(lock_btn, "已鎖定" if run.shop_locked else "鎖定", "lock" if run.shop_locked else "unlock")
 	lock_btn.disabled = not prep
 	start_btn.disabled = not prep
-	if not prep:
-		start_btn.text = "戰鬥中…"
+	_btn_text(start_btn, "戰鬥中" if phase == Phase.BATTLE else "開戰")
 
 
-## 文明面板：常駐顯示 2 Buff（藍）與 2 Debuff（紅）
+## 文明（羈絆清單第一項）：平常只顯示名稱，點擊展開 2 Buff（藍）＋2 Debuff（紅）
 func _refresh_civ() -> void:
 	var c := GameData.civ(run.civ_id)
+	civ_btn.text = "  %s文明 %s" % [c.get("name", ""), "▼" if _civ_open else "▶"]
 	var lines: Array = []
-	lines.append("[b][color=%s]%s[/color][/b]" % [UiStyle.hex_color(GameData.race_color(str(c.get("race", ""))).lightened(0.3)), c.get("name", "")])
 	for bf in c.get("buffs", []):
 		lines.append("[color=%s]▲ %s[/color]" % [COLOR_UP, bf["text"]])
 	for df in c.get("debuffs", []):
 		lines.append("[color=%s]▼ %s[/color]" % [COLOR_DOWN, df["text"]])
-	civ_text.text = "\n".join(lines)
+	civ_detail.text = "\n".join(lines)
+	civ_detail.visible = _civ_open
 
 
-## 羈絆面板：每個羈絆是一個按鈕，點擊後在右側顯示完整名單
 func _refresh_traits() -> void:
 	for c in trait_list.get_children():
 		trait_list.remove_child(c)
 		c.queue_free()
 	var summary := Synergy.summary(run.synergy_counts())
 	if summary.is_empty():
-		var l := InfoView.make_rich("[color=#9aa3ad]把棋子放上棋盤即可啟動羈絆（同名只計 1 種）。[/color]", 13)
-		trait_list.add_child(l)
+		trait_list.add_child(InfoView.make_rich("[color=#9aa3ad]把棋子放上棋盤即可啟動羈絆（同名只計 1 種）。[/color]", 13))
 	for s in summary:
 		var th: Array = s["thresholds"]
 		var active := int(s["tier"]) >= 0
@@ -657,10 +1076,9 @@ func _refresh_traits() -> void:
 		var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[s["group"]]
 		var b := Button.new()
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.custom_minimum_size = Vector2(0, 34)
+		b.custom_minimum_size = Vector2(0, 36)
 		b.clip_text = true
 		b.text = "%s %s・%d%s" % [s["name"], group_name, s["count"], next if next != "" else "（滿）"]
-		b.tooltip_text = "點擊查看完整名單"
 		if active:
 			UiStyle.style_button(b, Color(0.45, 0.32, 0.08), UiStyle.GOLD, 14)
 		else:
@@ -670,177 +1088,6 @@ func _refresh_traits() -> void:
 		var k: String = s["key"]
 		b.pressed.connect(func(): _set_info("trait", {"group": g, "key": k}))
 		trait_list.add_child(b)
-	var tip := InfoView.make_rich("[color=#8a90a0]點羈絆可看所有成員與取得狀態[/color]", 12)
-	trait_list.add_child(tip)
-
-
-func _refresh_info() -> void:
-	sell_btn.visible = false
-	match _info_mode:
-		"unit":
-			_info_prep_unit(int(_info_ref))
-		"enemy":
-			_info_enemy(_info_ref)
-		"battle":
-			_info_battle(int(_info_ref))
-		"trait":
-			_info_trait(_info_ref)
-		_:
-			info_title.text = "棋子資訊"
-			_info.show_text("[color=#9aa3ad]點選棋子查看屬性、數值來源與技能。\n\n• 點棋子＝選取；點另一隻＝切換\n• 選取後點空格＝移動\n• 拖曳＝移動或互換\n• 拖到下方商店列＝出售\n• 點棋盤外空白處＝取消選取\n• 戰鬥中也可點雙方棋子查看即時數值\n• 點左側羈絆可看完整名單\n\n電腦快捷鍵：D 刷新、F 買經驗、E 出售、空白鍵 開戰[/color]")
-
-
-func _unit_header(id: String, star: int, note: String) -> String:
-	var u := GameData.unit(id)
-	var cost := int(u["cost"])
-	var lines: Array = []
-	if not GameData.is_special(id):
-		lines.append("[color=%s]%s %d 費[/color]　[color=#ffe873]%s[/color]" % [UiStyle.hex_color(GameData.tier_color(cost)), GameData.tier_name(cost), cost, UiStyle.stars(star)])
-		lines.append(UiStyle.unit_line(id))
-	else:
-		lines.append("[color=#9aa3ad]教學用弱敵（固定屬性、無主動技能）[/color]")
-	if note != "":
-		lines.append(note)
-	return "\n".join(lines)
-
-
-func _skill_footer(id: String, star: int) -> String:
-	var sk := UnitStats.skill(id)
-	var lines: Array = []
-	lines.append("")
-	lines.append("[color=#ffd34d]技能｜%s[/color]" % str(sk.get("name", "")))
-	lines.append(UnitStats.skill_text(id, star))
-	lines.append("")
-	lines.append("[color=#8a90a0]裝備欄（V0.3 開放）：［ 空 ］［ 空 ］[/color]")
-	return "\n".join(lines)
-
-
-func _info_prep_unit(uid: int) -> void:
-	var f := run.find_unit(uid)
-	if f.is_empty():
-		_set_info("none", null)
-		return
-	var u: Dictionary = f["unit"]
-	var id := str(u["id"])
-	var star := int(u["star"])
-	info_title.text = "%s %s" % [GameData.unit(id)["name"], UiStyle.stars(star)]
-	var sources: Array = []
-	var note := "[color=#9aa3ad]候補區：尚未套用文明與羈絆[/color]"
-	if f["where"] == "board":
-		var lineup := run.board_lineup()
-		var ids: Array = []
-		for p in lineup:
-			ids.append(p["id"])
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true)
-		for i in lineup.size():
-			if int(lineup[i]["uid"]) == uid:
-				sources = all_sources[i]
-		note = "[color=#9aa3ad]場上：已含文明與羈絆修正[/color]"
-	_info.update_stats(_unit_header(id, star, note), StatBreakdown.build(id, star, sources), _skill_footer(id, star))
-	if phase == Phase.PREP:
-		sell_btn.visible = true
-		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, star)
-
-
-func _info_enemy(ref: Dictionary) -> void:
-	var id := str(ref["id"])
-	var star := int(ref["star"])
-	info_title.text = "敵方：%s %s" % [GameData.unit(id)["name"], UiStyle.stars(star)]
-	var note := "[color=#9aa3ad]敵軍沒有文明加成；V0.1 起敵方羈絆預設關閉。[/color]"
-	_info.update_stats(_unit_header(id, star, note), StatBreakdown.build(id, star, []), _skill_footer(id, star))
-
-
-## 戰鬥中查看：以 cid 讀取戰鬥單位的即時狀態（唯讀，不影響戰鬥）
-func _info_battle(cid: int) -> void:
-	var snap := battle_player.unit_snapshot(cid)
-	if snap.is_empty():
-		_set_info("none", null)
-		return
-	var id := str(snap["id"])
-	var star := int(snap["star"])
-	var side := int(snap["side"])
-	info_title.text = "%s%s %s" % ["敵方：" if side == 1 else "", GameData.unit(id)["name"], UiStyle.stars(star)]
-	var sources: Array = []
-	if side == 0:
-		var lineup := battle_player.player_lineup()
-		var ids: Array = []
-		for p in lineup:
-			ids.append(p["id"])
-		var all_sources := Modifiers.sources_for_lineup(ids, run.civ_id, true)
-		for i in lineup.size():
-			if int(lineup[i]["cid"]) == cid:
-				sources = all_sources[i]
-	var statuses := battle_player.live_statuses(cid)
-	var tk := battle_player.token(cid)
-	var alive := battle_player.is_alive(cid)
-	var live: Array = []
-	if tk:
-		if alive:
-			live.append("生命 [b]%d[/b] / %d　護盾 %d" % [roundi(tk.hp), roundi(tk.max_hp), roundi(tk.shield)])
-			live.append("魔力 %d / %d" % [roundi(tk.mana), roundi(tk.mana_max)])
-		else:
-			live.append("[color=#ff6b6b]已陣亡[/color]")
-	if statuses.is_empty():
-		live.append("[color=#8a90a0]目前沒有增益或負面狀態[/color]")
-	for st in statuses:
-		var kind := str(st["kind"])
-		var neg := kind in UnitToken.NEGATIVE
-		var nm := str(StatBreakdown.STATUS_NAMES.get(kind, kind))
-		var val := ""
-		if float(st["value"]) != 0.0:
-			val = " %s%s" % ["-" if neg else "+", StatBreakdown._f(absf(float(st["value"])))]
-			if kind in ["atk_up", "atk_down", "slow", "dmg_up", "phys_dr", "mark", "as_up"]:
-				val += "%"
-		live.append("[color=%s]%s %s%s（剩 %.1f 秒）[/color]" % [COLOR_DOWN if neg else COLOR_UP, "▼" if neg else "▲", nm, val, float(st["left"])])
-	live.append("[color=#8a90a0]戰鬥中只能查看，不能移動或出售[/color]")
-	var header := _unit_header(id, star, "\n".join(live))
-	_info.update_stats(header, StatBreakdown.build(id, star, sources, statuses), _skill_footer(id, star))
-
-
-## 羈絆完整名單：已上場／候補／未持有／本文明無法取得
-func _info_trait(ref: Dictionary) -> void:
-	var board_units: Array = []
-	for p in run.board_lineup():
-		board_units.append({"id": p["id"], "star": p["star"]})
-	var bench_units: Array = []
-	for b in run.bench:
-		if b != null:
-			bench_units.append({"id": b["id"], "star": b["star"]})
-	var d := Synergy.detail(str(ref["group"]), str(ref["key"]), board_units, bench_units, run.civ_id)
-	var group_name: String = {"race": "種族", "type": "類型", "class": "職業"}[d["group"]]
-	info_title.text = "羈絆：%s（%s）" % [d["name"], group_name]
-	var lines: Array = []
-	var tier := int(d["tier"])
-	if tier >= 0:
-		lines.append("[color=#ffd24d]已啟動第 %d 階（上場 %d 種）[/color]" % [tier + 1, d["count"]])
-	else:
-		lines.append("[color=#9aa3ad]未啟動（上場 %d 種）[/color]" % d["count"])
-	var th: Array = d["thresholds"]
-	var next_need := -1
-	for t in th:
-		if int(d["count"]) < int(t):
-			next_need = int(t)
-			break
-	if next_need > 0:
-		lines.append("下一階：需要 %d 種，還差 %d 種" % [next_need, next_need - int(d["count"])])
-	else:
-		lines.append("已達最高階")
-	lines.append("")
-	for i in th.size():
-		var on := i == tier
-		lines.append("%s[b]%d 種[/b]：%s%s" % ["[color=#ffd24d]" if on else "[color=#9aa3ad]", th[i], d["texts"][i], "[/color]"])
-	lines.append("")
-	lines.append("[b]成員[/b]　[color=#8a90a0]（只計已上場且不同名稱）[/color]")
-	for m in d["members"]:
-		var stars := ""
-		if not m["stars"].is_empty():
-			var parts: Array = []
-			for s in m["stars"]:
-				parts.append("★".repeat(int(s)))
-			stars = "　" + "、".join(parts)
-		var name := "[s]%s[/s]" % m["name"] if m["state"] == "unavailable" else str(m["name"])
-		lines.append("%s　%s %d 費%s" % [STATE_MARK[m["state"]], name, m["cost"], stars])
-	_info.show_text("\n".join(lines))
 
 
 # ---------- 除錯 ----------
@@ -867,11 +1114,12 @@ func _debug_win() -> void:
 	prep_timer.stop()
 	run.gold_at_battle_start = run.gold
 	_last_result = {"cleared": true, "threat": 0, "alive_enemies": [], "stats": []}
-	var report := run.settle(_last_result)
-	report["stats"] = []
-	_last_report = report
+	var rep := run.settle(_last_result)
 	if run.finished:
 		SaveSystem.clear()
-	phase = Phase.RESULT
-	_show_result(report, false)
+	else:
+		SaveSystem.save_run(run)
+	_toast_report(rep)
+	phase = Phase.AFTER
+	_after_time = 0.3
 	_refresh()

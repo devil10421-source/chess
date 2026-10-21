@@ -22,6 +22,7 @@ var shield := 0.0
 var mana := 0.0
 var mana_max := 60.0
 var selected := false
+var items: Array = []           # 身上的裝備 id（畫小方塊提示）
 var dragging := false
 var bump := Vector2.ZERO
 var flash_color := Color(1, 1, 1, 0)
@@ -161,6 +162,12 @@ func _draw() -> void:
 	var stars := "★".repeat(star)
 	var star_col := UiStyle.STAR_COLOR if star < 3 else Color(1, 0.75, 0.9)
 	draw_string(UiStyle.FONT, o + Vector2(-r, -r * 1.02), stars, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, int(r * 0.5), star_col)
+	# 裝備提示：右下角小方塊（顏色＝裝備類型）
+	for i in items.size():
+		var info := Equipment.type_info(str(items[i]))
+		var p := o + Vector2(r * (0.55 + i * 0.32), r * 0.62)
+		draw_rect(Rect2(p - Vector2(r * 0.13, r * 0.13), Vector2(r * 0.26, r * 0.26)), Color(str(info.get("color", "#ffffff"))))
+		draw_rect(Rect2(p - Vector2(r * 0.13, r * 0.13), Vector2(r * 0.26, r * 0.26)), Color(0, 0, 0, 0.6), false, 1.0)
 	# 受擊／施法閃光
 	if flash_color.a > 0.01:
 		draw_circle(o, r * 1.05, flash_color)

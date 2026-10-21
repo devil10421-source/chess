@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/game_screen.gd" id="1_game"]
 [ext_resource type="Script" path="res://scripts/ui/board_view.gd" id="2_board"]
 [ext_resource type="Script" path="res://scripts/ui/battle_fx.gd" id="3_fx"]
 [ext_resource type="Script" path="res://scripts/ui/battle_player.gd" id="4_player"]
+[ext_resource type="Script" path="res://scripts/ui/reward_dots.gd" id="5_dots"]
 
 [node name="Game" type="Control"]
 layout_mode = 3
@@ -44,313 +45,352 @@ anchor_right = 1.0
 offset_left = 6.0
 offset_top = 6.0
 offset_right = -6.0
-offset_bottom = 50.0
+offset_bottom = 58.0
 grow_horizontal = 2
 
 [node name="HBox" type="HBoxContainer" parent="TopBar"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_override_constants/separation = 12
 
-[node name="RoundLabel" type="Label" parent="TopBar/HBox"]
+[node name="RoundBox" type="VBoxContainer" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(118, 0)
 layout_mode = 2
-text = "回合 1/24"
+theme_override_constants/separation = 0
+
+[node name="RoundLabel" type="Label" parent="TopBar/HBox/RoundBox"]
+layout_mode = 2
+text = "1/24"
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+
+[node name="RewardDots" type="Control" parent="TopBar/HBox/RoundBox"]
+custom_minimum_size = Vector2(112, 14)
+layout_mode = 2
+script = ExtResource("5_dots")
+
+[node name="Countdown" type="Control" parent="TopBar/HBox"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 4
 
-[node name="HpLabel" type="Label" parent="TopBar/HBox"]
-layout_mode = 2
-text = "生命 40/40"
-size_flags_vertical = 4
+[node name="Bar" type="ProgressBar" parent="TopBar/HBox/Countdown"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+max_value = 30.0
+value = 30.0
+show_percentage = false
 
-[node name="GoldLabel" type="Label" parent="TopBar/HBox"]
-layout_mode = 2
-text = "金幣 5"
-size_flags_vertical = 4
+[node name="BarText" type="HBoxContainer" parent="TopBar/HBox/Countdown"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
 
-[node name="ThreatLabel" type="Label" parent="TopBar/HBox"]
+[node name="BarLeft" type="Label" parent="TopBar/HBox/Countdown/BarText"]
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
-size_flags_vertical = 4
 clip_text = true
-text_overrun_behavior = 3
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+vertical_alignment = 1
 
-[node name="TimerLabel" type="Label" parent="TopBar/HBox"]
+[node name="BarRight" type="Label" parent="TopBar/HBox/Countdown/BarText"]
 layout_mode = 2
 text = ""
-size_flags_vertical = 4
-
-[node name="ReportButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(92, 34)
-layout_mode = 2
-text = "上場戰報"
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+vertical_alignment = 1
 
 [node name="SpeedButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(84, 34)
+custom_minimum_size = Vector2(52, 36)
 layout_mode = 2
-text = "速度 1×"
+text = "1×"
 
 [node name="SkipButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(92, 34)
+custom_minimum_size = Vector2(60, 36)
 layout_mode = 2
-text = "略過動畫"
+text = "略過"
 
 [node name="DebugButton" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(62, 34)
+custom_minimum_size = Vector2(56, 36)
 layout_mode = 2
 text = "除錯"
 
 [node name="MenuBtn" type="Button" parent="TopBar/HBox"]
-custom_minimum_size = Vector2(62, 34)
+custom_minimum_size = Vector2(56, 36)
 layout_mode = 2
 text = "選單"
 
-[node name="CivPanel" type="PanelContainer" parent="."]
+[node name="LeftPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
 offset_left = 6.0
-offset_top = 56.0
-offset_right = 176.0
-offset_bottom = -136.0
+offset_top = 64.0
+offset_right = 196.0
+offset_bottom = -168.0
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="CivPanel"]
+[node name="VBox" type="VBoxContainer" parent="LeftPanel"]
 layout_mode = 2
 
-[node name="Header" type="HBoxContainer" parent="CivPanel/VBox"]
+[node name="Header" type="HBoxContainer" parent="LeftPanel/VBox"]
 layout_mode = 2
 
-[node name="CivTitle" type="Label" parent="CivPanel/VBox/Header"]
+[node name="Title" type="Label" parent="LeftPanel/VBox/Header"]
 layout_mode = 2
-text = "文明"
+text = "文明與羈絆"
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
 clip_text = true
 
-[node name="CivToggle" type="Button" parent="CivPanel/VBox/Header"]
-custom_minimum_size = Vector2(34, 32)
+[node name="Toggle" type="Button" parent="LeftPanel/VBox/Header"]
+custom_minimum_size = Vector2(40, 32)
 layout_mode = 2
 text = "◀"
 
-[node name="CivScroll" type="ScrollContainer" parent="CivPanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="LeftPanel/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="CivText" type="RichTextLabel" parent="CivPanel/VBox/CivScroll"]
+[node name="List" type="VBoxContainer" parent="LeftPanel/VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="CivButton" type="Button" parent="LeftPanel/VBox/Scroll/List"]
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+text = "文明 ▶"
+alignment = 0
+clip_text = true
+
+[node name="CivDetail" type="RichTextLabel" parent="LeftPanel/VBox/Scroll/List"]
 layout_mode = 2
 size_flags_horizontal = 3
 bbcode_enabled = true
 fit_content = true
 scroll_active = false
-theme_override_font_sizes/normal_font_size = 14
-theme_override_font_sizes/bold_font_size = 16
+visible = false
+theme_override_font_sizes/normal_font_size = 13
 
-[node name="TraitPanel" type="PanelContainer" parent="."]
-layout_mode = 1
-anchors_preset = 9
-anchor_bottom = 1.0
-offset_left = 182.0
-offset_top = 56.0
-offset_right = 372.0
-offset_bottom = -136.0
-grow_vertical = 2
-
-[node name="VBox" type="VBoxContainer" parent="TraitPanel"]
+[node name="TraitList" type="VBoxContainer" parent="LeftPanel/VBox/Scroll/List"]
 layout_mode = 2
-
-[node name="Header" type="HBoxContainer" parent="TraitPanel/VBox"]
-layout_mode = 2
-
-[node name="TraitTitle" type="Label" parent="TraitPanel/VBox/Header"]
-layout_mode = 2
-text = "羈絆"
-size_flags_horizontal = 3
-theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
-clip_text = true
-
-[node name="TraitToggle" type="Button" parent="TraitPanel/VBox/Header"]
-custom_minimum_size = Vector2(34, 32)
-layout_mode = 2
-text = "◀"
-
-[node name="TraitScroll" type="ScrollContainer" parent="TraitPanel/VBox"]
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="TraitList" type="VBoxContainer" parent="TraitPanel/VBox/TraitScroll"]
-layout_mode = 2
-size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="InfoPanel" type="PanelContainer" parent="."]
+[node name="RightPanel" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -276.0
-offset_top = 56.0
+offset_left = -286.0
+offset_top = 64.0
 offset_right = -6.0
-offset_bottom = -136.0
+offset_bottom = -168.0
 grow_horizontal = 0
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="InfoPanel"]
+[node name="Stack" type="VBoxContainer" parent="RightPanel"]
 layout_mode = 2
 
-[node name="Header" type="HBoxContainer" parent="InfoPanel/VBox"]
+[node name="LeaderHost" type="VBoxContainer" parent="RightPanel/Stack"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DetailBox" type="VBoxContainer" parent="RightPanel/Stack"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Header" type="HBoxContainer" parent="RightPanel/Stack/DetailBox"]
 layout_mode = 2
 
-[node name="InfoTitle" type="Label" parent="InfoPanel/VBox/Header"]
+[node name="DetailTitle" type="Label" parent="RightPanel/Stack/DetailBox/Header"]
 layout_mode = 2
-text = "棋子資訊"
+text = ""
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
 clip_text = true
 
-[node name="CloseInfoButton" type="Button" parent="InfoPanel/VBox/Header"]
-custom_minimum_size = Vector2(34, 32)
+[node name="CloseDetail" type="Button" parent="RightPanel/Stack/DetailBox/Header"]
+custom_minimum_size = Vector2(40, 32)
 layout_mode = 2
-text = "▶"
+text = "×"
 
-[node name="InfoScroll" type="ScrollContainer" parent="InfoPanel/VBox"]
+[node name="Scroll" type="ScrollContainer" parent="RightPanel/Stack/DetailBox"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="InfoBody" type="VBoxContainer" parent="InfoPanel/VBox/InfoScroll"]
+[node name="Body" type="VBoxContainer" parent="RightPanel/Stack/DetailBox/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 3
 
-[node name="SellButton" type="Button" parent="InfoPanel/VBox"]
-custom_minimum_size = Vector2(0, 44)
+[node name="SellButton" type="Button" parent="RightPanel/Stack/DetailBox"]
+custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = "出售"
 
-[node name="ShopBar" type="PanelContainer" parent="."]
+[node name="BottomBar" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 6.0
-offset_top = -130.0
+offset_top = -162.0
 offset_right = -6.0
 offset_bottom = -6.0
 grow_horizontal = 2
 grow_vertical = 0
 
-[node name="HBox" type="HBoxContainer" parent="ShopBar"]
+[node name="VBox" type="VBoxContainer" parent="BottomBar"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RowA" type="HBoxContainer" parent="BottomBar/VBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="LevelBox" type="VBoxContainer" parent="ShopBar/HBox"]
-custom_minimum_size = Vector2(150, 0)
+[node name="ResBox" type="HBoxContainer" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(230, 30)
 layout_mode = 2
-theme_override_constants/separation = 2
+theme_override_constants/separation = 3
 
-[node name="LevelRow" type="HBoxContainer" parent="ShopBar/HBox/LevelBox"]
+[node name="XpBox" type="Control" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
-
-[node name="LevelLabel" type="Label" parent="ShopBar/HBox/LevelBox/LevelRow"]
-layout_mode = 2
-text = "Lv.1"
-theme_override_colors/font_color = Color(0.65, 0.85, 1, 1)
-theme_override_font_sizes/font_size = 24
-
-[node name="PopLabel" type="Label" parent="ShopBar/HBox/LevelBox/LevelRow"]
-layout_mode = 2
-text = "上場 0/1"
 size_flags_horizontal = 3
-size_flags_vertical = 4
-horizontal_alignment = 2
-theme_override_font_sizes/font_size = 14
 
-[node name="XpBar" type="ProgressBar" parent="ShopBar/HBox/LevelBox"]
-custom_minimum_size = Vector2(0, 12)
-layout_mode = 2
+[node name="XpBar" type="ProgressBar" parent="BottomBar/VBox/RowA/XpBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 max_value = 2.0
 show_percentage = false
 
-[node name="XpText" type="Label" parent="ShopBar/HBox/LevelBox"]
-layout_mode = 2
-text = "經驗 0/2"
-theme_override_font_sizes/font_size = 13
-theme_override_colors/font_color = Color(0.8, 0.86, 0.95, 1)
+[node name="XpText" type="HBoxContainer" parent="BottomBar/VBox/RowA/XpBox"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
-[node name="LeftButtons" type="VBoxContainer" parent="ShopBar/HBox"]
-custom_minimum_size = Vector2(140, 0)
+[node name="XpLeft" type="Label" parent="BottomBar/VBox/RowA/XpBox/XpText"]
+layout_mode = 2
+text = " 0/2 XP"
+size_flags_horizontal = 3
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+
+[node name="XpRight" type="HBoxContainer" parent="BottomBar/VBox/RowA/XpBox/XpText"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 3
+
+[node name="BagButton" type="Button" parent="BottomBar/VBox/RowA"]
+custom_minimum_size = Vector2(150, 30)
+layout_mode = 2
+text = "背包 0"
+
+[node name="RowB" type="HBoxContainer" parent="BottomBar/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="LeftButtons" type="VBoxContainer" parent="BottomBar/VBox/RowB"]
+custom_minimum_size = Vector2(230, 0)
 layout_mode = 2
 
-[node name="RerollButton" type="Button" parent="ShopBar/HBox/LeftButtons"]
+[node name="RerollButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-text = "刷新（2 金）"
+text = ""
 size_flags_vertical = 3
 
-[node name="XpButton" type="Button" parent="ShopBar/HBox/LeftButtons"]
+[node name="CivUpButton" type="Button" parent="BottomBar/VBox/RowB/LeftButtons"]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-text = "買經驗（4 金）"
+text = ""
 size_flags_vertical = 3
 
-[node name="ShopSlots" type="HBoxContainer" parent="ShopBar/HBox"]
+[node name="ShopSlots" type="HBoxContainer" parent="BottomBar/VBox/RowB"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="Slot0" type="Button" parent="ShopBar/HBox/ShopSlots"]
-custom_minimum_size = Vector2(96, 100)
+[node name="Slot0" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 100)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
-[node name="Slot1" type="Button" parent="ShopBar/HBox/ShopSlots"]
-custom_minimum_size = Vector2(96, 100)
+[node name="Slot1" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 100)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
-[node name="Slot2" type="Button" parent="ShopBar/HBox/ShopSlots"]
-custom_minimum_size = Vector2(96, 100)
+[node name="Slot2" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 100)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
-[node name="Slot3" type="Button" parent="ShopBar/HBox/ShopSlots"]
-custom_minimum_size = Vector2(96, 100)
+[node name="Slot3" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 100)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
-[node name="Slot4" type="Button" parent="ShopBar/HBox/ShopSlots"]
-custom_minimum_size = Vector2(96, 100)
+[node name="Slot4" type="Button" parent="BottomBar/VBox/RowB/ShopSlots"]
+custom_minimum_size = Vector2(90, 100)
 layout_mode = 2
 text = ""
 size_flags_horizontal = 3
 clip_text = true
 
-[node name="RightButtons" type="VBoxContainer" parent="ShopBar/HBox"]
-custom_minimum_size = Vector2(160, 0)
+[node name="RightButtons" type="VBoxContainer" parent="BottomBar/VBox/RowB"]
+custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 
-[node name="LockButton" type="Button" parent="ShopBar/HBox/RightButtons"]
-custom_minimum_size = Vector2(0, 40)
-layout_mode = 2
-text = "鎖定商店"
-
-[node name="StartButton" type="Button" parent="ShopBar/HBox/RightButtons"]
+[node name="StartButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
 custom_minimum_size = Vector2(0, 60)
 layout_mode = 2
-text = "開始戰鬥"
+text = ""
 size_flags_vertical = 3
+
+[node name="LockButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = ""
 
 [node name="BigCountdown" type="Label" parent="."]
 visible = false
@@ -372,7 +412,7 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "5"
 
-[node name="ResultOverlay" type="CenterContainer" parent="."]
+[node name="RewardOverlay" type="CenterContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -382,70 +422,70 @@ grow_vertical = 2
 visible = false
 mouse_filter = 0
 
-[node name="Panel" type="PanelContainer" parent="ResultOverlay"]
-custom_minimum_size = Vector2(600, 0)
+[node name="Panel" type="PanelContainer" parent="RewardOverlay"]
+custom_minimum_size = Vector2(720, 0)
 layout_mode = 2
 
-[node name="VBox" type="VBoxContainer" parent="ResultOverlay/Panel"]
+[node name="VBox" type="VBoxContainer" parent="RewardOverlay/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RewardTitle" type="Label" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+text = "裝備獎勵"
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
+
+[node name="Cards" type="HBoxContainer" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RewardHint" type="Label" parent="RewardOverlay/Panel/VBox"]
+layout_mode = 2
+text = "選擇一件加入背包（選擇時不計備戰時間）"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
+
+[node name="ItemOverlay" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+visible = false
+mouse_filter = 0
+
+[node name="Panel" type="PanelContainer" parent="ItemOverlay"]
+custom_minimum_size = Vector2(420, 0)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="ItemOverlay/Panel"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="ResultTitle" type="Label" parent="ResultOverlay/Panel/VBox"]
+[node name="ItemTitle" type="Label" parent="ItemOverlay/Panel/VBox"]
 layout_mode = 2
-text = "結算"
-theme_override_font_sizes/font_size = 26
-horizontal_alignment = 1
+text = ""
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
 
-[node name="ResultText" type="RichTextLabel" parent="ResultOverlay/Panel/VBox"]
+[node name="ItemScroll" type="ScrollContainer" parent="ItemOverlay/Panel/VBox"]
+custom_minimum_size = Vector2(0, 240)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ItemBody" type="VBoxContainer" parent="ItemOverlay/Panel/VBox/ItemScroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-bbcode_enabled = true
-fit_content = true
-scroll_active = false
-theme_override_font_sizes/normal_font_size = 15
-
-[node name="BoardTitle" type="Label" parent="ResultOverlay/Panel/VBox"]
-layout_mode = 2
-text = "戰鬥貢獻排行"
-theme_override_colors/font_color = Color(1, 0.82, 0.3, 1)
-theme_override_font_sizes/font_size = 16
-
-[node name="LeaderTabs" type="HBoxContainer" parent="ResultOverlay/Panel/VBox"]
-layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Tab0" type="Button" parent="ResultOverlay/Panel/VBox/LeaderTabs"]
-custom_minimum_size = Vector2(0, 36)
+[node name="ItemButtons" type="HBoxContainer" parent="ItemOverlay/Panel/VBox"]
 layout_mode = 2
-text = "傷害輸出"
-size_flags_horizontal = 3
-
-[node name="Tab1" type="Button" parent="ResultOverlay/Panel/VBox/LeaderTabs"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "承受傷害"
-size_flags_horizontal = 3
-
-[node name="Tab2" type="Button" parent="ResultOverlay/Panel/VBox/LeaderTabs"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "護盾吸收"
-size_flags_horizontal = 3
-
-[node name="Tab3" type="Button" parent="ResultOverlay/Panel/VBox/LeaderTabs"]
-custom_minimum_size = Vector2(0, 36)
-layout_mode = 2
-text = "有效治療"
-size_flags_horizontal = 3
-
-[node name="LeaderList" type="VBoxContainer" parent="ResultOverlay/Panel/VBox"]
-layout_mode = 2
-theme_override_constants/separation = 3
-
-[node name="ResultButton" type="Button" parent="ResultOverlay/Panel/VBox"]
-custom_minimum_size = Vector2(0, 50)
-layout_mode = 2
-text = "繼續"
+theme_override_constants/separation = 8
+alignment = 1
 
 [node name="MenuOverlay" type="CenterContainer" parent="."]
 layout_mode = 1
@@ -498,9 +538,9 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -230.0
-offset_top = 56.0
+offset_top = 64.0
 offset_right = 230.0
-offset_bottom = 300.0
+offset_bottom = 340.0
 grow_horizontal = 2
 
 [node name="VBox" type="VBoxContainer" parent="DebugPanel"]
@@ -548,14 +588,20 @@ size_flags_horizontal = 3
 [node name="Row3" type="HBoxContainer" parent="DebugPanel/VBox"]
 layout_mode = 2
 
+[node name="ItemButton" type="Button" parent="DebugPanel/VBox/Row3"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+text = "+1 隨機裝備"
+size_flags_horizontal = 3
+
 [node name="WinButton" type="Button" parent="DebugPanel/VBox/Row3"]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "直接過關→下一關"
 size_flags_horizontal = 3
 
-[node name="CloseDebugButton" type="Button" parent="DebugPanel/VBox/Row3"]
-custom_minimum_size = Vector2(80, 40)
+[node name="CloseDebugButton" type="Button" parent="DebugPanel/VBox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "關閉"
 
@@ -566,22 +612,15 @@ ok_button_text = "放棄並回主選單"
 cancel_button_text = "取消"
 dialog_text = "確定要放棄目前的遠征嗎？存檔會被清除。"
 
-[node name="Toast" type="Label" parent="."]
-visible = false
+[node name="Toasts" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -300.0
-offset_top = 60.0
+offset_top = 66.0
 offset_right = 300.0
-offset_bottom = 100.0
+offset_bottom = 200.0
 grow_horizontal = 2
 mouse_filter = 2
-theme_override_colors/font_color = Color(1, 0.95, 0.75, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 6
-theme_override_font_sizes/font_size = 20
-horizontal_alignment = 1
-vertical_alignment = 1
-text = ""
+theme_override_constants/separation = 4

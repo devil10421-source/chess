@@ -1,158 +1,223 @@
 class_name StatBreakdown
 extends RefCounted
-## 棋子屬性的「最終數值 + 來源明細」，給資訊面板使用。純計算、不依賴畫面。
-## 每列：{key, label, value(數值), text(顯示字串), extra(附註), lines: [{label, text, sign}]}
-## sign：1 = 增加（藍字）、-1 = 減少（紅字）、0 = 基礎或無修正（一般文字）。
+## 棋子屬性宮格資料（V0.3 最終版）。純計算、不依賴畫面。
+## 每格只顯示「圖示＋最終數字」；顏色由「最終值 vs 目前星級的基礎值」決定：高於＝藍、低於＝紅、相等＝白。
+## 升星本身已含在「目前星級基礎值」裡，所以正常升星不會讓數字變藍。
+## 點擊格子才顯示 lines（來源明細），只列出實際存在的來源。
+##
+## 格子：{key, icon, label, value, base, text, sign(1/0/-1), lines: [{cat, label, text, sign}], extra: [String]}
+## cat：base 基礎／civ 文明／trait 羈絆／item 裝備／status 暫時性戰鬥效果／cond 條件效果（不影響數字）
 
-const PCT_ROWS := {
-	"basic": {"label": "普攻傷害", "stats": ["basic_dmg_pct", "melee_basic_pct", "ranged_basic_pct"]},
-	"skill": {"label": "技能傷害", "stats": ["skill_dmg_pct", "skill_direct_pct", "magic_dmg_pct", "magic_direct_pct"]},
-	"heal": {"label": "給出的治療與護盾", "stats": ["heal_shield_pct"]},
-	"heal_in": {"label": "接受治療量", "stats": ["heal_received_pct"]},
-	"cc": {"label": "施加控制時間", "stats": ["cc_duration_pct"]},
-	"cc_in": {"label": "受到控制時間", "stats": ["cc_received_pct"]},
-	"special": {"label": "條件增傷", "stats": ["low_hp_direct_pct", "execute_pct"]},
-}
-
-const STAT_NAMES := {
-	"basic_dmg_pct": "普攻", "melee_basic_pct": "近戰普攻", "ranged_basic_pct": "遠程普攻",
-	"skill_dmg_pct": "技能（含持續傷害）", "skill_direct_pct": "技能直接傷害", "magic_dmg_pct": "法術傷害",
-	"magic_direct_pct": "法術直接傷害", "low_hp_direct_pct": "自身 HP<50% 直接傷害", "execute_pct": "對 HP<35% 敵人",
-}
-
+const CAT_NAMES := {"base": "基礎", "civ": "文明", "trait": "羈絆", "item": "裝備", "status": "戰鬥效果", "cond": "條件"}
 const STATUS_NAMES := {"atk_up": "攻擊力提升", "atk_down": "攻擊力降低", "armor_up": "護甲提升", "armor_down": "破甲",
 	"mr_up": "魔抗提升", "mr_down": "魔抗降低", "slow": "緩速", "as_up": "攻速提升", "dmg_up": "直接傷害提升",
 	"phys_dr": "物理減傷", "mark": "被標記", "stun": "暈眩", "root": "定身", "taunt": "被嘲諷", "dot": "持續傷害", "hot": "持續治療"}
 
+## 宮格順序：3 欄 × 4 列
+const ORDER := ["atk", "armor", "mr", "as", "move", "range", "crit", "crit_dmg", "mana", "skill", "heal", "cc"]
 
-static func _f(v: float) -> String:
-	if is_equal_approx(v, roundf(v)):
+
+static func _f(v: float, digits: int = 0) -> String:
+	if digits == 0 or is_equal_approx(v, roundf(v)):
 		return str(int(roundf(v)))
-	return "%.1f" % v
+	return ("%." + str(digits) + "f") % v
 
 
-static func _signed(v: float, suffix: String = "") -> String:
-	return ("+" if v >= 0.0 else "") + _f(v) + suffix
+static func _signed(v: float, suffix: String = "", digits: int = 0) -> String:
+	return ("+" if v >= 0.0 else "−") + _f(absf(v), digits) + suffix
 
 
-static func _sign(v: float) -> int:
-	if v > 0.0001:
+static func _sign(v: float, eps: float = 0.0001) -> int:
+	if v > eps:
 		return 1
-	if v < -0.0001:
+	if v < -eps:
 		return -1
 	return 0
 
 
-## sources：Modifiers.sources_for_lineup 的單隻結果；statuses：戰鬥中的狀態 [{kind, value}]（備戰傳空陣列）
-static func build(unit_id: String, star: int, sources: Array, statuses: Array = []) -> Array:
+static func _src_lines(sources: Array, stats: Array, suffix: String, filter: Callable = Callable()) -> Array:
+	var out: Array = []
+	for e in sources:
+		if not (str(e["stat"]) in stats):
+			continue
+		if filter.is_valid() and not filter.call(e):
+			continue
+		var v := float(e["value"])
+		if absf(v) < 0.0001:
+			continue
+		out.append({"cat": str(e["source"]), "label": str(e["label"]), "text": _signed(v, suffix), "sign": _sign(v)})
+	return out
+
+
+static func _status_sum(statuses: Array, kind: String) -> float:
+	var t := 0.0
+	for st in statuses:
+		if st["kind"] == kind:
+			t += float(st["value"])
+	return t
+
+
+static func _status_lines(statuses: Array, plus_kind: String, minus_kind: String, suffix: String) -> Array:
+	var out: Array = []
+	for st in statuses:
+		var k := str(st["kind"])
+		if k != plus_kind and k != minus_kind:
+			continue
+		var v := float(st["value"]) * (1.0 if k == plus_kind else -1.0)
+		var left := " （剩 %.1f 秒）" % float(st["left"]) if st.has("left") else ""
+		out.append({"cat": "status", "label": str(STATUS_NAMES.get(k, k)) + left, "text": _signed(v, suffix), "sign": _sign(v)})
+	return out
+
+
+static func _cell(key: String, icon: String, label: String, value: float, base: float, text: String, lines: Array, extra: Array = [], eps: float = 0.0001) -> Dictionary:
+	return {"key": key, "icon": icon, "label": label, "value": value, "base": base, "text": text,
+		"sign": _sign(value - base, eps), "lines": lines, "extra": extra}
+
+
+## sources：Modifiers.sources_for_lineup 的單隻結果；statuses：戰鬥中的狀態 [{kind, value, left?}]；
+## live：戰鬥中的即時值 {mana}（備戰傳空字典）
+static func cells(unit_id: String, star: int, sources: Array, statuses: Array = [], live: Dictionary = {}) -> Array:
 	var u := GameData.unit(unit_id)
-	var cost := int(u.get("cost", 1))
-	var tier: Dictionary = GameData.cfg("tiers").get(str(cost), {})
-	var cls: Dictionary = GameData.cfg("classes").get(str(u.get("class", "")), {})
-	var base1 := UnitStats.base_stats(unit_id, 1)
 	var base := UnitStats.base_stats(unit_id, star)
 	var mods := Modifiers.sum_sources(sources)
 	var fin := UnitStats.final_stats(unit_id, star, mods)
-	var rows: Array = []
-	var origin := "%s %d 費 × %s" % [GameData.tier_name(cost), cost, cls.get("name", "")] if not u.has("stats") else "特殊單位固定值"
-
-	# 生命
-	var hp_lines: Array = [{"label": "基礎生命（%s）" % origin, "text": _f(base1["hp"]), "sign": 0}]
-	if star > 1:
-		hp_lines.append({"label": "星級 %s ×%s" % ["★".repeat(star), _f(base["hp"] / maxf(1.0, base1["hp"]))], "text": _signed(base["hp"] - base1["hp"]), "sign": 1})
-	for e in sources:
-		if e["stat"] == "hp_pct":
-			hp_lines.append({"label": e["label"], "text": "%s（%s）" % [_signed(e["value"], "%"), _signed(base["hp"] * e["value"] / 100.0)], "sign": _sign(e["value"])})
-	rows.append({"key": "hp", "label": "生命", "value": fin["hp"], "text": _f(fin["hp"]), "net": fin["hp"] - base["hp"], "lines": hp_lines})
-
-	# 攻擊力
-	var atk_lines: Array = [{"label": "基礎攻擊（%s）" % origin, "text": _f(base1["atk"]), "sign": 0}]
-	if star > 1:
-		atk_lines.append({"label": "星級 %s ×%s" % ["★".repeat(star), _f(snappedf(base["atk"] / maxf(0.1, base1["atk"]), 0.01))], "text": _signed(base["atk"] - base1["atk"]), "sign": 1})
-	var atk_pct := 0.0
-	for st in statuses:
-		if st["kind"] in ["atk_up", "atk_down"]:
-			var v := float(st["value"]) * (1.0 if st["kind"] == "atk_up" else -1.0)
-			atk_pct += v
-			atk_lines.append({"label": "狀態：" + STATUS_NAMES[st["kind"]], "text": _signed(v, "%"), "sign": _sign(v)})
-	var atk_now: float = base["atk"] * maxf(0.1, 1.0 + atk_pct / 100.0)
-	rows.append({"key": "atk", "label": "攻擊力", "value": atk_now, "text": _f(snappedf(atk_now, 0.1)), "net": atk_pct, "lines": atk_lines})
-
-	# 普攻傷害（攻擊力 × 普攻加成）
 	var melee := int(u.get("range", 1)) <= 1
-	var b_lines: Array = [{"label": "攻擊力", "text": _f(snappedf(atk_now, 0.1)), "sign": 0}]
-	var b_pct := 0.0
-	for e in sources:
-		var st_key := str(e["stat"])
-		if st_key == "basic_dmg_pct" or (st_key == "melee_basic_pct" and melee) or (st_key == "ranged_basic_pct" and not melee):
-			b_pct += float(e["value"])
-			b_lines.append({"label": e["label"], "text": _signed(e["value"], "%"), "sign": _sign(e["value"])})
-	if b_lines.size() == 1:
-		b_lines.append({"label": "文明加成／羈絆加成／負面修正", "text": "0%", "sign": 0})
-	var basic_dmg: float = atk_now * maxf(0.0, 1.0 + b_pct / 100.0)
-	rows.append({"key": "basic", "label": "普攻傷害", "value": basic_dmg, "text": "%s（%s）" % [_f(snappedf(basic_dmg, 0.1)), _signed(b_pct, "%")],
-		"net": b_pct, "extra": "暴擊率 %d%%、暴擊傷害 %d%%" % [roundi(base["crit_chance"] * 100.0), roundi(base["crit_mult"] * 100.0)], "lines": b_lines})
+	var stars := "★".repeat(star)
+	var out: Array = []
 
-	# 護甲、魔抗
-	for pair in [["armor", "護甲（物防）", "armor_flat", "armor_up", "armor_down", "armor_add"], ["mr", "魔抗（魔防）", "mr_flat", "mr_up", "mr_down", "mr_add"]]:
+	# 1. 攻擊力（普攻傷害）＝（基礎攻擊＋裝備固定值）×（1＋狀態%）×（1＋普攻加成%）
+	var atk_pct := _status_sum(statuses, "atk_up") - _status_sum(statuses, "atk_down")
+	var atk_now := float(fin["atk"]) * maxf(0.1, 1.0 + atk_pct / 100.0)
+	var basic_stats := ["basic_dmg_pct", "melee_basic_pct" if melee else "ranged_basic_pct"]
+	var basic_pct := 0.0
+	for e in sources:
+		if str(e["stat"]) in basic_stats:
+			basic_pct += float(e["value"])
+	var atk_val := atk_now * maxf(0.0, 1.0 + basic_pct / 100.0)
+	var lines: Array = [{"cat": "base", "label": "基礎攻擊（%s，已含星級）" % stars, "text": _f(base["atk"], 1), "sign": 0}]
+	lines.append_array(_src_lines(sources, ["atk_flat"], ""))
+	lines.append_array(_src_lines(sources, basic_stats, "%"))
+	lines.append_array(_status_lines(statuses, "atk_up", "atk_down", "%"))
+	lines.append_array(_cond_lines(sources))
+	out.append(_cell("atk", "sword", "攻擊力", atk_val, float(base["atk"]), _f(atk_val), lines, [], 0.05))
+
+	# 2、3. 物防、魔防
+	for pair in [["armor", "shield", "物理防禦", "armor_flat", "armor_up", "armor_down"], ["mr", "magic_shield", "魔法防禦", "mr_flat", "mr_up", "mr_down"]]:
 		var key: String = pair[0]
-		var lines: Array = [{"label": "基礎（%s）" % origin, "text": _f(base1[key]), "sign": 0}]
-		if star > 1:
-			lines.append({"label": "星級 %s" % "★".repeat(star), "text": _signed(base[key] - base1[key]), "sign": 1})
-		var total := float(fin[key])
-		for e in sources:
-			if e["stat"] == pair[2]:
-				lines.append({"label": e["label"], "text": _signed(e["value"]), "sign": _sign(e["value"])})
-		for st in statuses:
-			if st["kind"] == pair[3] or st["kind"] == pair[4]:
-				var v := float(st["value"]) * (1.0 if st["kind"] == pair[3] else -1.0)
-				total += v
-				lines.append({"label": "狀態：" + STATUS_NAMES[st["kind"]], "text": _signed(v), "sign": _sign(v)})
-		var eff := maxf(0.0, total)
-		var red := UnitStats.defense_reduction(eff)
-		lines.append({"label": "減傷率 = %s × D ÷ (D + %s)" % [_f(GameData.cfg("defense").get("max_reduction", 0.75) * 100.0) + "%", _f(GameData.cfg("defense").get("k", 75))], "text": "%.1f%%" % (red * 100.0), "sign": 0})
-		rows.append({"key": key, "label": pair[1], "value": eff, "text": "%s（減傷 %.1f%%）" % [_f(eff), red * 100.0], "net": eff - float(base[key]), "lines": lines})
+		var v := float(fin[key]) + _status_sum(statuses, pair[4]) - _status_sum(statuses, pair[5])
+		v = maxf(0.0, v)
+		var ls: Array = [{"cat": "base", "label": "基礎防禦（%s，已含星級）" % stars, "text": _f(base[key]), "sign": 0}]
+		ls.append_array(_src_lines(sources, [pair[3]], ""))
+		ls.append_array(_status_lines(statuses, pair[4], pair[5], ""))
+		var red := UnitStats.defense_reduction(v)
+		var dcfg := GameData.cfg("defense")
+		out.append(_cell(key, pair[1], pair[2], v, float(base[key]), _f(v), ls,
+			["目前換算減傷率：%.1f%%（%s × D ÷ (D + %s)）" % [red * 100.0, _f(float(dcfg.get("max_reduction", 0.75)) * 100.0) + "%", _f(float(dcfg.get("k", 75)))]]))
 
-	# 攻速
-	var as_lines: Array = [{"label": "基礎攻速（不隨星級成長）", "text": "%.2f" % base["atk_speed"], "sign": 0}]
-	var as_pct := 0.0
+	# 4. 攻速
+	var as_pct := _status_sum(statuses, "as_up") - _status_sum(statuses, "slow")
+	var as_val := float(fin["atk_speed"]) * maxf(0.25, 1.0 + as_pct / 100.0)
+	lines = [{"cat": "base", "label": "基礎攻速（次／秒，不隨星級成長）", "text": _f(base["atk_speed"], 2), "sign": 0}]
+	lines.append_array(_src_lines(sources, ["atk_speed_pct"], "%"))
+	lines.append_array(_status_lines(statuses, "as_up", "slow", "%"))
+	out.append(_cell("as", "bolt", "攻擊速度", as_val, float(base["atk_speed"]), _f(as_val, 2), lines, ["單位：次／秒"], 0.005))
+
+	# 5. 移動速度
+	var mv_val := float(fin["move_speed"]) * maxf(0.3, 1.0 - _status_sum(statuses, "slow") / 100.0)
+	lines = [{"cat": "base", "label": "基礎移動速度（格／秒）", "text": _f(base["move_speed"], 2), "sign": 0}]
+	lines.append_array(_src_lines(sources, ["move_speed_pct"], "%"))
 	for st in statuses:
-		if st["kind"] == "slow" or st["kind"] == "as_up":
-			var v := float(st["value"]) * (-1.0 if st["kind"] == "slow" else 1.0)
-			as_pct += v
-			as_lines.append({"label": "狀態：" + STATUS_NAMES[st["kind"]], "text": _signed(v, "%"), "sign": _sign(v)})
-	var as_now: float = base["atk_speed"] * maxf(0.25, 1.0 + as_pct / 100.0)
-	rows.append({"key": "as", "label": "攻速（次／秒）", "value": as_now, "text": "%.2f" % as_now, "net": as_pct, "lines": as_lines})
+		if st["kind"] == "slow":
+			lines.append({"cat": "status", "label": "緩速", "text": _signed(-float(st["value"]), "%"), "sign": -1})
+	out.append(_cell("move", "foot", "移動速度", mv_val, float(base["move_speed"]), _f(mv_val, 1), lines, ["單位：格／秒"], 0.005))
 
-	# 射程、移速
-	rows.append({"key": "range", "label": "射程", "value": base["range"], "text": "%d 格" % int(base["range"]),
-		"lines": [{"label": "近戰 1 格、遠程 3 格（不隨星級成長）", "text": str(int(base["range"])), "sign": 0}]})
-	var mv_lines: Array = [{"label": "基礎移動速度", "text": "%s 格／秒" % _f(base["move_speed"]), "sign": 0}]
-	for e in sources:
-		if e["stat"] == "move_speed_pct":
-			mv_lines.append({"label": e["label"], "text": _signed(e["value"], "%"), "sign": _sign(e["value"])})
-	rows.append({"key": "move", "label": "移動速度", "value": fin["move_speed"], "text": "%.2f 格／秒" % fin["move_speed"], "net": fin["move_speed"] - base["move_speed"], "lines": mv_lines})
+	# 6. 射程
+	out.append(_cell("range", "aim", "攻擊射程", float(base["range"]), float(base["range"]), str(int(base["range"])),
+		[{"cat": "base", "label": "射程（六角格，近戰 1、遠程 3）", "text": str(int(base["range"])), "sign": 0}]))
 
-	# 魔力
-	var mana_lines: Array = [{"label": "技能所需魔力", "text": _f(base["mana_max"]), "sign": 0}]
-	for e in sources:
-		if e["stat"] == "start_mana":
-			mana_lines.append({"label": e["label"] + "（初始魔力）", "text": _signed(e["value"]), "sign": _sign(e["value"])})
+	# 7、8. 暴擊率、暴擊傷害
+	var cc_val := float(fin["crit_chance"]) * 100.0
+	lines = [{"cat": "base", "label": "基礎暴擊率（不隨星級成長）", "text": _f(base["crit_chance"] * 100.0) + "%", "sign": 0}]
+	lines.append_array(_src_lines(sources, ["crit_chance_add"], "%"))
+	out.append(_cell("crit", "crosshair", "暴擊率", cc_val, float(base["crit_chance"]) * 100.0, _f(cc_val) + "%", lines))
+	var cd_val := float(fin["crit_mult"]) * 100.0
+	lines = [{"cat": "base", "label": "基礎暴擊傷害", "text": _f(base["crit_mult"] * 100.0) + "%", "sign": 0}]
+	lines.append_array(_src_lines(sources, ["crit_dmg_add"], "%"))
+	out.append(_cell("crit_dmg", "swords", "暴擊傷害", cd_val, float(base["crit_mult"]) * 100.0, _f(cd_val) + "%", lines))
+
+	# 9. 魔力（備戰顯示上限；戰鬥中顯示 目前／上限）；初始魔力加成視為正面修正
 	var no_skill := str(u.get("skill", {}).get("kind", "")) == "none"
-	rows.append({"key": "mana", "label": "魔力", "value": base["mana_max"],
-		"net": fin["start_mana"], "text": "無主動技能" if no_skill else "初始 %s／上限 %s" % [_f(fin["start_mana"]), _f(base["mana_max"])],
-		"lines": [{"label": "這個單位沒有主動技能", "text": "—", "sign": 0}] if no_skill else mana_lines})
+	var start := float(fin["start_mana"])
+	lines = [{"cat": "base", "label": "施放技能所需魔力", "text": "—" if no_skill else _f(base["mana_max"]), "sign": 0}]
+	lines.append_array(_src_lines(sources, ["start_mana"], "", Callable()).map(func(l):
+		l["label"] = str(l["label"]) + "（初始魔力）"
+		return l))
+	var mana_text := "—" if no_skill else _f(base["mana_max"])
+	if live.has("mana") and not no_skill:
+		mana_text = "%d/%d" % [roundi(float(live["mana"])), roundi(float(base["mana_max"]))]
+	var mana_cell := _cell("mana", "mana", "魔力", start, 0.0, mana_text, lines,
+		["沒有主動技能"] if no_skill else ["初始魔力 %s；普攻 +10、受到普攻 +5" % _f(start)])
+	out.append(mana_cell)
 
-	# 其他百分比修正（只在有來源時顯示）
-	for key in ["skill", "heal", "heal_in", "cc", "cc_in", "special"]:
-		var def: Dictionary = PCT_ROWS[key]
-		var lines: Array = []
-		var total := 0.0
-		for e in sources:
-			if str(e["stat"]) in def["stats"]:
-				total += float(e["value"])
-				var nm := str(STAT_NAMES.get(e["stat"], ""))
-				lines.append({"label": e["label"] + ("（%s）" % nm if nm != "" else ""), "text": _signed(e["value"], "%"), "sign": _sign(e["value"])})
-		if not lines.is_empty():
-			rows.append({"key": key, "label": def["label"], "value": total, "text": _signed(total, "%"), "net": total, "lines": lines})
-	return rows
+	# 10. 技能傷害（以 100% 為基準）
+	var skill_stats := ["skill_dmg_pct", "skill_direct_pct"]
+	var dtype := str(u.get("skill", {}).get("params", {}).get("dtype", ""))
+	if dtype == "magic":
+		skill_stats.append_array(["magic_dmg_pct", "magic_direct_pct"])
+	var sk := 100.0
+	for e in sources:
+		if str(e["stat"]) in skill_stats:
+			sk += float(e["value"])
+	lines = [{"cat": "base", "label": "技能傷害基準", "text": "100%", "sign": 0}]
+	lines.append_array(_src_lines(sources, skill_stats, "%"))
+	lines.append_array(_cond_lines(sources))
+	out.append(_cell("skill", "skill", "技能傷害", sk, 100.0, _f(sk) + "%", lines,
+		["含技能造成的持續傷害（直接傷害類加成除外）"]))
+
+	# 11. 治療與護盾（給出）；承受治療列在明細
+	var hs := 100.0 + float(mods.get("heal_shield_pct", 0.0))
+	lines = [{"cat": "base", "label": "給出的治療與護盾基準", "text": "100%", "sign": 0}]
+	lines.append_array(_src_lines(sources, ["heal_shield_pct"], "%"))
+	lines.append_array(_src_lines(sources, ["heal_received_pct"], "%").map(func(l):
+		l["label"] = str(l["label"]) + "（自身受到的治療）"
+		return l))
+	out.append(_cell("heal", "heal", "治療與護盾", hs, 100.0, _f(hs) + "%", lines))
+
+	# 12. 控制時間（施加）；受到控制列在明細
+	var ccd := 100.0 + float(mods.get("cc_duration_pct", 0.0))
+	lines = [{"cat": "base", "label": "施加控制時間基準", "text": "100%", "sign": 0}]
+	lines.append_array(_src_lines(sources, ["cc_duration_pct"], "%"))
+	lines.append_array(_src_lines(sources, ["cc_received_pct"], "%").map(func(l):
+		l["label"] = str(l["label"]) + "（自身受到的控制）"
+		l["sign"] = -int(l["sign"])
+		return l))
+	out.append(_cell("cc", "chain", "控制時間", ccd, 100.0, _f(ccd) + "%", lines, ["文明修正最多 ±0.2 秒"]))
+	return out
+
+
+## 條件式增傷（低血量、斬殺）：只在條件成立時生效，列在明細但不改變格子數字
+static func _cond_lines(sources: Array) -> Array:
+	var out: Array = []
+	for e in sources:
+		var k := str(e["stat"])
+		if k == "low_hp_direct_pct" or k == "execute_pct":
+			var cond := "自身生命 < 50% 時" if k == "low_hp_direct_pct" else "攻擊生命 < 35% 的敵人時"
+			out.append({"cat": "cond", "label": "%s（%s）" % [e["label"], cond], "text": _signed(float(e["value"]), "%"), "sign": _sign(float(e["value"]))})
+	return out
+
+
+## 生命（不在宮格內）：{max, base}
+static func hp_info(unit_id: String, star: int, sources: Array) -> Dictionary:
+	var base := UnitStats.base_stats(unit_id, star)
+	var fin := UnitStats.final_stats(unit_id, star, Modifiers.sum_sources(sources))
+	var lines: Array = [{"cat": "base", "label": "基礎生命（已含星級）", "text": _f(base["hp"]), "sign": 0}]
+	lines.append_array(_src_lines(sources, ["hp_flat"], ""))
+	lines.append_array(_src_lines(sources, ["hp_pct"], "%"))
+	return {"max": float(fin["hp"]), "base": float(base["hp"]), "sign": _sign(float(fin["hp"]) - float(base["hp"])), "lines": lines}
+
+
+static func cell_by_key(list: Array, key: String) -> Dictionary:
+	for c in list:
+		if c["key"] == key:
+			return c
+	return {}

@@ -121,11 +121,11 @@ func sync_prep() -> void:
 		var u = _run.bench[i]
 		if u != null:
 			alive[int(u["uid"])] = true
-			_place_token(u, bench_center(i))
+			_place_token(u, bench_center(i), true)
 	for c in _run.board.keys():
 		var u: Dictionary = _run.board[c]
 		alive[int(u["uid"])] = true
-		_place_token(u, cell_center(c))
+		_place_token(u, cell_center(c), _show_prep)
 	for uid in _prep_tokens.keys():
 		if not alive.has(uid):
 			_prep_tokens[uid].queue_free()
@@ -136,7 +136,7 @@ func sync_prep() -> void:
 	queue_redraw()
 
 
-func _place_token(u: Dictionary, pos: Vector2) -> void:
+func _place_token(u: Dictionary, pos: Vector2, show: bool) -> void:
 	var uid := int(u["uid"])
 	var tk: UnitToken = _prep_tokens.get(uid)
 	if tk == null:
@@ -148,7 +148,8 @@ func _place_token(u: Dictionary, pos: Vector2) -> void:
 	tk.radius = hex_size * 0.72
 	tk.set_star(int(u["star"]))
 	tk.selected = uid == _selected_uid
-	tk.visible = _show_prep
+	tk.items = RunState.unit_items(u)
+	tk.visible = show
 	tk.modulate.a = 1.0
 	if not (_dragging and uid == _press_uid):
 		tk.position = pos
@@ -170,22 +171,20 @@ func _sync_enemy_preview() -> void:
 
 
 func _relayout_tokens() -> void:
-	if _run != null and _show_prep:
+	if _run != null:
 		for t in _prep_tokens.values():
 			t.radius = hex_size * 0.72
 		sync_prep()
 
 
+## v = false：戰鬥中，只隱藏場上的備戰棋子（候補區仍顯示，可整理）
 func set_prep_visible(v: bool) -> void:
 	_show_prep = v
-	for t in _prep_tokens.values():
-		t.visible = v
 	if not v:
 		for t in _enemy_tokens:
 			t.queue_free()
 		_enemy_tokens.clear()
-	else:
-		sync_prep()
+	sync_prep()
 
 
 func select(uid: int) -> void:
@@ -268,7 +267,19 @@ func _enemy_at(hit: Dictionary) -> Dictionary:
 func _unhandled_input(event: InputEvent) -> void:
 	if battle_mode:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# 戰鬥中：候補區棋子可以拖曳整理（只影響下一回合），戰場上的棋子只能點選查看
+			var hit := _hit(event.position)
+			if not hit.is_empty() and hit["where"] == "bench" and _uid_at(hit) >= 0:
+				_press_uid = _uid_at(hit)
+				_press_pos = event.position
+				_dragging = false
+				get_viewport().set_input_as_handled()
+				return
 			var cid := battle_player.cid_at(_local(event.position), hex_size * 0.8)
+			# 改看戰場棋子時，清掉候補區的選取外框（不發出取消訊號）
+			_selected_uid = -1
+			for k in _prep_tokens.keys():
+				_prep_tokens[k].selected = false
 			select_battle(cid)
 			battle_unit_selected.emit(cid)
 			get_viewport().set_input_as_handled()
@@ -335,7 +346,12 @@ func _input(event: InputEvent) -> void:
 		if tk:
 			tk.z_index = 0
 		get_viewport().set_input_as_handled()
-		if was_drag:
+		if was_drag and battle_mode:
+			# 戰鬥中只能在候補格之間移動，不能上場、不能出售
+			var bh := _hit(event.position)
+			if not bh.is_empty() and bh["where"] == "bench":
+				move_to_bench_requested.emit(uid, int(bh["index"]))
+		elif was_drag:
 			if is_over_sell_zone.call(event.position):
 				sell_requested.emit(uid)
 			else:
@@ -401,8 +417,8 @@ func _draw() -> void:
 	draw_line(Vector2(0, y), Vector2(board_size().x, y), Color(1, 0.85, 0.4, 0.55), 2.0)
 	draw_string(UiStyle.FONT, Vector2(4, y - 6), "敵方", HORIZONTAL_ALIGNMENT_LEFT, -1, int(hex_size * 0.36), Color(1, 0.6, 0.6, 0.7))
 	draw_string(UiStyle.FONT, Vector2(4, y + hex_size * 0.42), "我方", HORIZONTAL_ALIGNMENT_LEFT, -1, int(hex_size * 0.36), Color(0.6, 0.8, 1, 0.7))
-	# 候補區
-	if _show_prep:
+	# 候補區（戰鬥中也顯示，可整理）
+	if true:
 		for i in bench_count:
 			var r := bench_rect(i)
 			var col := Color(0.13, 0.15, 0.21)

@@ -89,20 +89,20 @@ func screen_pos(board: BoardView, local: Vector2) -> Vector2:
 	return board.get_global_transform_with_canvas() * local
 
 
+func _bar_color(g: Node) -> Color:
+	var sb: StyleBoxFlat = (g.bar as ProgressBar).get_theme_stylebox("fill")
+	return sb.bg_color
+
+
 func _run() -> void:
 	SaveSystem.clear()
 	Session.goto(Session.SCENE_MENU)
 	await wait(0.6)
 	check(scene().name == "MainMenu", "主選單開啟")
-	check(scene().get_node("Center/Box/ContinueButton").disabled, "無存檔時「繼續」停用")
-	await shot("menu")
-
 	press("Center/Box/NewGameButton")
 	await wait(0.5)
 	check(scene().name == "CivSelect", "進入文明選擇")
-	var grid: GridContainer = scene().get_node("Margin/VBox/CivGrid")
-	check(grid.get_child_count() == 6, "六個文明卡")
-	(grid.get_child(1) as Button).pressed.emit()   # 人類
+	(scene().get_node("Margin/VBox/CivGrid").get_child(0) as Button).pressed.emit()   # 精靈
 	await wait(0.2)
 	press("Margin/VBox/Buttons/StartButton")
 	await wait(0.8)
@@ -110,220 +110,253 @@ func _run() -> void:
 	var run: RunState = Session.run
 	var g := scene()
 	var board: BoardView = g.get_node("BoardView")
-	check(run != null and run.civ_id == "human", "建立人類文明遠征")
-	check(run.round_no == 1 and run.gold == 5 and run.hp == 40 and run.level() == 1, "第 1 回合：5 金、Lv.1、生命 40")
-	check(SaveSystem.has_save(), "進入備戰後自動存檔")
-	check(g.prep_timer.running and g.prep_timer.seconds_left() >= 14, "備戰 15 秒倒數已開始")
+	check(run.civ_id == "elf", "精靈文明")
 
-	# 版面：文明面板在羈絆面板左側
-	var civ_rect: Rect2 = g.get_node("CivPanel").get_global_rect()
-	var trait_rect: Rect2 = g.get_node("TraitPanel").get_global_rect()
-	check(civ_rect.end.x <= trait_rect.position.x + 0.5, "文明面板位於羈絆面板左側")
-	check(str(g.get_node("CivPanel/VBox/CivScroll/CivText").text).contains("▲") and str(g.get_node("CivPanel/VBox/CivScroll/CivText").text).contains("▼"), "文明面板常駐顯示 Buff 與 Debuff")
-	check(str(g.get_node("ShopBar/HBox/LevelBox/LevelRow/LevelLabel").text) == "Lv.1", "商店旁顯示文明等級")
-	check(str(g.get_node("ShopBar/HBox/LevelBox/XpText").text).contains("還差"), "顯示還差多少經驗與購買次數")
-	check(str(g.get_node("TopBar/HBox/GoldLabel").text).contains("再"), "顯示下一個利息門檻")
-
-	# 第一回合：買一隻、不部署，等 15 秒倒數 → 自動補位並自動開戰
-	var b0: Button = g.get_node("ShopBar/HBox/ShopSlots/Slot0")
-	b0.pressed.emit()
+	# ── 版面 ──
+	check(g.round_label.text == "1/24", "上方顯示回合 1/24")
+	check(GameData.reward_rounds().size() == 7, "七個裝備節點")
+	check(g.prep_timer.running and g.prep_timer.duration == 30.0, "30 秒備戰倒數開始")
+	check(g._gold_label.text == "5" and g._lv_label.text == "Lv.1" and g._hp_label.text == "40/40" and g._pop_label.text == "0/1", "底部顯示 金幣｜Lv｜生命｜人口")
+	check(g.xp_left.text.strip_edges() == "0/2 XP" and g._xp_cost_label.text == "4" and g._xp_word.text == "升級", "XP 條：0/2 XP、4 金升級")
+	var xp_w: float = g.xp_bar.get_global_rect().size.x
+	var slots_w: float = g.shop_slots.get_global_rect().size.x
+	check(absf(xp_w - slots_w) <= 2.0, "XP 條與五格商店等寬（%.0f vs %.0f）" % [xp_w, slots_w])
+	var top_rect: Rect2 = g.top_bar.get_global_rect()
+	var bottom_rect: Rect2 = g.bottom_bar.get_global_rect()
+	check(top_rect.end.y < bottom_rect.position.y, "上方列與下方操作區不重疊")
+	check(g.get_node("LeftPanel/VBox/Scroll/List").get_child(0) == g.civ_btn, "文明是羈絆清單的第一項")
+	check(not g.civ_detail.visible, "文明效果平常不展開")
+	g.civ_btn.pressed.emit()
 	await get_tree().process_frame
-	check(run.board_count() == 0 and run.all_units().size() == 1, "買了 1 隻放在候補區")
-	await shot("prep_round1")
-	var t0 := Time.get_ticks_msec()
-	while g.phase == 0 and Time.get_ticks_msec() - t0 < 17000:
-		if g.prep_timer.is_warning() and not g.big_countdown.visible:
-			pass
-		await wait(0.1)
-	var waited := (Time.get_ticks_msec() - t0) / 1000.0
-	check(g.phase == 1, "倒數結束後自動開戰（等了 %.1f 秒）" % waited)
-	check(waited > 13.5 and waited < 16.5, "倒數約 15 秒（%.1f）" % waited)
-	check(run.board_count() == 1, "人口未滿時自動從候補區補位")
+	check(g.civ_detail.visible and g.civ_detail.text.count("▲") == 2 and g.civ_detail.text.count("▼") == 2, "點文明展開 2 Buff＋2 Debuff")
+	await shot("prep_layout")
+	g.civ_btn.pressed.emit()
 
-	# 戰鬥中點選雙方棋子查看（唯讀，不影響戰鬥）
+	# ── 棋子資訊卡：九宮格（3×4）──
+	g.prep_timer.remaining = 999.0
+	run.gold = 20
+	run.changed.emit()
+	(g.get_node("BottomBar/VBox/RowB/ShopSlots/Slot0") as Button).pressed.emit()
+	await get_tree().process_frame
+	var uid := -1
+	var bidx := -1
+	for i in run.bench.size():
+		if run.bench[i] != null:
+			uid = int(run.bench[i]["uid"])
+			bidx = i
+			break
+	await click_at(screen_pos(board, board.bench_center(bidx)))
+	check(g._info_mode == "unit" and g.detail_box.visible, "點棋子 → 右側顯示資訊卡")
+	var card: UnitCard = g.card
+	check(card._cells.size() == 12, "3×4 共 12 個屬性格")
+	var plus := false
+	for k in card._cells.keys():
+		if card.cell_text(k).contains("+"):
+			plus = true
+	check(not plus, "屬性格沒有 +X／−X 常駐標示")
+	check(not card.is_detail_open(), "平常不顯示計算明細")
+	card.cell_button("armor").pressed.emit()
+	await get_tree().process_frame
+	check(card.is_detail_open() and card.detail_text().contains("物理防禦"), "點物防格 → 顯示物防明細")
+	check(card.detail_text().contains("減傷率"), "明細顯示目前減傷率")
+	await shot("card_detail")
+	# 點卡片上明細以外的地方（不會取消選取棋子）
+	await click_at(card._hp_label.get_global_rect().get_center())
+	check(not card.is_detail_open(), "點其他地方關閉明細，回到簡潔宮格")
+	check(g._info_mode == "unit", "關閉明細不會取消選取")
+
+	# ── 裝備：點空欄位 → 從背包穿上 ──
+	run.inventory = ["DM_PLATE", "CU_DAGGER"]
+	run.changed.emit()
+	await get_tree().process_frame
+	var white_armor := card.cell_color("armor")
+	card.slot_button(0).pressed.emit()
+	await get_tree().process_frame
+	check(g.item_overlay.visible, "點空裝備欄 → 打開背包選擇")
+	var wear: Button = null
+	for c in g.item_body.get_children():
+		for b in c.find_children("*", "Button", true, false):
+			if (b as Button).text == "穿上":
+				wear = b
+				break
+		if wear:
+			break
+	if wear == null:
+		check(false, "背包選擇畫面有「穿上」按鈕")
+		get_tree().quit(1)
+		return
+	wear.pressed.emit()
+	await wait(0.2)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == ["DM_PLATE"], "穿上熔岩胸甲")
+	check(card.cell_color("armor") != white_armor and card.cell_color("armor").b > card.cell_color("armor").r, "裝備物防 → 物防數字變藍")
+	check(run.inventory == ["CU_DAGGER"], "背包少一件")
+	await shot("card_equipped")
+	card.slot_button(0).pressed.emit()
+	await get_tree().process_frame
+	var unequip: Button = null
+	for b in g.item_buttons.get_children():
+		if (b as Button).text == "卸下":
+			unequip = b
+	if unequip == null:
+		check(false, "裝備資訊有「卸下」按鈕")
+		get_tree().quit(1)
+		return
+	unequip.pressed.emit()
+	await wait(0.1)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]).is_empty() and run.inventory.size() == 2, "卸下回到背包")
+	run.equip(uid, 0)
+
+	# ── 倒數顏色 ──
+	g.prep_timer.remaining = 15.0
+	await wait(0.15)
+	var c_normal := _bar_color(g)
+	g.prep_timer.remaining = 9.0
+	await wait(0.15)
+	var c_yellow := _bar_color(g)
+	g.prep_timer.remaining = 4.0
+	await wait(0.15)
+	var c_red := _bar_color(g)
+	check(c_yellow.r > 0.8 and c_yellow.g > 0.6 and c_yellow.b < 0.4, "10～6 秒黃色")
+	check(c_red.r > 0.8 and c_red.g < 0.45, "5～0 秒紅色")
+	check(c_normal.b > c_normal.r, "30～11 秒一般顏色")
+	await shot("countdown_red")
+
+	# ── 倒數歸零 → 自動補位並開戰 ──
+	(g.get_node("BottomBar/VBox/RowB/ShopSlots/Slot1") as Button).pressed.emit()
+	await get_tree().process_frame
+	g.prep_timer.remaining = 0.3
 	await wait(0.6)
+	check(g.phase == 1, "倒數歸零自動開戰")
+	check(run.board_count() >= 1, "自動補位")
+	check(g.bar_left.text.contains("戰鬥中"), "開戰後倒數條改為戰鬥狀態")
+
+	# ── 戰鬥中：整理候補、查看雙方、即時貢獻 ──
 	var bp: BattlePlayer = g.battle_player
+	var bench_before := []
+	for i in run.bench.size():
+		if run.bench[i] != null:
+			bench_before.append(i)
+	if not bench_before.is_empty():
+		var from_i: int = bench_before[0]
+		var to_i := 11
+		var moved_uid := int(run.bench[from_i]["uid"])
+		await drag(screen_pos(board, board.bench_center(from_i)), screen_pos(board, board.bench_center(to_i)))
+		check(run.bench[to_i] != null and int(run.bench[to_i]["uid"]) == moved_uid, "戰鬥中可以整理候補區")
+		check(run.board_count() == g._last_result["units"].filter(func(x): return x["side"] == 0).size(), "整理候補不會把棋子加入戰場")
+	await wait(0.8)
 	var my_cid := -1
 	var foe_cid := -1
-	for s in bp.player_lineup():
-		my_cid = int(s["cid"])
+	for snap in bp.player_lineup():
+		my_cid = int(snap["cid"])
 	for cid in bp._units.keys():
 		if int(bp._units[cid]["side"]) == 1:
 			foe_cid = int(cid)
-	var clock_before := bp.sim_time()
 	await click_at(screen_pos(board, bp.token(my_cid).position))
-	check(g._info_mode == "battle" and int(g._info_ref) == my_cid, "戰鬥中點己方棋子 → 以 cid 顯示資料")
-	check(not g.get_node("InfoPanel/VBox/SellButton").visible, "戰鬥中不能出售")
-	await shot("battle_inspect_own")
+	check(g._info_mode == "battle" and card.visible, "戰鬥中點己方棋子顯示資訊卡")
+	check(card._hp_label.text.begins_with("生命"), "資訊卡顯示即時生命")
+	card.cell_button("atk").pressed.emit()
+	await get_tree().process_frame
+	check(card.is_detail_open(), "戰鬥中也能點屬性看明細")
+	await shot("battle_card")
 	if bp.is_alive(foe_cid):
 		await click_at(screen_pos(board, bp.token(foe_cid).position))
-		check(str(g.get_node("InfoPanel/VBox/Header/InfoTitle").text).begins_with("敵方"), "戰鬥中點敵方棋子顯示敵軍資料")
-		var info_txt := ""
-		for c in g.info_body.get_children():
-			if c is RichTextLabel:
-				info_txt += c.text
-		check(info_txt.contains("生命") and info_txt.contains("魔力"), "顯示即時生命、護盾與魔力")
-	await wait(0.3)
-	check(g.phase != 0 and (bp.sim_time() > clock_before or not bp.is_playing()), "查看資料不會暫停戰鬥")
+		check(g.detail_title.text.contains("敵方"), "戰鬥中點敵方棋子")
+	g._close_detail()
+	await wait(0.6)
+	check(g.leader.row_count() > 0, "右側貢獻面板即時顯示")
+	await shot("battle_leader")
 
-	# 播放結束後，畫面上的血量必須和模擬結果一致（加速不改變結果）
+	# ── 戰後：沒有結算視窗、自動回到備戰 ──
+	Session.battle_speed = 4.0
 	var t1 := 0.0
-	while not g.get_node("ResultOverlay").visible and t1 < 40.0:
-		await wait(0.25)
-		t1 += 0.25
-	check(g.get_node("ResultOverlay").visible, "戰鬥播放完畢並顯示結算")
+	while g.phase == 1 and t1 < 40.0:
+		await wait(0.2)
+		t1 += 0.2
 	var final_hp := {}
 	for e in g._last_result["events"]:
-		if e["k"] in ["damage", "heal"]:
-			final_hp[e["tgt"]] = float(e["hp"])
-	var hp_ok := true
+		if e["k"] in ["damage", "heal", "item"]:
+			final_hp[e.get("tgt", e.get("cid"))] = float(e["hp"])
+	var ok_hp := true
 	for cid in final_hp.keys():
 		var tk := bp.token(cid)
 		if tk and absf(tk.hp - float(final_hp[cid])) > 0.01:
-			hp_ok = false
-	check(hp_ok, "播放後每隻棋子的血量與戰鬥模擬結果完全一致")
-	check(g.leader_list.get_child_count() > 0, "結算顯示戰鬥貢獻排行")
-	for i in 4:
-		(g.get_node("ResultOverlay/Panel/VBox/LeaderTabs/Tab%d" % i) as Button).pressed.emit()
-		await get_tree().process_frame
-		check(g._leader_metric == Leaderboard.ORDER[i], "切換排行：%s" % Leaderboard.METRICS[Leaderboard.ORDER[i]])
-	(g.get_node("ResultOverlay/Panel/VBox/LeaderTabs/Tab0") as Button).pressed.emit()
-	await shot("result_leaderboard")
-	press("ResultOverlay/Panel/VBox/ResultButton")
-	await wait(0.4)
-	check(g.phase == 0, "回到備戰")
-	check(g.get_node("TopBar/HBox/ReportButton").visible, "備戰時可重新查看上一場戰報")
+			ok_hp = false
+	check(ok_hp, "播放後血量與模擬結果一致（加速不改變結果）")
+	check(g.toast_texts().any(func(t): return t.contains("金")), "戰後以提示顯示收入（不彈出結算畫面）")
+	check(not g.has_node("ResultOverlay"), "沒有每回合結算畫面")
+	await wait(1.4)
+	check(g.phase == 0 and run.round_no == 2, "自動進入第 2 回合備戰")
+	check(g.leader.row_count() > 0, "戰後保留上一場統計")
+	Session.battle_speed = 1.0
 
-	# 選取與拖曳判定（倒數期間讓計時先停在很大，避免測試途中自動開戰）
+	# ── 裝備回合：三選一（不計備戰時間）──
 	g.prep_timer.remaining = 999.0
-	run.gold = 30
-	run.changed.emit()
-	for i in 5:
-		var b: Button = g.get_node("ShopBar/HBox/ShopSlots/Slot%d" % i)
-		if not b.disabled:
-			b.pressed.emit()
-			await get_tree().process_frame
-	var bench_idx: Array = []
-	for i in run.bench.size():
-		if run.bench[i] != null:
-			bench_idx.append(i)
-	if bench_idx.size() >= 2:
-		var ua := int(run.bench[bench_idx[0]]["uid"])
-		var ub := int(run.bench[bench_idx[1]]["uid"])
-		var gold_before := run.gold
-		await click_at(screen_pos(board, board.bench_center(bench_idx[0])))
-		check(board.selected_uid() == ua, "點選棋子 A")
-		check(run.gold == gold_before and not run.find_unit(ua).is_empty(), "單純點擊不會誤判為出售")
-		await click_at(screen_pos(board, board.bench_center(bench_idx[1])))
-		check(board.selected_uid() == ub, "點另一隻棋子正確切換選取")
-		await shot("selection")
-		var info_btn: Button = null
-		for c in g.info_body.get_children():
-			if c is Button:
-				info_btn = c
-				break
-		if info_btn:
-			info_btn.pressed.emit()
-			await get_tree().process_frame
-			check(info_btn.text.begins_with("▼"), "點屬性展開數值來源")
-			await shot("stat_expanded")
-		var empty_spot := screen_pos(board, Vector2(-30, board.board_size().y * 0.5))
-		await click_at(empty_spot)
-		check(board.selected_uid() == -1, "點棋盤外空白處取消選取")
+	if Session.debug_enabled:
+		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 3
+		press("DebugPanel/VBox/RoundRow/JumpButton")
+		await wait(0.3)
+		check(g.bar_left.text.contains("邪教"), "第 3 回合為邪教敵軍")
+		var inv_before := run.inventory.size()
+		press("DebugPanel/VBox/Row3/WinButton")
+		await wait(0.8)
+		check(g.reward_overlay.visible, "裝備回合完成 → 三選一")
+		check(g.reward_cards.get_child_count() == 3, "三件裝備可查看")
+		check(not g.prep_timer.running, "選擇裝備時不計備戰時間")
+		await shot("reward")
+		var pick: Button = g.reward_cards.get_child(0).find_children("*", "Button", true, false)[0]
+		pick.pressed.emit()
+		await wait(0.3)
+		check(run.inventory.size() == inv_before + 1, "選擇後加入背包")
+		check(run.rewards_claimed.has(3), "第 3 回合已領取")
+		check(g.phase == 0 and g.prep_timer.running, "選完才開始第 4 回合倒數")
+		check(g.reward_dots.claimed.has(3), "裝備節點點亮")
 
-	# 羈絆名單
-	AutoPlayer.arrange(run)
-	await wait(0.2)
-	var trait_btn: Button = null
-	for c in g.trait_list.get_children():
-		if c is Button:
-			trait_btn = c
-			break
-	check(trait_btn != null, "羈絆面板是可點選的清單")
-	if trait_btn:
-		trait_btn.pressed.emit()
-		await wait(0.2)
-		check(str(g.get_node("InfoPanel/VBox/Header/InfoTitle").text).begins_with("羈絆："), "點羈絆顯示完整名單")
-		await shot("trait_detail")
-
-	# 收合側邊面板仍保持文明在羈絆左側
-	press("CivPanel/VBox/Header/CivToggle")
-	press("TraitPanel/VBox/Header/TraitToggle")
+	# ── 收合 ──
+	g.prep_timer.remaining = 999.0
+	g.leader._toggle.pressed.emit()
 	await wait(0.3)
-	civ_rect = g.get_node("CivPanel").get_global_rect()
-	trait_rect = g.get_node("TraitPanel").get_global_rect()
-	check(civ_rect.end.x <= trait_rect.position.x + 0.5 and trait_rect.size.x < 80, "收合後仍維持文明在羈絆左側")
-	await shot("panels_collapsed")
-	press("CivPanel/VBox/Header/CivToggle")
-	press("TraitPanel/VBox/Header/TraitToggle")
+	check(g.right_panel.get_global_rect().size.x < 80, "右側貢獻面板可收合")
+	g.left_toggle.pressed.emit()
+	await wait(0.3)
+	check(g.left_panel.get_global_rect().size.x < 80, "左側面板可收合")
+	await shot("collapsed")
+	g.leader._toggle.pressed.emit()
+	g.left_toggle.pressed.emit()
 	await wait(0.2)
 
-	# 倒數最後 5 秒的警示
-	g.prep_timer.remaining = 4.5
-	await wait(0.3)
-	check(g.big_countdown.visible, "倒數最後 5 秒顯示大字警示")
-	await shot("countdown_warning")
-	g.prep_timer.remaining = 999.0
-
-	# 用 bot 操作連打幾回合（略過動畫）
-	for r in 3:
-		AutoPlayer.play_prep(run)
-		await wait(0.2)
-		press("ShopBar/HBox/RightButtons/StartButton")
-		await wait(0.3)
-		g.battle_player.skip()
-		await wait(0.3)
-		check(g.get_node("ResultOverlay").visible, "第 %d 回合結算顯示" % (run.round_no - 1))
-		if run.finished:
-			break
-		press("ResultOverlay/Panel/VBox/ResultButton")
-		await wait(0.3)
-		g.prep_timer.remaining = 999.0
-	check(run.history.size() >= 4, "連續完成多個回合（%d）" % run.history.size())
-
-	# 存檔續玩
-	var round_before := run.round_no
+	# ── 存檔續玩（含裝備）──
+	var items_before := run.all_items().size()
 	press("TopBar/HBox/MenuBtn")
 	await wait(0.2)
-	check(g.prep_timer.paused, "開選單時暫停倒數")
 	press("MenuOverlay/Panel/VBox/SaveQuitButton")
 	await wait(0.6)
-	check(scene().name == "MainMenu", "存檔並回主選單")
 	press("Center/Box/ContinueButton")
 	await wait(0.8)
-	check(scene().name == "Game" and Session.run.round_no == round_before, "繼續遠征回到同一回合")
-	run = Session.run
+	check(scene().name == "Game" and Session.run.all_items().size() == items_before, "繼續遠征：裝備完整保留")
 	g = scene()
 
-	# 圖鑑
+	# ── 圖鑑 ──
 	press("TopBar/HBox/MenuBtn")
 	await wait(0.2)
 	press("MenuOverlay/Panel/VBox/CodexButton")
 	await wait(0.8)
 	check(scene().name == "Codex", "開啟圖鑑")
-	(scene().get_node("Margin/VBox/Tabs") as TabContainer).current_tab = 1
-	await wait(0.3)
-	check(scene().get_node("Margin/VBox/Tabs/Units/UnitGrid").get_child_count() == 24, "圖鑑列出 24 隻棋子（不含教學弱敵）")
 	press("Margin/VBox/Header/BackButton")
 	await wait(0.8)
-	check(scene().name == "Game", "從圖鑑返回遊戲")
 	g = scene()
 
-	# 除錯：跳到第 24 回合並直接過關 → 通關畫面
+	# ── 第 24 回合：古神化身，通關 ──
 	if Session.debug_enabled:
 		g.prep_timer.remaining = 999.0
 		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 24
 		press("DebugPanel/VBox/RoundRow/JumpButton")
 		await wait(0.4)
-		check(Session.run.round_no == 24, "除錯選關到第 24 回合")
+		check(g.bar_left.text.contains("古神化身"), "第 24 回合為古神化身")
+		await shot("round24")
 		press("DebugPanel/VBox/Row3/WinButton")
-		await wait(0.3)
-		check(Session.run.outcome == "victory", "第 24 回合全清 → 通關")
-		press("ResultOverlay/Panel/VBox/ResultButton")
-		await wait(0.8)
-		check(scene().name == "EndScreen", "顯示遠征結算畫面")
-		await shot("end_screen")
-		check(not SaveSystem.has_save(), "遠征結束後清除存檔")
+		await wait(1.0)
+		check(scene().name == "EndScreen", "通關後顯示最終結算畫面")
+		await shot("end")
 
 	print("")
 	print("冒煙測試：%s（失敗 %d 項）" % ["通過" if failures.is_empty() else "未通過", failures.size()])

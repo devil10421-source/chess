@@ -68,6 +68,12 @@ func _rules_text() -> String:
 	lines.append("選擇一個文明後挑戰 %d 回合（4 章 × 6 關；第 6、12、18、24 回合為首領戰）。每回合：備戰購物／佈陣 → 按「開始戰鬥」→ 自動戰鬥（最長 %d 秒）→ 結算。" % [GameData.total_rounds(), int(GameData.cfg("combat").get("max_time", 45))])
 	lines.append("第 24 回合全清且遠征生命大於 0 即通關；遠征生命歸零、或第 24 回合未全清則遠征失敗／未完成。棋子不會永久死亡，每回合恢復滿血。")
 	lines.append("")
+	lines.append("每回合有 %d 秒備戰（最後 10 秒變黃、5 秒變紅），可提前開戰；倒數結束自動開戰，人口未滿時從候補區最左側自動補位。" % int(GameData.cfg("rounds").get("prep_seconds", 30)))
+	lines.append("")
+	lines.append("[b][color=#ffd24d]異界入侵與裝備[/color][/b]")
+	lines.append("第 3、6、9 回合為邪教，第 12、15、18 回合為惡魔，第 21 回合為古神眷族，第 24 回合為最終首領「古神化身」；其餘回合是六族敵軍。")
+	lines.append("完成第 3、6、9、12、15、18、21 回合後可從 3 件裝備中選 1 件（第 12、18、21 回合為進階裝備）。每隻棋子最多 2 件，穿脫免費；出售棋子時裝備回到背包，合成時最多保留 2 件、其餘回到背包。")
+	lines.append("")
 	lines.append("[b][color=#ffd24d]經濟[/color][/b]")
 	lines.append("開局 %d 金。每回合戰後：固定 +%d、全清 +%d、利息 = 開戰瞬間金幣每 %d 金 +1（最多 +%d）。" % [
 		Economy.start_gold(), Economy.base_income(), Economy.clear_bonus(), int(eco.get("interest_step", 10)), int(eco.get("interest_max", 2))])

@@ -1,59 +1,292 @@
 {
-  "_note": "文明效果只作用於玩家上場棋子（不論棋子種族）。effects 中 stat 為修正鍵（見 scripts/core/modifiers.gd），value 為百分比或固定值；cond 可為 range(melee/ranged)、type、min_distinct_races。special 為非戰鬥效果。",
-  "civs": [
-    {"id": "elf", "name": "精靈", "race": "elf",
-     "buffs": [
-       {"text": "全軍遠程普攻傷害 +10%", "effects": [{"stat": "ranged_basic_pct", "value": 10}]},
-       {"text": "全軍施加的控制時間 +10%（最多多 0.2 秒）", "effects": [{"stat": "cc_duration_pct", "value": 10}]}
-     ],
-     "debuffs": [
-       {"text": "全軍近戰棋子最大 HP -10%", "effects": [{"stat": "hp_pct", "value": -10, "cond": {"range": "melee"}}]},
-       {"text": "全軍近戰普攻傷害 -8%", "effects": [{"stat": "melee_basic_pct", "value": -8}]}
-     ]},
-    {"id": "human", "name": "人類", "race": "human",
-     "buffs": [
-       {"text": "第 1、7、13、19 回合各得 1 張免費刷新券（可累積到本局結束）", "effects": [], "special": {"free_reroll_rounds": [1, 7, 13, 19]}},
-       {"text": "上場至少 3 個不同種族時，全軍 HP +6%", "effects": [{"stat": "hp_pct", "value": 6, "cond": {"min_distinct_races": 3}}]}
-     ],
-     "debuffs": [
-       {"text": "全軍普攻傷害 -5%", "effects": [{"stat": "basic_dmg_pct", "value": -5}]},
-       {"text": "全軍直接傷害型技能 -5%", "effects": [{"stat": "skill_direct_pct", "value": -5}]}
-     ]},
-    {"id": "orc", "name": "半獸人", "race": "orc",
-     "buffs": [
-       {"text": "全軍近戰普攻傷害 +12%", "effects": [{"stat": "melee_basic_pct", "value": 12}]},
-       {"text": "HP 低於 50% 時，該棋子直接傷害 +10%", "effects": [{"stat": "low_hp_direct_pct", "value": 10}]}
-     ],
-     "debuffs": [
-       {"text": "全軍接受治療量 -12%", "effects": [{"stat": "heal_received_pct", "value": -12}]},
-       {"text": "全軍造成的法術傷害 -8%", "effects": [{"stat": "magic_dmg_pct", "value": -8}]}
-     ]},
-    {"id": "centaur", "name": "半人馬", "race": "centaur",
-     "buffs": [
-       {"text": "全軍機動型棋子普攻傷害 +10%", "effects": [{"stat": "basic_dmg_pct", "value": 10, "cond": {"type": "mobile"}}]},
-       {"text": "（單機替代能力）全軍戰場移動速度 +15%", "effects": [{"stat": "move_speed_pct", "value": 15}]}
-     ],
-     "debuffs": [
-       {"text": "全軍 HP -6%", "effects": [{"stat": "hp_pct", "value": -6}]},
-       {"text": "全軍受到的控制時間 +10%（最多多 0.2 秒）", "effects": [{"stat": "cc_received_pct", "value": 10}]}
-     ]},
-    {"id": "deer", "name": "鹿角人", "race": "deer",
-     "buffs": [
-       {"text": "每完成 4 回合，遠征生命 +1（上限 40，死亡不觸發）", "effects": [], "special": {"expedition_heal_every": 4, "expedition_heal_amount": 1}},
-       {"text": "全軍治療與護盾數值 +12%", "effects": [{"stat": "heal_shield_pct", "value": 12}]}
-     ],
-     "debuffs": [
-       {"text": "全軍普攻傷害 -8%", "effects": [{"stat": "basic_dmg_pct", "value": -8}]},
-       {"text": "（單機替代弱點）全軍戰場移動速度 -10%", "effects": [{"stat": "move_speed_pct", "value": -10}]}
-     ]},
-    {"id": "oni", "name": "鬼人", "race": "oni",
-     "buffs": [
-       {"text": "全軍技能造成的傷害 +12%（物理、法術，含技能造成的燃燒、流血等持續傷害；不含普攻）", "effects": [{"stat": "skill_dmg_pct", "value": 12}]},
-       {"text": "攻擊 HP 低於 35% 的敵人時，造成傷害 +8%", "effects": [{"stat": "execute_pct", "value": 8}]}
-     ],
-     "debuffs": [
-       {"text": "全軍 HP -8%", "effects": [{"stat": "hp_pct", "value": -8}]},
-       {"text": "全軍接受治療量 -12%", "effects": [{"stat": "heal_received_pct", "value": -12}]}
-     ]}
-  ]
+ "_note": "文明效果只作用於玩家上場棋子（不論棋子種族）。effects 中 stat 為修正鍵（見 scripts/core/modifiers.gd），value 為百分比或固定值；cond 可為 range(melee/ranged)、type、min_distinct_races。special 為非戰鬥效果。 color：文明辨識色（文明升級按鈕與文明圖示）。",
+ "civs": [
+  {
+   "id": "elf",
+   "name": "精靈",
+   "race": "elf",
+   "buffs": [
+    {
+     "text": "全軍遠程普攻傷害 +10%",
+     "effects": [
+      {
+       "stat": "ranged_basic_pct",
+       "value": 10
+      }
+     ]
+    },
+    {
+     "text": "全軍施加的控制時間 +10%（最多多 0.2 秒）",
+     "effects": [
+      {
+       "stat": "cc_duration_pct",
+       "value": 10
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍近戰棋子最大 HP -10%",
+     "effects": [
+      {
+       "stat": "hp_pct",
+       "value": -10,
+       "cond": {
+        "range": "melee"
+       }
+      }
+     ]
+    },
+    {
+     "text": "全軍近戰普攻傷害 -8%",
+     "effects": [
+      {
+       "stat": "melee_basic_pct",
+       "value": -8
+      }
+     ]
+    }
+   ],
+   "color": "#3fbf5a"
+  },
+  {
+   "id": "human",
+   "name": "人類",
+   "race": "human",
+   "buffs": [
+    {
+     "text": "第 1、7、13、19 回合各得 1 張免費刷新券（可累積到本局結束）",
+     "effects": [],
+     "special": {
+      "free_reroll_rounds": [
+       1,
+       7,
+       13,
+       19
+      ]
+     }
+    },
+    {
+     "text": "上場至少 3 個不同種族時，全軍 HP +6%",
+     "effects": [
+      {
+       "stat": "hp_pct",
+       "value": 6,
+       "cond": {
+        "min_distinct_races": 3
+       }
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍普攻傷害 -5%",
+     "effects": [
+      {
+       "stat": "basic_dmg_pct",
+       "value": -5
+      }
+     ]
+    },
+    {
+     "text": "全軍直接傷害型技能 -5%",
+     "effects": [
+      {
+       "stat": "skill_direct_pct",
+       "value": -5
+      }
+     ]
+    }
+   ],
+   "color": "#3f7fe0"
+  },
+  {
+   "id": "orc",
+   "name": "半獸人",
+   "race": "orc",
+   "buffs": [
+    {
+     "text": "全軍近戰普攻傷害 +12%",
+     "effects": [
+      {
+       "stat": "melee_basic_pct",
+       "value": 12
+      }
+     ]
+    },
+    {
+     "text": "HP 低於 50% 時，該棋子直接傷害 +10%",
+     "effects": [
+      {
+       "stat": "low_hp_direct_pct",
+       "value": 10
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍接受治療量 -12%",
+     "effects": [
+      {
+       "stat": "heal_received_pct",
+       "value": -12
+      }
+     ]
+    },
+    {
+     "text": "全軍造成的法術傷害 -8%",
+     "effects": [
+      {
+       "stat": "magic_dmg_pct",
+       "value": -8
+      }
+     ]
+    }
+   ],
+   "color": "#d0453a"
+  },
+  {
+   "id": "centaur",
+   "name": "半人馬",
+   "race": "centaur",
+   "buffs": [
+    {
+     "text": "全軍機動型棋子普攻傷害 +10%",
+     "effects": [
+      {
+       "stat": "basic_dmg_pct",
+       "value": 10,
+       "cond": {
+        "type": "mobile"
+       }
+      }
+     ]
+    },
+    {
+     "text": "（單機替代能力）全軍戰場移動速度 +15%",
+     "effects": [
+      {
+       "stat": "move_speed_pct",
+       "value": 15
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍 HP -6%",
+     "effects": [
+      {
+       "stat": "hp_pct",
+       "value": -6
+      }
+     ]
+    },
+    {
+     "text": "全軍受到的控制時間 +10%（最多多 0.2 秒）",
+     "effects": [
+      {
+       "stat": "cc_received_pct",
+       "value": 10
+      }
+     ]
+    }
+   ],
+   "color": "#e0b830"
+  },
+  {
+   "id": "deer",
+   "name": "鹿角人",
+   "race": "deer",
+   "buffs": [
+    {
+     "text": "每完成 4 回合，遠征生命 +1（上限 40，死亡不觸發）",
+     "effects": [],
+     "special": {
+      "expedition_heal_every": 4,
+      "expedition_heal_amount": 1
+     }
+    },
+    {
+     "text": "全軍治療與護盾數值 +12%",
+     "effects": [
+      {
+       "stat": "heal_shield_pct",
+       "value": 12
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍普攻傷害 -8%",
+     "effects": [
+      {
+       "stat": "basic_dmg_pct",
+       "value": -8
+      }
+     ]
+    },
+    {
+     "text": "（單機替代弱點）全軍戰場移動速度 -10%",
+     "effects": [
+      {
+       "stat": "move_speed_pct",
+       "value": -10
+      }
+     ]
+    }
+   ],
+   "color": "#3fc4c4"
+  },
+  {
+   "id": "oni",
+   "name": "鬼人",
+   "race": "oni",
+   "buffs": [
+    {
+     "text": "全軍技能造成的傷害 +12%（物理、法術，含技能造成的燃燒、流血等持續傷害；不含普攻）",
+     "effects": [
+      {
+       "stat": "skill_dmg_pct",
+       "value": 12
+      }
+     ]
+    },
+    {
+     "text": "攻擊 HP 低於 35% 的敵人時，造成傷害 +8%",
+     "effects": [
+      {
+       "stat": "execute_pct",
+       "value": 8
+      }
+     ]
+    }
+   ],
+   "debuffs": [
+    {
+     "text": "全軍 HP -8%",
+     "effects": [
+      {
+       "stat": "hp_pct",
+       "value": -8
+      }
+     ]
+    },
+    {
+     "text": "全軍接受治療量 -12%",
+     "effects": [
+      {
+       "stat": "heal_received_pct",
+       "value": -12
+      }
+     ]
+    }
+   ],
+   "color": "#9a4fd0"
+  }
+ ]
 }

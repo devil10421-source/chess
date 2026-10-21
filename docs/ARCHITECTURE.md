@@ -199,3 +199,44 @@ Game
 
 ### 存檔
 結構未變（version 1），V0.1 存檔可直接讀取。若日後需要改結構，在 `RunState.from_dict()` 依 `version` 做轉換。
+
+## 9. V0.3 架構變更
+
+### 新增／改寫模組
+| 層 | 檔案 | 責任 |
+|---|---|---|
+| 資料 | `data/equipment.json` | 16 件裝備（邪教／魔族／古神 × 普通／進階）、類型與稀有度顏色、獎勵回合表（`reward_rounds`）、每次 3 選 1、每隻 2 欄 |
+| 資料 | `data/units.json → special_units` | 異界變體：`base` 指向原棋子、`phase` 指定階段倍率；可覆寫名稱、技能或固定數值（古神化身） |
+| 資料 | `data/game_config.json → otherworld.phases` | 階段倍率 cult 1.0/1.0、demon 1.5/1.35、oldgod 2.1/1.7（生命／攻擊），只套用一次 |
+| 核心 | `scripts/core/equipment.gd` | 依陣營與稀有度抽三選一、顯示文字 |
+| 核心 | `scripts/core/combat/item_passives.gd` | 裝備被動（流血、燃燒、吸血、血契、詛咒、荊棘、狂暴、施法護盾、命中回魔、施法暈眩、虛空彈、緩速）的戰鬥掛勾 |
+| 核心 | `scripts/core/stat_breakdown.gd` | `cells()` 回傳 12 格屬性：最終值、目前星級基礎值、顏色符號、只列存在的來源（基礎／文明／羈絆／裝備／暫時效果） |
+| 核心 | `scripts/core/run_state.gd` | 背包、裝備、待領獎勵、存檔 version 2（讀 v1 自動補空資料） |
+| 介面 | `scripts/ui/unit_card.gd` | 棋子面板：頭像、名稱、HP 數字＋血條＋護盾條、3×4 屬性格、格內彈出明細、2 個裝備欄 |
+| 介面 | `scripts/ui/leader_panel.gd` | 右側可收合戰鬥貢獻面板（取代結算畫面的排行） |
+| 介面 | `scripts/ui/reward_dots.gd` | 頂部 7 個獎勵點 |
+| 介面 | `scripts/ui/ui_icon.gd` | 向量繪製的小圖示（不需圖片檔） |
+
+`scripts/ui/leaderboard_view.gd` 與 ResultOverlay 已移除；每回合結果改為 `Toasts` 非阻擋提示，只保留遠征勝負的結束畫面。
+
+### 屬性顏色規則
+`UnitStats.base_stats(id, star)` 為「目前星級基礎值」，`UnitStats.final_stats()` 為實際戰鬥使用的值；兩者比較決定藍／紅／白。因為基礎值已含星級，正常升星不會變藍。戰鬥中額外乘上 `BattlePlayer.live_statuses()` 的暫時效果，並以 0.2 秒更新一次；只讀取播放端重建的狀態，不影響模擬。
+
+### 場景樹（scenes/game.tscn，V0.3）
+```
+Game
+├─ TopBar：RoundBox（X/24、RewardDots）、Countdown（30 秒倒數條）、速度／略過／除錯／選單
+├─ LeftPanel：文明按鈕＋展開明細、羈絆清單（可收合）
+├─ BoardView：棋盤＋候補區
+├─ RightPanel/Stack：LeaderHost（LeaderPanel）、DetailBox（UnitCard／敵人／羈絆）
+├─ BottomBar：RowA（金幣｜Lv｜HP｜人口、XP 條、背包）、RowB（刷新／文明升級｜5 格商店｜開戰／鎖定）
+├─ BigCountdown、RewardOverlay（三選一）、ItemOverlay（背包／穿上／卸下）
+├─ MenuOverlay、DebugPanel、AbandonConfirm
+└─ Toasts
+```
+
+### 回合流程
+`PREP →（開戰）BATTLE → AFTER（1 秒提示）→ REWARD（若本回合有獎勵；計時器停止）→ PREP（計時器開始）`。最後一回合或遠征生命歸零時，AFTER 之後進入結束畫面。
+
+### 存檔
+version 2：新增 `inventory`、每隻棋子的 `items`、`rewards_claimed`、`pending_reward`。讀到 version 1 會補空背包、空裝備欄與空領取紀錄。

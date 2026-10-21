@@ -1090,54 +1090,65 @@ func test_prep_timer() -> void:
 
 
 # ================= V0.2 第三批：資訊透明 =================
-func _row(rows: Array, key: String) -> Dictionary:
-	for r in rows:
-		if r["key"] == key:
-			return r
-	return {}
+func _cell(cells: Array, key: String) -> Dictionary:
+	return StatBreakdown.cell_by_key(cells, key)
 
 
 func test_stat_breakdown() -> void:
-	# 面板的最終數值必須與戰鬥實際使用的數值一致
-	var ids := ["ORC1", "ELF1", "HUM2", "CEN1"]
-	for civ in ["elf", "human", "orc", "centaur", "deer", "oni"]:
-		var sources := Modifiers.sources_for_lineup(ids, civ, true)
-		var mods := Modifiers.for_lineup(ids, civ, true)
-		for i in ids.size():
-			var rows := StatBreakdown.build(ids[i], 2, sources[i])
-			var fin := UnitStats.final_stats(ids[i], 2, mods[i])
-			eq(_row(rows, "hp")["value"], fin["hp"], "%s/%s 生命面板＝實際" % [civ, ids[i]])
-			eq(_row(rows, "armor")["value"], fin["armor"], "%s/%s 護甲面板＝實際" % [civ, ids[i]])
-			check(is_equal_approx(_row(rows, "move")["value"], fin["move_speed"]), "%s/%s 移速面板＝實際" % [civ, ids[i]])
-	# 來源可追溯：精靈文明的近戰 HP -10% 以紅字（sign = -1）列出
-	var elf_src: Array = Modifiers.sources_for_lineup(["ORC1"], "elf", true)[0]
-	var hp_row := _row(StatBreakdown.build("ORC1", 1, elf_src), "hp")
-	var found := false
-	for l in hp_row["lines"]:
-		if str(l["label"]).contains("精靈") and int(l["sign"]) == -1:
-			found = true
-	check(found, "生命來源列出精靈文明 -10%（紅字）")
-	# 普攻傷害 = 攻擊力 × (1 + 加成%)：半人馬文明機動型 +10%
-	var cen_src: Array = Modifiers.sources_for_lineup(["CEN2"], "centaur", true)[0]
-	var b := _row(StatBreakdown.build("CEN2", 1, cen_src), "basic")
-	check(is_equal_approx(b["value"], UnitStats.base_stats("CEN2", 1)["atk"] * 1.10), "普攻傷害含文明 +10%")
-	# 列的淨變化：人類文明普攻 -5% → 普攻傷害列為減少（紅）；同時有增有減時依淨值
-	var hum_src: Array = Modifiers.sources_for_lineup(["ORC1"], "human", true)[0]
-	check(float(_row(StatBreakdown.build("ORC1", 1, hum_src), "basic")["net"]) < 0.0, "人類普攻 -5% 的列淨值為負（紅字）")
-	var mix: Array = [{"stat": "basic_dmg_pct", "value": 10.0, "source": "civ", "label": "+"}, {"stat": "basic_dmg_pct", "value": -8.0, "source": "civ", "label": "-"}]
-	check(float(_row(StatBreakdown.build("ORC1", 1, mix), "basic")["net"]) > 0.0, "+10% 與 -8% 混合時依淨值顯示為增加（藍字）")
-	eq(_row(StatBreakdown.build("TUT1", 1, []), "mana")["text"], "無主動技能", "教學弱敵顯示無主動技能")
-	# 防禦列顯示減傷百分比
-	var arm := _row(StatBreakdown.build("HUM2", 1, []), "armor")
-	check(str(arm["text"]).contains("減傷"), "護甲列顯示減傷百分比")
-	# 戰鬥中狀態（破甲）列入明細
-	var arm2 := _row(StatBreakdown.build("HUM2", 1, [], [{"kind": "armor_down", "value": 15.0}]), "armor")
-	eq(arm2["value"], maxf(0.0, UnitStats.base_stats("HUM2", 1)["armor"] - 15.0), "破甲後的有效護甲")
-	# for_lineup 由來源加總，兩者一致
+	# 3×4 宮格：12 個屬性，順序固定，生命不在宮格內
+	var cells := StatBreakdown.cells("ORC1", 1, [])
+	eq(cells.map(func(c): return c["key"]), StatBreakdown.ORDER, "12 格屬性與順序")
+	check(not cells.any(func(c): return c["key"] == "hp"), "生命不放在宮格內")
+	for c in cells:
+		check(not str(c["text"]).begins_with("+") and not str(c["text"]).contains(" +"), "格子只顯示最終數字（%s：%s）" % [c["key"], c["text"]])
+	# 正常升星不會讓數字變藍：比較基準是目前星級的基礎值
+	for u in GameData.units():
+		for star in [1, 2, 3]:
+			for c in StatBreakdown.cells(str(u["id"]), star, []):
+				if c["key"] != "mana":
+					eq(int(c["sign"]), 0, "%s %d★ 沒有修正時 %s 為白字" % [u["id"], star, c["key"]])
+	var s3 := StatBreakdown.cells("ORC1", 3, [])
+	eq(_cell(s3, "atk")["value"], UnitStats.base_stats("ORC1", 3)["atk"], "三星數字是三星基礎值")
+	# 文明 Debuff → 紅；羈絆／裝備 Buff → 藍；分類正確
+	var elf: Array = Modifiers.sources_for_lineup(["ORC1"], "elf", true)[0]
+	eq(int(_cell(StatBreakdown.cells("ORC1", 1, elf), "atk")["sign"]), -1, "精靈文明近戰普攻 -8% → 攻擊紅字")
+	eq(int(StatBreakdown.hp_info("ORC1", 1, elf)["sign"]), -1, "精靈文明近戰 HP -10% → 生命紅字")
+	var src: Array = Modifiers.sources_for_lineup(["HUM2", "ELF1"], "", true, [["DM_PLATE"], []])[0]
+	var arm := _cell(StatBreakdown.cells("HUM2", 2, src), "armor")
+	eq(int(arm["sign"]), 1, "羈絆＋裝備物防 → 藍字")
+	eq(arm["value"], UnitStats.final_stats("HUM2", 2, Modifiers.sum_sources(src))["armor"], "物防數字＝實際戰鬥數值")
+	var cats := {}
+	for l in arm["lines"]:
+		cats[l["cat"]] = true
+	check(cats.has("base") and cats.has("trait") and cats.has("item"), "物防明細區分 基礎／羈絆／裝備")
+	check(not cats.has("civ"), "沒有文明修正時不列出文明")
+	check(arm["lines"].all(func(l): return l["cat"] == "base" or not str(l["text"]).ends_with("0") or str(l["text"]) != "+0"), "不列零值來源")
+	check(arm["extra"][0].contains("減傷率"), "物防明細顯示目前減傷率")
+	# 戰鬥中暫時效果：破甲；Buff 與 Debuff 同時存在時以淨值決定顏色
+	var mixed := _cell(StatBreakdown.cells("HUM2", 1, [{"stat": "armor_flat", "value": 5.0, "source": "trait", "label": "守衛 2"}],
+		[{"kind": "armor_down", "value": 8.0, "left": 2.0}]), "armor")
+	eq(int(mixed["sign"]), -1, "物防 +5 與破甲 -8 → 淨值為負，紅字")
+	check(mixed["lines"].any(func(l): return l["cat"] == "status" and int(l["sign"]) == -1), "明細列出暫時性戰鬥效果（紅字）")
+	var up := _cell(StatBreakdown.cells("HUM2", 1, [{"stat": "armor_flat", "value": 10.0, "source": "trait", "label": "x"}],
+		[{"kind": "armor_down", "value": 4.0, "left": 2.0}]), "armor")
+	eq(int(up["sign"]), 1, "物防 +10 與破甲 -4 → 淨值為正，藍字")
+	# 攻速、暴擊（裝備）
+	var ring: Array = Modifiers.sources_for_lineup(["CEN1"], "", false, [["DM_RING", "CU_FANG"]])[0]
+	var rc := StatBreakdown.cells("CEN1", 1, ring)
+	eq(int(_cell(rc, "crit")["sign"]), 1, "暴擊率裝備 → 藍")
+	eq(_cell(rc, "crit")["text"], "20%", "暴擊率 5% + 15%")
+	eq(_cell(rc, "crit_dmg")["text"], "175%", "暴擊傷害 150% + 25%")
+	eq(int(_cell(rc, "as")["sign"]), 1, "攻速裝備 → 藍")
+	# 鬼人文明技能傷害、戰鬥中魔力顯示
+	var oni: Array = Modifiers.sources_for_lineup(["ONI2"], "oni", true)[0]
+	eq(_cell(StatBreakdown.cells("ONI2", 1, oni), "skill")["text"], "112%", "鬼人技能傷害 112%")
+	eq(_cell(StatBreakdown.cells("ONI2", 1, [], [], {"mana": 40.0}), "mana")["text"], "40/60", "戰鬥中魔力顯示 目前／上限")
+	eq(_cell(StatBreakdown.cells("TUT1", 1, []), "mana")["text"], "—", "沒有技能的單位")
+	# 修正值由來源加總，與實際一致
 	var direct := Modifiers.for_lineup(["ELF1", "ELF2", "HUM2"], "human", true)
-	var src := Modifiers.sources_for_lineup(["ELF1", "ELF2", "HUM2"], "human", true)
+	var srcs := Modifiers.sources_for_lineup(["ELF1", "ELF2", "HUM2"], "human", true)
 	for i in 3:
-		eq(Modifiers.sum_sources(src[i]), direct[i], "來源加總＝修正值")
+		eq(Modifiers.sum_sources(srcs[i]), direct[i], "來源加總＝修正值")
 
 
 func test_contribution_stats() -> void:
