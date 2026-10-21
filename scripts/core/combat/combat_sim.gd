@@ -13,6 +13,8 @@ extends RefCounted
 ##   death  {cid}                          end   {cleared, time}
 ##   item   {cid, kind, hp}（裝備被動，例如開戰時的生命交換）
 ##   retreat{cid, from, to, dur}（施法後後撤一格，例如草原弓手；播放時同 move）
+##   rift   {cid, cells, delay}（延遲爆炸的範圍標記）   burst {cid, cells, color}（延遲效果引爆）
+##   damage 另有 redirect_from（守護連結代為承受）、parried（返刃格擋）、counter（反擊）
 
 const EPS := 0.0001
 
@@ -25,6 +27,8 @@ var t := 0.0
 var tick := 0.05
 var max_time := 45.0
 var _next_cid := 1
+## 延遲效果（例如虛空裂隙）：{at, kind, src, ...}，依加入順序在到期的那一步結算
+var _delayed: Array = []
 
 
 func _init(seed_value: int) -> void:
@@ -113,6 +117,7 @@ func run() -> Dictionary:
 	for i in steps + 1:
 		t = i * tick
 		_update_statuses()
+		_run_delayed()
 		if _is_over():
 			finished = true
 			break
@@ -158,8 +163,8 @@ func _is_over() -> bool:
 
 
 func _act(u: CombatUnit) -> void:
-	# 1) 魔力滿 → 施放技能
-	if u.mana >= u.mana_max - EPS:
+	# 1) 魔力滿 → 施放技能（被動技能的單位沒有魔力，不會施放）
+	if u.mana_max > 0.0 and u.mana >= u.mana_max - EPS:
 		if SkillRunner.cast(self, u):
 			u.casts += 1
 			u.mana = maxf(0.0, u.mana - u.mana_max)
@@ -339,13 +344,20 @@ func dash_next_to(u: CombatUnit, tgt: CombatUnit) -> bool:
 # ---------- 傷害、治療、護盾 ----------
 func basic_attack(u: CombatUnit, tgt: CombatUnit) -> void:
 	emit({"k": "attack", "cid": u.cid, "tgt": tgt.cid, "ranged": not u.is_melee()})
+	if u.has_passive_skill() and str(u.data.get("skill", {}).get("kind", "")) == "focus_fire":
+		# 追跡：連續命中同一目標逐步提高普攻傷害；換目標重置
+		if u.focus_target == tgt.cid:
+			u.focus_stacks = mini(u.focus_stacks + 1, int(u.data["skill"]["params"].get("max_stacks", 5)))
+		else:
+			u.focus_target = tgt.cid
+			u.focus_stacks = 0
 	deal_damage(u, tgt, u.effective_atk(), "physical", "basic", false)
 	gain_mana(u, float(cfg.get("mana_per_attack", 10)))
 	ItemPassives.on_basic_hit(self, u, tgt)
 
 
 func gain_mana(u: CombatUnit, amount: float) -> void:
-	if not u.alive:
+	if not u.alive or u.mana_max <= 0.0:
 		return
 	var before := u.mana
 	u.mana = minf(u.mana_max, u.mana + amount)
@@ -370,7 +382,35 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	if dtype != "magic":
 		var dr := minf(float(cfg.get("max_phys_reduction", 0.8)), tgt.status_sum("phys_dr") / 100.0)
 		amount *= (1.0 - dr)
+	# 返刃（流浪劍聖）：架勢中第一次受到普攻，該次傷害降低並準備反擊
+	var parry := {}
+	if source == "basic" and not is_dot:
+		for i in tgt.statuses.size():
+			if tgt.statuses[i]["kind"] == "parry":
+				parry = tgt.statuses[i]
+				tgt.statuses.remove_at(i)
+				emit({"k": "cleanse", "cid": tgt.cid, "kind": "parry"})
+				break
+		if not parry.is_empty():
+			amount *= 1.0 - float(parry.get("value", 60)) / 100.0
 	var dmg := float(maxi(1, roundi(amount)))
+	src.raw_damage += dmg
+	var hp_damage := _apply_hit(src, tgt, dmg, {"crit": crit, "dtype": dtype, "source": source, "dot": is_dot, "parried": not parry.is_empty()}, true)
+	if tgt.alive and source == "basic":
+		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
+		ItemPassives.on_basic_taken(self, tgt, src, dmg)
+	ItemPassives.on_damage_dealt(self, src, hp_damage)
+	# 反擊：視為技能傷害（不回魔、不會再觸發返刃），只反擊這一次
+	if not parry.is_empty() and tgt.alive and src.alive:
+		var counter_raw := tgt.effective_atk() * float(parry.get("counter_pct", 160)) / 100.0
+		emit({"k": "attack", "cid": tgt.cid, "tgt": src.cid, "ranged": false, "counter": true})
+		deal_damage(tgt, src, counter_raw, "physical", "skill", false)
+	return dmg
+
+
+## 結算一次傷害到 tgt：護盾吸收 → （致命時）守護連結轉移 → 扣生命 → 事件與統計 → 陣亡／祝福觸發。回傳有效 HP 傷害。
+## allow_redirect：被轉移過來的傷害不會再被轉移（不會連鎖）。
+func _apply_hit(src: CombatUnit, tgt: CombatUnit, dmg: float, meta: Dictionary, allow_redirect: bool) -> float:
 	var absorbed := 0.0
 	var remaining := dmg
 	var absorb_by: Array = []
@@ -386,23 +426,62 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 			provider.shield_absorbed += take
 			absorb_by.append([provider.cid, take])
 	tgt.shields = tgt.shields.filter(func(x): return float(x["amount"]) > 0.0)
+	# 守護誓約：即將承受致命傷害時，由施法的騎士承受這次剩下的傷害（一次連結只攔截一次）
+	var guard: CombatUnit = null
+	if allow_redirect and remaining >= tgt.hp - EPS and remaining > 0.0:
+		for i in tgt.statuses.size():
+			var st: Dictionary = tgt.statuses[i]
+			if st["kind"] != "guard_link":
+				continue
+			var k := unit_by_cid(int(st["src"]))
+			if k != null and k.alive and k != tgt:
+				guard = k
+				tgt.statuses.remove_at(i)
+				emit({"k": "cleanse", "cid": tgt.cid, "kind": "guard_link"})
+				break
+	var moved := 0.0
+	if guard != null:
+		moved = remaining
+		remaining = 0.0
 	var hp_before := tgt.hp
 	tgt.hp = maxf(0.0, tgt.hp - remaining)
 	var hp_damage := hp_before - tgt.hp
 	src.damage_dealt += hp_damage
-	src.raw_damage += dmg
 	src.overkill += remaining - hp_damage
 	tgt.damage_taken += hp_damage
-	emit({"k": "damage", "src": src.cid, "tgt": tgt.cid, "v": dmg, "absorbed": absorbed, "hp": tgt.hp,
-		"shield": tgt.shield_total(), "crit": crit, "dtype": dtype, "source": source, "basic": source == "basic", "dot": is_dot,
-		"hp_dmg": hp_damage, "absorb_by": absorb_by})
+	var e := {"k": "damage", "src": src.cid, "tgt": tgt.cid, "v": dmg, "absorbed": absorbed, "hp": tgt.hp,
+		"shield": tgt.shield_total(), "crit": bool(meta.get("crit", false)), "dtype": str(meta.get("dtype", "physical")),
+		"source": str(meta.get("source", "skill")), "basic": meta.get("source", "") == "basic", "dot": bool(meta.get("dot", false)),
+		"hp_dmg": hp_damage, "absorb_by": absorb_by}
+	if meta.has("redirect_from"):
+		e["redirect_from"] = meta["redirect_from"]
+	if bool(meta.get("parried", false)):
+		e["parried"] = true
+	emit(e)
 	if tgt.hp <= 0.0:
 		kill(tgt)
-	elif source == "basic":
-		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
-		ItemPassives.on_basic_taken(self, tgt, src, dmg)
-	ItemPassives.on_damage_dealt(self, src, hp_damage)
-	return dmg
+	else:
+		_check_blessing(tgt)
+	if guard != null:
+		var m2 := meta.duplicate()
+		m2["redirect_from"] = tgt.cid
+		m2.erase("parried")
+		hp_damage += _apply_hit(src, guard, moved, m2, false)
+	return hp_damage
+
+
+## 生命預言：生命比例低於門檻時立刻觸發一次治療（死亡的棋子不會觸發）
+func _check_blessing(u: CombatUnit) -> void:
+	if not u.alive:
+		return
+	for i in u.statuses.size():
+		var st: Dictionary = u.statuses[i]
+		if st["kind"] == "blessing" and u.hp_ratio() < float(st["value"]) / 100.0:
+			u.statuses.remove_at(i)
+			emit({"k": "cleanse", "cid": u.cid, "kind": "blessing"})
+			var healer := unit_by_cid(int(st["src"]))
+			heal(healer if healer != null else u, u, float(st.get("heal", 0.0)))
+			return
 
 
 ## 穿透後的防禦減傷率：減傷率 × (1 − 穿透%)。按比例忽略既有減傷，不是扣除百分點；不會低於 0。
@@ -422,6 +501,8 @@ func damage_bonus_pct(src: CombatUnit, tgt: CombatUnit, dtype: String, source: S
 	if source == "basic":
 		pct += float(m.get("basic_dmg_pct", 0.0))
 		pct += float(m.get("melee_basic_pct", 0.0)) if src.is_melee() else float(m.get("ranged_basic_pct", 0.0))
+		if src.focus_stacks > 0 and src.focus_target == tgt.cid:
+			pct += src.focus_stacks * float(src.data.get("skill", {}).get("params", {}).get("pct", 8))
 		var mark := tgt.status_from("mark", src.cid)
 		if not mark.is_empty():
 			pct += float(mark.get("value", 0.0))
@@ -479,8 +560,8 @@ func add_shield(src: CombatUnit, tgt: CombatUnit, amount: float, dur: float) -> 
 # ---------- 狀態 ----------
 ## 只會有一份的狀態（不同來源不相加，取最強效果、時間取較長者）：緩速、重傷
 const UNIQUE_STATUSES := ["slow", "wound"]
-## 同一來源重複施加時刷新（不重複堆疊）：持續傷害、持續治療、穿透增益、標記
-const REFRESH_STATUSES := ["dot", "hot", "phys_pen", "magic_pen", "mark"]
+## 同一來源重複施加時刷新（不重複堆疊）：持續傷害、持續治療、穿透增益、標記、守護連結、返刃架勢、生命祝福
+const REFRESH_STATUSES := ["dot", "hot", "phys_pen", "magic_pen", "mark", "guard_link", "parry", "blessing"]
 
 
 static func wound_pct() -> float:
@@ -536,6 +617,24 @@ func add_periodic(src: CombatUnit, tgt: CombatUnit, kind: String, total: float, 
 	add_status(tgt, kind, 0.0, ticks * period + EPS, src.cid,
 		{"next_tick": t + period, "tick_amount": total / ticks, "ticks_left": ticks, "dtype": dtype, "source": source,
 		"tag": tag if tag != "" else source})
+
+
+# ---------- 延遲效果 ----------
+func add_delayed(e: Dictionary) -> void:
+	_delayed.append(e)
+
+
+func _run_delayed() -> void:
+	if _delayed.is_empty():
+		return
+	var due: Array = _delayed.filter(func(x): return float(x["at"]) <= t + EPS)
+	if due.is_empty():
+		return
+	_delayed = _delayed.filter(func(x): return float(x["at"]) > t + EPS)
+	for e in due:
+		match str(e["kind"]):
+			"rift":
+				SkillRunner.explode_rift(self, e)
 
 
 ## 施法後後撤一格（草原弓手）：只走到相鄰合法空格；優先拉開與最近敵人的距離，
@@ -618,5 +717,10 @@ func _update_statuses() -> void:
 					heal(src, u, float(s["tick_amount"]))
 		if not u.alive:
 			continue
+		# 生命預言：時間到仍未觸發 → 結束時治療
+		for s in u.statuses:
+			if s["kind"] == "blessing" and float(s["until"]) <= t + EPS:
+				var healer := unit_by_cid(int(s["src"]))
+				heal(healer if healer != null else u, u, float(s.get("end_heal", 0.0)))
 		u.statuses = u.statuses.filter(func(s): return float(s["until"]) > t + EPS and int(s.get("ticks_left", 1)) > 0)
 		u.shields = u.shields.filter(func(s): return float(s["until"]) > t + EPS)

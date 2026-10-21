@@ -37,7 +37,7 @@ func _set_star(s: int) -> void:
 		UiStyle.style_button(star_btns[i], Color(0.55, 0.36, 0.08) if i + 1 == s else Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 15)
 	for c in unit_grid.get_children():
 		c.queue_free()
-	for race in ["elf", "human", "orc", "centaur", "deer", "oni"]:
+	for race in ["elf", "human", "orc", "centaur", "deer", "oni", "neutral"]:
 		for u in GameData.units():
 			if u["race"] == race:
 				unit_grid.add_child(_unit_card(str(u["id"])))
@@ -122,7 +122,7 @@ func _civ_text() -> String:
 	var lines: Array = []
 	for c in GameData.civs():
 		var col := UiStyle.hex_color(GameData.race_color(str(c["race"])).lightened(0.3))
-		var four: Array = Shop.pool_for(str(c["id"]), 4)
+		var four: Array = Shop.pool_for(str(c["id"]), 4).filter(func(x): return not GameData.is_neutral(x))
 		lines.append("[b][color=%s]%s[/color][/b]　[color=#9aa3ad]商店頂尖棋子：%s[/color]" % [col, c["name"], GameData.unit(four[0])["name"] if not four.is_empty() else "?"])
 		for b in c["buffs"]:
 			lines.append("　[color=#6bdc85]▲ %s[/color]" % b["text"])

@@ -44,6 +44,9 @@ var target_switches := 0
 var items: Array = []
 var passives: Array = []
 var item_counter := 0
+## 追跡獵手（被動）：連續普攻同一目標的層數
+var focus_target := -1
+var focus_stacks := 0
 ## 狀態：{kind, value, until, src, next_tick?, tick_amount?, dtype?, tag?}
 var statuses: Array = []
 ## 護盾：{amount, until}
@@ -61,6 +64,11 @@ var casts := 0
 
 func is_melee() -> bool:
 	return attack_range <= 1
+
+
+## 被動技能（沒有主動施放，例如追跡獵手）
+func has_passive_skill() -> bool:
+	return bool(data.get("skill", {}).get("passive", false))
 
 
 func is_assassin() -> bool:

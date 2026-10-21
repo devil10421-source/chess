@@ -44,7 +44,7 @@ func _make_card(c: Dictionary) -> Button:
 	rich.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 12)
 	rich.add_theme_font_size_override("normal_font_size", 15)
 	rich.add_theme_font_size_override("bold_font_size", 24)
-	var four: Array = Shop.pool_for(id, 4)
+	var four: Array = Shop.pool_for(id, 4).filter(func(x): return not GameData.is_neutral(x))
 	var four_name := str(GameData.unit(four[0])["name"]) if not four.is_empty() else "?"
 	var lines: Array = []
 	lines.append("[b][color=%s]%s[/color][/b]　[color=#9aa3ad]頂尖棋子：%s[/color]" % [UiStyle.hex_color(race_col.lightened(0.25)), c["name"], four_name])

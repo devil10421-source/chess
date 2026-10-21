@@ -1,11 +1,12 @@
 class_name SkillRunner
 extends RefCounted
-## 24 種棋子的技能行為。數值一律來自 units.json 的 skill.params，經 UnitStats 依星級換算。
+## 34 種棋子（六族 24＋中立 10）的技能行為。數值一律來自 units.json 的 skill.params，經 UnitStats 依星級換算。
 ## cast() 回傳 false 代表沒有有效目標，不消耗魔力。
 
 const KINDS := ["self_shield", "mark_prey", "area_cc", "dash_strike", "heal_lowest", "shield_taunt", "rally",
 	"strike", "blood_rage", "warlord_roar", "rapid_shot", "brace", "thunder_charge", "living_bark",
-	"rejuvenate", "forest_prayer", "bleed_strike", "curse", "shadow_step", "hellfire", "eldritch_pulse"]
+	"rejuvenate", "forest_prayer", "bleed_strike", "curse", "shadow_step", "hellfire", "eldritch_pulse",
+	"surround_guard", "focus_fire", "rune_ward", "oath_guard", "void_rift", "riposte", "shadow_dance", "prophecy"]
 
 const COLORS := {
 	"physical": "#ffb347", "magic": "#c27bff", "heal": "#59e38b", "shield": "#cfe8ff", "buff": "#ffd34d", "cc": "#7fd6ff",
@@ -319,5 +320,135 @@ static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 			sim.add_shield(u, u, _amt(u, "shield"), float(_p(u, "dur", 4)))
 			return true
 
+		# ---------- 中立陣營（V0.4） ----------
+		"focus_fire":
+			return false   # 被動技能：效果在普攻時處理（CombatSim.basic_attack）
+
+		"surround_guard":
+			var adj := sim.enemies_of(u).filter(func(e: CombatUnit) -> bool: return HexGrid.distance(e.cell, u.cell) <= 1)
+			if adj.size() < int(_p(u, "min_adj", 2)):
+				return false   # 沒被包圍：保留魔力
+			_cast_event(sim, u, COLORS["shield"], [u.cell])
+			sim.add_status(u, "armor_up", float(_p(u, "armor", 30)), float(_p(u, "dur", 4)), u.cid)
+			return true
+
+		"rune_ward":
+			var radius := int(_p(u, "radius", 1))
+			_cast_event(sim, u, COLORS["shield"], HexGrid.cells_in_range(u.cell, radius))
+			for a in _in_radius(sim.allies_of(u), u.cell, radius):
+				sim.add_shield(u, a, _amt(u, "shield"), float(_p(u, "dur", 4)))
+			return true
+
+		"oath_guard":
+			var others: Array = _lowest_hp_allies(sim, u).filter(func(a: CombatUnit) -> bool: return a != u)
+			var dur := float(_p(u, "link_dur", 5))
+			_cast_event(sim, u, COLORS["shield"], [u.cell] + ([others[0].cell] if not others.is_empty() else []), others[0].cid if not others.is_empty() else -1)
+			sim.add_shield(u, u, _amt(u, "shield"), float(_p(u, "dur", 5)))
+			if not others.is_empty():
+				var a: CombatUnit = others[0]
+				sim.add_shield(u, a, _amt(u, "shield2"), float(_p(u, "dur", 5)))
+				sim.add_status(a, "guard_link", 1.0, dur, u.cid, {"tag": "oath"})
+			return true
+
+		"void_rift":
+			var center := _best_area_center(sim, u, int(_p(u, "radius", 1)))
+			if center == HexGrid.INVALID:
+				return false
+			var cells := HexGrid.cells_in_range(center, int(_p(u, "radius", 1)))
+			var delay := float(_p(u, "delay", 1.2))
+			_cast_event(sim, u, COLORS["magic"], cells)
+			sim.emit({"k": "rift", "cid": u.cid, "cells": cells, "delay": delay})
+			sim.add_delayed({"at": sim.t + delay, "kind": "rift", "src": u.cid, "center": center, "radius": int(_p(u, "radius", 1)),
+				"dmg": _amt(u, "dmg"), "dot": _amt(u, "dot"), "dur": float(_p(u, "dur", 3))})
+			return true
+
+		"riposte":
+			_cast_event(sim, u, COLORS["shield"], [u.cell])
+			sim.add_status(u, "parry", float(_p(u, "block", 60)), float(_p(u, "dur", 3)), u.cid,
+				{"tag": "riposte", "counter_pct": float(_p(u, "atk_pct", 160))})
+			return true
+
+		"shadow_dance":
+			var tg := _reachable_lowest_ratio(sim, u)
+			if tg == null:
+				return false   # 沒有可到達的目標：不施放、不卡住
+			sim.dash_next_to(u, tg)
+			var raw := u.effective_atk() * float(_p(u, "atk_pct", 220)) / 100.0
+			_cast_event(sim, u, COLORS["physical"], [tg.cell], tg.cid)
+			sim.deal_damage(u, tg, raw, "physical", "skill", false)
+			u.target_cid = tg.cid
+			if not tg.alive:
+				var nt := _reachable_lowest_ratio(sim, u)
+				if nt != null:
+					sim.dash_next_to(u, nt)
+					_cast_event(sim, u, COLORS["physical"], [nt.cell], nt.cid)
+					sim.deal_damage(u, nt, raw * float(_p(u, "chase_pct", 60)) / 100.0, "physical", "skill", false)
+					u.target_cid = nt.cid
+			return true
+
+		"prophecy":
+			var allies := _lowest_hp_allies(sim, u)
+			if allies.is_empty():
+				return false
+			var a: CombatUnit = allies[0]
+			_cast_event(sim, u, COLORS["heal"], [a.cell], a.cid)
+			sim.add_status(a, "blessing", float(_p(u, "threshold", 40)), float(_p(u, "dur", 6)), u.cid,
+				{"tag": "prophecy", "heal": _amt(u, "heal"), "end_heal": _amt(u, "heal2")})
+			sim._check_blessing(a)
+			return true
+
 	push_warning("未實作的技能種類：%s（%s）" % [kind, u.unit_id])
 	return false
+
+
+## 能覆蓋最多敵人的格子（範圍 radius）；同數時：包含目前目標者 → 離施法者近者 → 排序固定
+static func _best_area_center(sim: CombatSim, u: CombatUnit, radius: int) -> Vector2i:
+	var foes := sim.enemies_of(u)
+	if foes.is_empty():
+		return HexGrid.INVALID
+	var cur := sim.unit_by_cid(u.target_cid)
+	var best := HexGrid.INVALID
+	var best_key: Array = []
+	for c in HexGrid.all_cells():
+		var n := 0
+		for e in foes:
+			if HexGrid.distance(e.cell, c) <= radius:
+				n += 1
+		if n == 0:
+			continue
+		var has_cur := 0 if (cur != null and cur.alive and HexGrid.distance(cur.cell, c) <= radius) else 1
+		var key: Array = [-n, has_cur, HexGrid.distance(u.cell, c), c.y, c.x]
+		if best_key.is_empty() or CombatSim._key_less(key, best_key):
+			best = c
+			best_key = key
+	return best
+
+
+## 虛空裂隙爆炸（延遲效果到期時由 CombatSim 呼叫）：只打當下站在範圍內的敵人
+static func explode_rift(sim: CombatSim, e: Dictionary) -> void:
+	var src := sim.unit_by_cid(int(e["src"]))
+	if src == null:
+		return
+	var cells := HexGrid.cells_in_range(e["center"], int(e["radius"]))
+	sim.emit({"k": "burst", "cid": src.cid, "cells": cells, "color": COLORS["magic"]})
+	for foe in sim.alive_of(1 - src.side):
+		if HexGrid.distance(foe.cell, e["center"]) <= int(e["radius"]):
+			sim.deal_damage(src, foe, float(e["dmg"]), "magic", "skill", false)
+			if foe.alive:
+				sim.add_periodic(src, foe, "dot", float(e["dot"]), float(e["dur"]), "magic", "skill", "skill")
+
+
+## 生命比例最低、且能到達（已相鄰或旁邊有空格）的敵人
+static func _reachable_lowest_ratio(sim: CombatSim, u: CombatUnit) -> CombatUnit:
+	var list := sim.enemies_of(u)
+	list.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
+		if not is_equal_approx(a.hp_ratio(), b.hp_ratio()):
+			return a.hp_ratio() < b.hp_ratio()
+		return a.cid < b.cid)
+	for e in list:
+		if HexGrid.distance(u.cell, e.cell) <= 1:
+			return e
+		for n in HexGrid.neighbors(e.cell):
+			if not sim.occupancy.has(n):
+				return e
+	return null

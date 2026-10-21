@@ -2,7 +2,7 @@ class_name UnitStats
 extends RefCounted
 ## 由資料計算棋子屬性：稀有度基礎值 × 職業修正 × 星級倍率（全部來自 game_config.json）。
 
-const BUDGET_KEYS := ["dmg", "dmg2", "heal", "shield", "hot", "dot"]
+const BUDGET_KEYS := ["dmg", "dmg2", "heal", "heal2", "shield", "shield2", "hot", "dot"]
 
 
 static func _star_value(key: String, star: int) -> float:
@@ -23,7 +23,14 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 		var ph := GameData.phase(str(u["phase"]))
 		phase_hp = float(ph.get("hp_mult", 1.0))
 		phase_atk = float(ph.get("atk_mult", 1.0))
-	if u.has("stats"):
+	if u.has("spec"):
+		# 中立 4 費（V0.4）：規格書的 ★1 屬性；生命與攻擊依 neutral.spec_scale 換算到本作尺度，防禦／攻速／射程／魔力照原值
+		var sp: Dictionary = u["spec"]
+		var k := spec_scale()
+		tier = {"hp": roundf(float(sp.get("hp", 500)) * k), "atk": float(sp.get("atk", 40)) * k, "armor": sp.get("armor", 0), "mr": sp.get("mr", 0),
+			"atk_speed": sp.get("atk_speed", 0.8)}
+		cls = {}
+	elif u.has("stats"):
 		# 特殊單位：直接使用資料中指定的屬性
 		var fixed: Dictionary = u["stats"]
 		tier = {"hp": fixed.get("hp", 1), "atk": fixed.get("atk", 1), "armor": fixed.get("armor", 0), "mr": fixed.get("mr", 0),
@@ -44,7 +51,13 @@ static func base_stats(unit_id: String, star: int) -> Dictionary:
 		"mana_max": float(u.get("mana_max", combat.get("mana_max", 60))),
 		"crit_chance": float(u.get("crit_chance", combat.get("crit_chance", 0.05))),
 		"crit_mult": float(u.get("crit_mult", combat.get("crit_mult", 1.5))),
+		"start_mana": float(u.get("start_mana", 0.0)),
 	}
+
+
+## 中立 4 費規格數值 → 本作尺度的倍率（game_config.json → neutral.spec_scale）
+static func spec_scale() -> float:
+	return float(GameData.cfg("neutral").get("spec_scale", 1.0))
 
 
 ## 套用 Modifiers 後的戰鬥屬性。固定值（裝備）先加，再乘百分比。
@@ -57,7 +70,7 @@ static func final_stats(unit_id: String, star: int, mods: Dictionary) -> Diction
 	s["crit_mult"] = s["crit_mult"] + float(mods.get("crit_dmg_add", 0.0)) / 100.0
 	s["armor"] = s["armor"] + float(mods.get("armor_flat", 0.0))
 	s["mr"] = s["mr"] + float(mods.get("mr_flat", 0.0))
-	s["start_mana"] = float(mods.get("start_mana", 0.0))
+	s["start_mana"] = float(s.get("start_mana", 0.0)) + float(mods.get("start_mana", 0.0))
 	s["move_speed"] = s["move_speed"] * maxf(0.2, 1.0 + float(mods.get("move_speed_pct", 0.0)) / 100.0)
 	return s
 
@@ -70,11 +83,15 @@ static func skill_param(unit_id: String, key: String, default_value: Variant = 0
 	return skill(unit_id).get("params", {}).get(key, default_value)
 
 
-## 技能固定量（傷害、治療、護盾、持續量）＝ 稀有度預算 × 參數 × 星級技能倍率
+## 技能固定量（傷害、治療、護盾、持續量）＝ 稀有度預算 × 參數 × 星級技能倍率（★1／★2／★3＝1.00／1.85／3.33）。
+## 中立 4 費（skill.spec_scaled）：參數為規格書的固定數值，＝ 參數 × neutral.spec_scale × 星級技能倍率。
+## 攻擊力百分比型技能（atk_pct）不經過這裡：攻擊力本身已隨星級成長，不再重複乘技能倍率。
 static func skill_amount(unit_id: String, star: int, key: String) -> float:
 	var mult := float(skill_param(unit_id, key, 0.0))
 	if mult == 0.0:
 		return 0.0
+	if bool(skill(unit_id).get("spec_scaled", false)):
+		return roundf(mult * spec_scale() * _star_value("skill_mult", star))
 	var cost := GameData.unit_cost(unit_id)
 	var budget := float(GameData.cfg("tiers").get(str(cost), {}).get("skill_budget", 24))
 	return roundf(budget * mult * _star_value("skill_mult", star))

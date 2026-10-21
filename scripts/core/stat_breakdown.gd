@@ -12,7 +12,7 @@ const CAT_NAMES := {"base": "基礎", "civ": "文明", "trait": "羈絆", "item"
 const STATUS_NAMES := {"atk_up": "攻擊力提升", "atk_down": "攻擊力降低", "armor_up": "護甲提升",
 	"mr_up": "魔抗提升", "slow": "緩速", "wound": "重傷", "as_up": "攻速提升", "dmg_up": "直接傷害提升",
 	"phys_dr": "物理減傷", "mark": "被標記", "stun": "暈眩", "root": "定身", "taunt": "被嘲諷", "dot": "持續傷害", "hot": "持續治療",
-	"phys_pen": "物理穿透", "magic_pen": "魔法穿透"}
+	"phys_pen": "物理穿透", "magic_pen": "魔法穿透", "guard_link": "守護連結", "parry": "返刃架勢", "blessing": "生命祝福"}
 
 ## 宮格順序：3 欄 × 4 列（治療護盾與控制時間收在「技能」格的明細）
 const ORDER := ["atk", "armor", "mr", "as", "move", "range", "crit", "crit_dmg", "mana", "phys_pen", "magic_pen", "skill"]
@@ -149,7 +149,8 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	out.append(_cell("crit_dmg", "swords", "暴擊傷害", cd_val, float(base["crit_mult"]) * 100.0, _f(cd_val) + "%", lines))
 
 	# 9. 魔力（備戰顯示上限；戰鬥中顯示 目前／上限）；初始魔力加成視為正面修正
-	var no_skill := str(u.get("skill", {}).get("kind", "")) == "none"
+	var passive := bool(u.get("skill", {}).get("passive", false))
+	var no_skill := str(u.get("skill", {}).get("kind", "")) == "none" or passive
 	var start := float(fin["start_mana"])
 	lines = [{"cat": "base", "label": "施放技能所需魔力", "text": "—" if no_skill else _f(base["mana_max"]), "sign": 0}]
 	lines.append_array(_src_lines(sources, ["start_mana"], "", Callable()).map(func(l):
@@ -158,8 +159,8 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	var mana_text := "—" if no_skill else _f(base["mana_max"])
 	if live.has("mana") and not no_skill:
 		mana_text = "%d/%d" % [roundi(float(live["mana"])), roundi(float(base["mana_max"]))]
-	var mana_cell := _cell("mana", "mana", "魔力", start, 0.0, mana_text, lines,
-		["沒有主動技能"] if no_skill else ["初始魔力 %s；普攻 +10、受到普攻 +5" % _f(start)])
+	var mana_cell := _cell("mana", "mana", "魔力", start, float(base.get("start_mana", 0.0)), mana_text, lines,
+		["被動技能，不使用魔力"] if passive else (["沒有主動技能"] if no_skill else ["初始魔力 %s；普攻 +10、受到普攻 +5" % _f(start)]))
 	out.append(mana_cell)
 
 	# 10、11. 物理穿透、魔法穿透（按比例忽略目標減傷率；同類加總上限見 combat.status.penetration_max_pct）

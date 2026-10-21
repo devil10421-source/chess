@@ -6,7 +6,8 @@ extends Node2D
 ##       有裝備時在狀態條下方顯示 1～2 個小圖示，沒有裝備就完全不畫（不畫空格）。2 星銀環、3 星光環仍保留作為輔助。
 
 const STATUS_GLYPH := {"stun": "暈", "root": "定", "slow": "緩", "taunt": "嘲", "dot": "蝕", "atk_down": "弱", "wound": "傷",
-	"mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒", "phys_pen": "穿", "magic_pen": "穿"}
+	"mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒", "phys_pen": "穿", "magic_pen": "穿",
+	"guard_link": "誓", "parry": "架", "blessing": "祝"}
 const NEGATIVE := ["stun", "root", "slow", "taunt", "dot", "atk_down", "wound", "mark"]
 
 @onready var art: Sprite2D = $Art

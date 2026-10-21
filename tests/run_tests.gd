@@ -69,6 +69,9 @@ func _initialize() -> void:
 		"test_shop_odds_v04",
 		"test_card_pool",
 		"test_card_pool_weights",
+		"test_neutral_data",
+		"test_neutral_rules",
+		"test_neutral_skills",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -115,7 +118,7 @@ func test_scripts_and_scenes_load() -> void:
 
 
 func test_data_integrity() -> void:
-	eq(GameData.units().size(), 24, "棋子數量")
+	eq(GameData.units().size(), 34, "棋子數量（六族 24＋中立 10）")
 	var per_race := {}
 	var ids := {}
 	for u in GameData.units():
@@ -125,8 +128,8 @@ func test_data_integrity() -> void:
 		check(SkillRunner.KINDS.has(u["skill"]["kind"]), "技能種類未實作：" + str(u["id"]))
 		check(GameData.cfg("classes").has(u["class"]), "未知職業：" + str(u["id"]))
 		check(GameData.traits()["type"].has(u["type"]), "未知類型：" + str(u["id"]))
-		check(GameData.traits()["race"].has(u["race"]), "未知種族：" + str(u["id"]))
-	eq(ids.size(), 24, "棋子 id 不重複")
+		check(GameData.traits()["race"].has(u["race"]) or u["race"] == "neutral", "未知種族：" + str(u["id"]))
+	eq(ids.size(), 34, "棋子 id 不重複")
 	for race in ["elf", "human", "orc", "centaur", "deer", "oni"]:
 		for cost in [1, 2, 3, 4]:
 			eq(int(per_race.get("%s-%d" % [race, cost], 0)), 1, "%s 的 %d 費棋子數" % [race, cost])
@@ -646,7 +649,11 @@ func test_all_skills_trigger() -> void:
 		var ally := sim.add_unit("ELF1", 1, Vector2i(2, 5), 0, Modifiers.empty())
 		ally.hp = ally.max_hp * 0.5
 		caster.hp = caster.max_hp * 0.6
+		if bool(u["skill"].get("passive", false)):
+			continue   # 被動技能（追跡獵手）另外在 test_neutral_skills 測試
 		sim.add_unit("ORC1", 1, Vector2i(3, 4), 1, Modifiers.empty())
+		if str(u["skill"]["kind"]) == "surround_guard":
+			sim.add_unit("ORC1", 1, Vector2i(4, 5), 1, Modifiers.empty())   # 被兩名敵人包圍才會施放
 		sim.add_unit("CEN1", 1, Vector2i(2, 2), 1, Modifiers.empty())
 		sim.add_unit("HUM1", 1, Vector2i(5, 0), 1, Modifiers.empty())
 		caster.mana = caster.mana_max
@@ -654,6 +661,9 @@ func test_all_skills_trigger() -> void:
 		var ok := SkillRunner.cast(sim, caster)
 		check(ok, "%s 技能可施放" % id)
 		var effect_kinds := {}
+		if str(u["skill"]["kind"]) == "void_rift":
+			sim.t += 2.0
+			sim._run_delayed()   # 延遲爆炸
 		for i in range(before, sim.events.size()):
 			effect_kinds[sim.events[i]["k"]] = true
 		check(effect_kinds.has("cast"), "%s 有施放事件" % id)
@@ -663,8 +673,9 @@ func test_all_skills_trigger() -> void:
 		var sim2 := CombatSim.new(4)
 		sim2.add_unit(id, 2, Vector2i(3, 5), 0, Modifiers.empty())
 		sim2.add_unit("ELF1", 2, Vector2i(2, 4), 0, Modifiers.empty())
-		# 高血量、低傷害的假人，確保施法者活得夠久
-		for cell in [Vector2i(3, 3), Vector2i(4, 3)]:
+		# 高血量、低傷害的假人，確保施法者活得夠久（槍陣自守需要被貼身包圍）
+		var dummy_cells := [Vector2i(3, 4), Vector2i(4, 5)] if str(u["skill"]["kind"]) == "surround_guard" else [Vector2i(3, 3), Vector2i(4, 3)]
+		for cell in dummy_cells:
 			var dummy := sim2.add_unit("HUM2", 1, cell, 1, Modifiers.empty())
 			dummy.max_hp = 4000.0
 			dummy.hp = 4000.0
@@ -1782,7 +1793,7 @@ func test_no_armor_down_left() -> void:
 	# 「破甲」已全面遷移：資料與技能不再對目標降低防禦
 	for u in GameData.units() + GameData.special_units():
 		var pr: Dictionary = u.get("skill", {}).get("params", {})
-		check(not pr.has("armor") or str(u.get("skill", {}).get("kind", "")) in ["rally", "living_bark"], "%s 沒有降低目標防禦的參數" % u["id"])
+		check(not pr.has("armor") or str(u.get("skill", {}).get("kind", "")) in ["rally", "living_bark", "surround_guard"], "%s 沒有降低目標防禦的參數" % u["id"])
 	for id in ["HUM3", "ORC3", "OG_AVATAR"]:
 		check(float(GameData.unit(id)["skill"]["params"].get("pen", 0)) > 0.0, "%s 改為自身穿透" % id)
 	var r := BattleSetup.build(_demo_run(11).board_lineup(), "human", 15, 11).run()
@@ -1952,3 +1963,292 @@ func test_card_pool_weights() -> void:
 	var row := Shop.roll(rng, 1, "orc", {}, two)
 	eq(row.count("ORC1"), 2, "剩 2 張時同一次刷新最多出現 2 張")
 	eq(int(two["ORC1"]), 0, "抽出後卡池扣除")
+
+
+# ------------------------------------------------------------ V0.4 中立陣營
+func test_neutral_data() -> void:
+	var want := {"NEU1": [1, "warrior", "vanguard"], "NEU2": [2, "priest", "support"], "NEU3": [2, "archer", "rear"],
+		"NEU4": [3, "guardian", "vanguard"], "NEU5": [3, "mage", "rear"], "NEU6": [4, "guardian", "vanguard"],
+		"NEU7": [4, "mage", "rear"], "NEU8": [4, "warrior", "mobile"], "NEU9": [4, "assassin", "mobile"], "NEU10": [4, "priest", "support"]}
+	var neutral := GameData.units().filter(func(u): return GameData.is_neutral(str(u["id"])))
+	eq(neutral.size(), 10, "中立棋子 10 隻")
+	for id in want.keys():
+		var u := GameData.unit(id)
+		eq([int(u["cost"]), str(u["class"]), str(u["type"])], want[id], "%s 費用／職業／類型" % id)
+	var by_cost := {}
+	for u in neutral:
+		by_cost[int(u["cost"])] = int(by_cost.get(int(u["cost"]), 0)) + 1
+	eq(by_cost, {1: 1, 2: 2, 3: 2, 4: 5}, "中立 1／2／3／4 費 = 1／2／2／5")
+	for c in GameData.civs():
+		var civ := str(c["id"])
+		var n := []
+		for cost in [1, 2, 3, 4]:
+			n.append(Shop.pool_for(civ, cost).size())
+		eq(n, [7, 8, 8, 6], "%s 每費可招募種類 7／8／8／6" % civ)
+		eq(Shop.full_pool(civ).size(), 29, "%s 每場可招募 29 種" % civ)
+	check(not GameData.traits()["race"].has("neutral"), "沒有中立種族羈絆")
+	# 規格數值換算：★1 生命／攻擊 × spec_scale，其餘照原值
+	var k := UnitStats.spec_scale()
+	var s6 := UnitStats.base_stats("NEU6", 1)
+	eq(s6["hp"], float(roundi(900 * k)), "流亡騎士 ★1 生命＝900 × 換算倍率")
+	check(is_equal_approx(s6["atk"], snappedf(48 * k, 0.1)), "流亡騎士 ★1 攻擊＝48 × 換算倍率")
+	eq([s6["armor"], s6["mr"], s6["atk_speed"], s6["range"], s6["mana_max"], s6["start_mana"]], [25.0, 20.0, 0.70, 1, 100.0, 40.0], "流亡騎士 物防／魔防／攻速／射程／施法魔力／初始魔力")
+	eq(UnitStats.base_stats("NEU9", 1)["atk_speed"], 1.0, "影刃刺客攻速 1.00")
+	# 中立 4 費與同職業六族 4 費的生命／攻擊相近（不全面高於）
+	for pair in [["NEU6", "HUM4"], ["NEU7", "ONI4"], ["NEU8", "ORC4"], ["NEU9", "ELF4"], ["NEU10", "DEE4"]]:
+		var a := UnitStats.base_stats(pair[0], 1)
+		var b := UnitStats.base_stats(pair[1], 1)
+		check(a["hp"] <= b["hp"] * 1.35 and a["atk"] <= b["atk"] * 1.35, "%s 數值不大幅高於 %s（生命 %d／%d、攻擊 %.1f／%.1f）" % [pair[0], pair[1], a["hp"], b["hp"], a["atk"], b["atk"]])
+	# 技能升星：固定量 1.00／1.85／3.33；攻擊力百分比型不再重複乘
+	var sh1 := UnitStats.skill_amount("NEU6", 1, "shield")
+	eq(sh1, roundf(180 * k), "守護誓約 ★1 護盾＝180 × 換算倍率")
+	eq(UnitStats.skill_amount("NEU6", 2, "shield"), roundf(180 * k * 1.85), "★2 固定量 ×1.85")
+	eq(UnitStats.skill_amount("NEU6", 3, "shield"), roundf(180 * k * 3.33), "★3 固定量 ×3.33")
+
+
+func test_neutral_rules() -> void:
+	# 不計入種族羈絆、正常計算職業／類型；同名只算一次
+	var counts := Synergy.count(["NEU1", "NEU1", "ORC1", "NEU8"])
+	check(not counts["race"].has("neutral"), "中立不計入種族")
+	eq(int(counts["race"].get("orc", 0)), 1, "半獸人 1")
+	eq(int(counts["class"].get("warrior", 0)), 3, "戰士：NEU1、ORC1、NEU8（同名只算 1）")
+	eq(int(counts["type"].get("vanguard", 0)), 2, "前衛：NEU1、ORC1")
+	# 玩家文明的全軍效果作用於中立棋子
+	var src: Array = Modifiers.sources_for_lineup(["NEU1"], "elf", true)[0]
+	check(src.any(func(e): return e["source"] == "civ"), "精靈文明效果作用於中立棋子")
+	# 升星、出售、裝備
+	var run := RunState.create("human", 61)
+	run.gold = 99
+	run.shop = ["NEU1", "NEU1", "NEU1", "NEU6", ""]
+	run.buy(0)
+	run.buy(1)
+	run.buy(2)
+	eq(run.copies_of("NEU1", 2), 1, "中立棋子可以合成二星")
+	run.buy(3)
+	var knight := int(run.all_units().filter(func(u): return u["id"] == "NEU6")[0]["uid"])
+	run.inventory = ["DM_PLATE"]
+	eq(run.equip(knight, 0), "", "中立棋子可以裝備")
+	var g := run.gold
+	run.sell(knight)
+	eq(run.gold, g + 4, "中立 4 費出售 4 金")
+	check(run.inventory.has("DM_PLATE"), "出售後裝備回背包")
+	_pool_ok(run, "中立棋子的卡池守恆")
+
+
+func _neutral_sim(seed_value: int = 7) -> CombatSim:
+	return CombatSim.new(seed_value)
+
+
+func _tank(sim: CombatSim, id: String, cell: Vector2i, side: int, hp: float = 9999.0) -> CombatUnit:
+	var u := sim.add_unit(id, 1, cell, side, Modifiers.empty())
+	u.max_hp = hp
+	u.hp = hp
+	return u
+
+
+func test_neutral_skills() -> void:
+	var k := UnitStats.spec_scale()
+	# NEU1 槍陣自守：沒被包圍不施放（保留魔力），被 2 名敵人貼身才施放
+	var s1 := _neutral_sim()
+	var pike := s1.add_unit("NEU1", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	_tank(s1, "ORC1", Vector2i(3, 4), 1)
+	pike.mana = pike.mana_max
+	check(not SkillRunner.cast(s1, pike), "只有 1 名敵人相鄰：不施放")
+	_tank(s1, "ORC1", Vector2i(4, 5), 1)
+	check(SkillRunner.cast(s1, pike) and pike.status_sum("armor_up") > 0.0, "被 2 名敵人包圍：物防提升")
+
+	# NEU3 追跡（被動）：連續命中同一目標逐步加傷，換目標重置；不使用魔力
+	var s3 := _neutral_sim()
+	var hunter := s3.add_unit("NEU3", 1, Vector2i(3, 6), 0, Modifiers.empty())
+	var t1 := _tank(s3, "HUM2", Vector2i(3, 3), 1)
+	var t2 := _tank(s3, "HUM2", Vector2i(4, 3), 1)
+	t1.armor = 0.0
+	t2.armor = 0.0
+	hunter.crit_chance = 0.0
+	var dmgs: Array = []
+	for i in 4:
+		var before := t1.hp
+		s3.basic_attack(hunter, t1)
+		dmgs.append(before - t1.hp)
+	check(dmgs[1] > dmgs[0] and dmgs[2] > dmgs[1] and dmgs[3] > dmgs[2], "連續命中同一目標，普攻傷害逐步提高 %s" % str(dmgs))
+	var before2 := t2.hp
+	s3.basic_attack(hunter, t2)
+	check(is_equal_approx(before2 - t2.hp, dmgs[0]), "換目標後重置")
+	eq(hunter.mana, 0.0, "被動技能不累積魔力")
+
+	# NEU6 守護誓約：護盾、致命傷害轉移、只攔截一次、承傷統計不重複
+	var s6 := _neutral_sim()
+	var kn := s6.add_unit("NEU6", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	var weak := s6.add_unit("HUM1", 1, Vector2i(2, 5), 0, Modifiers.empty())
+	var foe := _tank(s6, "ORC1", Vector2i(3, 3), 1)
+	weak.hp = weak.max_hp * 0.3
+	kn.mana = kn.mana_max
+	check(SkillRunner.cast(s6, kn), "守護誓約施放")
+	eq(kn.shield_total(), roundf(180 * k), "騎士自身護盾")
+	eq(weak.shield_total(), roundf(120 * k), "友軍護盾")
+	check(weak.has_status("guard_link"), "建立守護連結")
+	var kn_hp := kn.hp
+	weak.shields.clear()
+	var dealt_before := foe.damage_dealt
+	s6.deal_damage(foe, weak, weak.hp + 50.0, "magic", "skill", false)
+	check(weak.alive and is_equal_approx(weak.damage_taken, 0.0), "致命傷害由騎士承受，友軍存活且未計承傷")
+	check(kn.hp < kn_hp or kn.shield_total() < roundf(180 * k), "騎士承受轉移的傷害")
+	check(is_equal_approx(foe.damage_dealt - dealt_before, kn.damage_taken), "輸出＝騎士實際承傷（不重複計算）")
+	check(not weak.has_status("guard_link"), "連結攔截一次後消失")
+	s6.deal_damage(foe, weak, weak.hp + 50.0, "magic", "skill", false)
+	check(not weak.alive, "第二次致命傷害不再攔截")
+	# 沒有其他友軍：只獲得自身護盾
+	var s6b := _neutral_sim()
+	var solo := s6b.add_unit("NEU6", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	_tank(s6b, "ORC1", Vector2i(3, 3), 1)
+	solo.mana = solo.mana_max
+	check(SkillRunner.cast(s6b, solo) and solo.shield_total() > 0.0, "沒有友軍時只給自身護盾")
+	# 騎士可能因攔截而死亡
+	var s6c := _neutral_sim()
+	var kn2 := s6c.add_unit("NEU6", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	var ally2 := s6c.add_unit("HUM1", 1, Vector2i(2, 5), 0, Modifiers.empty())
+	var foe2 := _tank(s6c, "ORC1", Vector2i(3, 3), 1)
+	kn2.mana = kn2.mana_max
+	SkillRunner.cast(s6c, kn2)
+	ally2.shields.clear()
+	kn2.shields.clear()
+	s6c.deal_damage(foe2, ally2, 99999.0, "magic", "skill", false)
+	check(not kn2.alive and ally2.alive, "騎士代為承受致命傷害而陣亡")
+
+	# NEU7 虛空裂隙：延遲 1.2 秒，爆炸前離開可閃避
+	var s7 := _neutral_sim()
+	var mage := s7.add_unit("NEU7", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var a := _tank(s7, "HUM2", Vector2i(3, 2), 1)
+	var b := _tank(s7, "HUM2", Vector2i(4, 2), 1)
+	var c := _tank(s7, "HUM2", Vector2i(0, 0), 1)
+	mage.mana = mage.mana_max
+	check(SkillRunner.cast(s7, mage), "虛空裂隙施放")
+	check(s7.events.any(func(e): return e["k"] == "rift"), "產生裂隙事件")
+	check(is_equal_approx(a.hp, 9999.0) and is_equal_approx(b.hp, 9999.0), "施放當下不造成傷害")
+	s7.occupancy.erase(b.cell)
+	b.cell = Vector2i(6, 0)
+	s7.occupancy[b.cell] = b.cid
+	s7.t = 1.25
+	s7._run_delayed()
+	check(a.hp < 9999.0, "爆炸命中留在範圍內的敵人")
+	check(is_equal_approx(b.hp, 9999.0), "爆炸前離開範圍可閃避")
+	check(is_equal_approx(c.hp, 9999.0), "範圍外不受傷")
+	check(a.statuses.any(func(x): return x["kind"] == "dot"), "命中者獲得持續傷害")
+	check(s7.events.any(func(e): return e["k"] == "burst"), "產生爆炸事件")
+
+	# NEU8 返刃：首次普攻 −60% 並反擊 160%；反擊不回魔、不連鎖
+	var s8 := _neutral_sim()
+	var sw := s8.add_unit("NEU8", 1, Vector2i(3, 4), 0, Modifiers.empty())
+	var att := _tank(s8, "ORC1", Vector2i(3, 3), 1)
+	sw.armor = 0.0
+	att.armor = 0.0
+	att.crit_chance = 0.0
+	sw.max_hp = 9999.0
+	sw.hp = 9999.0
+	sw.mana = sw.mana_max
+	SkillRunner.cast(s8, sw)
+	sw.mana = 0.0   # 施法後魔力歸零（由 _act 扣除；這裡直接呼叫技能所以手動歸零）
+	var mana0 := sw.mana
+	var hp0 := sw.hp
+	var att_hp0 := att.hp
+	s8.basic_attack(att, sw)
+	var taken1 := hp0 - sw.hp
+	eq(taken1, float(maxi(1, roundi(att.effective_atk() * 0.4))), "返刃：該次普攻傷害 −60%")
+	eq(att_hp0 - att.hp, float(roundi(sw.effective_atk() * 1.6)), "反擊造成攻擊力 160% 物理傷害")
+	eq(sw.mana, mana0 + 5.0, "反擊不額外回魔（只有受到普攻的 +5）")
+	var hp1 := sw.hp
+	s8.basic_attack(att, sw)
+	eq(hp1 - sw.hp, float(roundi(att.effective_atk())), "第二次普攻不再格擋")
+	# 兩名劍聖互相格擋不會無限反擊
+	var s8b := _neutral_sim()
+	var x1 := _tank(s8b, "NEU8", Vector2i(3, 4), 0)
+	var x2 := _tank(s8b, "NEU8", Vector2i(3, 3), 1)
+	x1.mana = x1.mana_max
+	x2.mana = x2.mana_max
+	SkillRunner.cast(s8b, x1)
+	SkillRunner.cast(s8b, x2)
+	var n0 := s8b.events.size()
+	s8b.basic_attack(x1, x2)
+	check(s8b.events.size() - n0 < 12, "互相返刃不會無限連鎖")
+	check(not x1.has_status("parry") or not x2.has_status("parry"), "反擊不觸發對方的返刃")
+
+	# NEU9 影襲連舞：打生命比例最低的敵人，擊殺後追擊一次（原傷害 60%）
+	var s9 := _neutral_sim()
+	var asn := s9.add_unit("NEU9", 1, Vector2i(3, 6), 0, Modifiers.empty())
+	var low := s9.add_unit("HUM1", 1, Vector2i(5, 1), 1, Modifiers.empty())
+	var mid := _tank(s9, "HUM2", Vector2i(1, 1), 1, 9999.0)
+	mid.hp = 9000.0
+	var full := _tank(s9, "HUM2", Vector2i(3, 0), 1, 9999.0)
+	low.hp = 1.0
+	low.armor = 0.0
+	mid.armor = 0.0
+	asn.mana = asn.mana_max
+	check(SkillRunner.cast(s9, asn), "影襲連舞施放")
+	check(not low.alive, "先打生命比例最低者並擊殺")
+	eq(9000.0 - mid.hp, float(roundi(asn.effective_atk() * 2.2 * 0.6)), "追擊造成原傷害 60%")
+	check(is_equal_approx(full.hp, 9999.0), "每次施法最多追擊一次")
+	# 沒有可到達的位置：不施放、不卡住
+	var s9b := _neutral_sim()
+	var asn2 := s9b.add_unit("NEU9", 1, Vector2i(0, 7), 0, Modifiers.empty())
+	var boxed := _tank(s9b, "HUM2", Vector2i(3, 1), 1)
+	for nb in HexGrid.neighbors(boxed.cell):
+		_tank(s9b, "HUM2", nb, 1)
+	for e in s9b.enemies_of(asn2):
+		if e != boxed:
+			e.hp = e.max_hp   # 其他敵人比例都是 100%，但也被圍住的只有 boxed
+	asn2.mana = asn2.mana_max
+	var cast_ok := SkillRunner.cast(s9b, asn2)
+	check(asn2.cell == Vector2i(0, 7) or cast_ok, "沒有合法位移格時不會卡住")
+	var res9 := s9b.run()
+	check(float(res9["time"]) <= 45.001, "整場戰鬥正常結束")
+
+	# NEU10 生命預言：低於 40% 觸發 240、未觸發結束時 120；只觸發一次；重傷 −40%
+	var s10 := _neutral_sim()
+	var pr := s10.add_unit("NEU10", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var tgt := _tank(s10, "HUM2", Vector2i(3, 5), 0, 2000.0)
+	var foe10 := _tank(s10, "ORC1", Vector2i(3, 1), 1)
+	tgt.hp = 1900.0
+	tgt.mr = 0.0
+	pr.mana = pr.mana_max
+	check(SkillRunner.cast(s10, pr), "生命預言施放")
+	check(tgt.has_status("blessing"), "對生命比例最低的友軍施加祝福")
+	SkillRunner.cast(s10, pr)
+	eq(tgt.statuses.filter(func(x): return x["kind"] == "blessing").size(), 1, "同來源重複施加只刷新")
+	s10.deal_damage(foe10, tgt, 1200.0, "magic", "skill", false)   # 1900 → 700（35%）
+	eq(tgt.hp, 700.0 + roundf(240 * k), "低於 40% 立即治療 240×換算")
+	check(not tgt.has_status("blessing"), "觸發後祝福消失（只觸發一次）")
+	# 未觸發：時間到治療 120；重傷時 −40%
+	var s10b := _neutral_sim()
+	var pr2 := s10b.add_unit("NEU10", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var tg2 := _tank(s10b, "HUM2", Vector2i(3, 5), 0, 2000.0)
+	_tank(s10b, "ORC1", Vector2i(3, 1), 1)
+	tg2.hp = 1500.0
+	s10b.add_status(tg2, "wound", 0.0, 99.0, -1)
+	pr2.mana = pr2.mana_max
+	SkillRunner.cast(s10b, pr2)
+	s10b.t = 6.05
+	s10b._update_statuses()
+	eq(tg2.hp, 1500.0 + roundf(roundf(120 * k) * 0.6), "未觸發 → 結束時治療 120×換算，重傷 −40%")
+	# 不能救回已死亡的棋子
+	var s10c := _neutral_sim()
+	var pr3 := s10c.add_unit("NEU10", 1, Vector2i(3, 7), 0, Modifiers.empty())
+	var tg3 := s10c.add_unit("HUM1", 1, Vector2i(3, 5), 0, Modifiers.empty())
+	var f3 := _tank(s10c, "ORC1", Vector2i(3, 1), 1)
+	tg3.hp = tg3.max_hp * 0.9
+	pr3.mana = pr3.mana_max
+	SkillRunner.cast(s10c, pr3)
+	s10c.deal_damage(f3, tg3, 99999.0, "magic", "skill", false)
+	check(not tg3.alive, "致命傷害不會被祝福救回")
+
+	# 含中立棋子的整場戰鬥：可重現
+	var lineup := [{"id": "NEU6", "star": 1, "cell": Vector2i(3, 4), "uid": 1, "items": []}, {"id": "NEU7", "star": 1, "cell": Vector2i(3, 7), "uid": 2, "items": []},
+		{"id": "NEU8", "star": 1, "cell": Vector2i(2, 4), "uid": 3, "items": []}, {"id": "NEU9", "star": 1, "cell": Vector2i(4, 4), "uid": 4, "items": []},
+		{"id": "NEU10", "star": 1, "cell": Vector2i(2, 7), "uid": 5, "items": []}, {"id": "NEU3", "star": 1, "cell": Vector2i(4, 7), "uid": 6, "items": []}]
+	var ra := BattleSetup.build(lineup, "elf", 16, 3).run()
+	var rb := BattleSetup.build(lineup, "elf", 16, 3).run()
+	eq(JSON.stringify(ra["events"]), JSON.stringify(rb["events"]), "中立英雄的戰鬥同種子可重現")
+	var casts := {}
+	for e in ra["events"]:
+		if e["k"] == "cast":
+			casts[int(e["cid"])] = true
+	check(casts.size() >= 3, "實戰中中立英雄會施放技能（%d 名）" % casts.size())
