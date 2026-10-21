@@ -65,14 +65,24 @@ func _rules_text() -> String:
 	var th := Economy.xp_thresholds()
 	var lines: Array = []
 	lines.append("[b][color=#ffd24d]遠征流程[/color][/b]")
-	lines.append("選擇一個文明後挑戰 %d 回合（4 章 × 6 關；第 6、12、18、24 回合為首領戰）。每回合：備戰購物／佈陣 → 按「開始戰鬥」→ 自動戰鬥（最長 %d 秒）→ 結算。" % [GameData.total_rounds(), int(GameData.cfg("combat").get("max_time", 45))])
+	lines.append("選擇一個文明後挑戰 %d 回合（4 章 × 6 關；第 6、12、18、24 回合為首領戰）。每回合：備戰購物／佈陣 → 倒數歸零自動開戰 → 自動戰鬥（最長 %d 秒）→ 結算 → 自動進入下一回合。" % [GameData.total_rounds(), int(GameData.cfg("combat").get("max_time", 45))])
 	lines.append("第 24 回合全清且遠征生命大於 0 即通關；遠征生命歸零、或第 24 回合未全清則遠征失敗／未完成。棋子不會永久死亡，每回合恢復滿血。")
 	lines.append("")
-	lines.append("每回合有 %d 秒備戰（最後 10 秒變黃、5 秒變紅），可提前開戰；倒數結束自動開戰，人口未滿時從候補區最左側自動補位。" % int(GameData.cfg("rounds").get("prep_seconds", 30)))
+	var prep_parts: Array = []
+	for seg in GameData.cfg("rounds").get("prep_by_round", []):
+		var a := int(seg["from"])
+		var b := int(seg["to"])
+		prep_parts.append(("第 %d 回合" % a if a == b else "第 %d～%d 回合" % [a, b]) + " %d 秒" % int(seg["seconds"]))
+	lines.append("備戰時間：%s（最後 10 秒變黃、5 秒變紅）。沒有開始戰鬥按鈕：倒數歸零自動開戰，人口未滿時從候補區最左側自動補位；上一場戰鬥結束後才開始下一回合倒數。" % "、".join(prep_parts))
+	lines.append("戰鬥中也可以刷新、購買、鎖定商店、買經驗、出售或整理候補區棋子、替棋子穿裝備與合成組件；但不能把棋子換上或移下戰場。牽涉戰鬥中棋子的升星合成會延到下一回合備戰時完成。")
 	lines.append("")
 	lines.append("[b][color=#ffd24d]異界入侵與裝備[/color][/b]")
 	lines.append("第 3、6、9 回合為邪教，第 12、15、18 回合為惡魔，第 21 回合為古神眷族，第 24 回合為最終首領「古神化身」；其餘回合是六族敵軍。")
-	lines.append("完成第 3、6、9、12、15、18、21 回合後可從 3 件裝備中選 1 件（依敵軍勢力掉落：邪教遺物／惡魔兵裝／古神聖物）。裝備沒有品質分級，每件＝固定屬性＋唯一特性；同一棋子身上相同唯一特性只生效一次，屬性正常累加。")
+	lines.append("完成第 3、6、9、12、15、18、21 回合後，在下一回合備戰時從 3 件特殊裝備中選 1 件（依敵軍勢力：邪教遺物／惡魔兵裝／古神聖物）。選擇時倒數不暫停；倒數歸零仍未選擇，會從顯示的三件中隨機發放一件，開戰後就不能再選。")
+	var drops := GameData.component_drop_cfg()
+	lines.append("基礎組件：鐵刃（攻擊 +12）、獵弦（攻速 +10%%）、鐵甲（物防 +12）、法晶（技能傷害 +12%%）、生命石（生命 +150）。一般戰鬥後有機會掉落，每章至少 %d 個、最多 %d 個（第 5、11、17、23 回合結束時補足保底）。" % [int(drops.get("guarantee", 2)), int(drops.get("cap", 3))])
+	lines.append("任兩個組件可合成一件完整裝備（共 15 種，只佔一格）：在背包把組件拖到另一個組件上，或拖到身上已有組件的棋子上；合成前會顯示結果預覽，按「確認合成」才會合成。戰鬥中合成立即生效。")
+	lines.append("裝備沒有品質分級、沒有職業限制。屬性正常累加；純數值裝備可以自由疊加；同一棋子身上相同唯一特性只生效一次。")
 	lines.append("每隻棋子最多 2 件：把背包裡的裝備拖到棋子上，或點裝備再點棋子。裝上後鎖定，要用「%s」（第 %s 回合各額外獲得 1 個）才能取下回背包。出售棋子時裝備回到背包；合成時保留主體（已上場 → 選中 → 編號小）的裝備，其餘依序補空格，超過 2 件回背包。" % [GameData.remover_name(), "、".join(GameData.remover_rounds().map(func(x): return str(int(x))))])
 	lines.append("")
 	lines.append("[b][color=#ffd24d]經濟[/color][/b]")
@@ -115,7 +125,7 @@ func _rules_text() -> String:
 	lines.append("持續傷害：每 0.5 秒結算一次（物理或魔法）；不同施加者各自計算，同一來源重複施加只刷新時間。")
 	lines.append("")
 	lines.append("[b][color=#ffd24d]操作[/color][/b]")
-	lines.append("點棋子＝選取；再點空格＝移動；拖曳＝移動或互換；拖到商店列或按「出售」＝賣出。電腦快捷鍵：D 刷新、F 買經驗、E 出售、空白鍵 開始戰鬥／繼續、Esc 選單。")
+	lines.append("點棋子＝選取；再點空格＝移動；拖曳＝移動或互換；拖到商店列或按「出售」＝賣出。電腦快捷鍵：D 刷新、F 買經驗、E 出售、Esc 選單。")
 	return "\n".join(lines)
 
 

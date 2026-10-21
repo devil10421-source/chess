@@ -1,5 +1,5 @@
 {
-  "_note": "裝備資料（V0.4）。沒有品質分級：每件＝固定屬性（stats，可正常累加）＋固定唯一特性（unique）。同一棋子身上相同 unique.id 的效果只生效一次（取效果最強的一件）；同名裝備可以重複掉落、同一棋子可穿兩件同名裝備。drop（normal／advanced）只用於各回合的掉落池，不在介面顯示。stats 為修正鍵（scripts/core/modifiers.gd），passive 為唯一特性的實作（scripts/core/combat/item_passives.gd）。",
+  "_note": "裝備資料（V0.5）。source：component 基礎組件／craft 合成裝備／special 特殊首領裝備（邪教、惡魔、古神）。stats＝基礎數值（同名或不同裝備都正常累加）；unique＋passive＝唯一特性（同一棋子相同 unique.id 只生效一次，取效果較強者）；沒有 unique 的裝備是純數值裝備，可以自由堆疊。recipes＝兩個組件合成一件完整裝備（只佔一格）。drop 只用於特殊首領裝備的掉落池；component_drops＝一般戰鬥的組件掉落與每章保底。沒有品質等級、沒有職業限制。",
   "types": {
     "weapon": {
       "name": "武器",
@@ -77,6 +77,264 @@
   },
   "items": [
     {
+      "id": "CP_BLADE",
+      "name": "鐵刃",
+      "type": "weapon",
+      "source": "component",
+      "stats": {
+        "atk_flat": 12
+      }
+    },
+    {
+      "id": "CP_STRING",
+      "name": "獵弦",
+      "type": "weapon",
+      "source": "component",
+      "stats": {
+        "atk_speed_pct": 10
+      }
+    },
+    {
+      "id": "CP_PLATE",
+      "name": "鐵甲",
+      "type": "armor",
+      "source": "component",
+      "stats": {
+        "armor_flat": 12
+      }
+    },
+    {
+      "id": "CP_CRYSTAL",
+      "name": "法晶",
+      "type": "trinket",
+      "source": "component",
+      "stats": {
+        "skill_dmg_pct": 12
+      }
+    },
+    {
+      "id": "CP_STONE",
+      "name": "生命石",
+      "type": "trinket",
+      "source": "component",
+      "stats": {
+        "hp_flat": 150
+      }
+    },
+    {
+      "id": "CR_GREATBLADE",
+      "name": "巨型戰刃",
+      "type": "weapon",
+      "stats": {
+        "atk_flat": 30
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_COMBO",
+      "name": "連擊刃",
+      "type": "weapon",
+      "stats": {
+        "atk_flat": 14,
+        "atk_speed_pct": 12
+      },
+      "unique": {
+        "id": "combo_strike",
+        "name": "連擊",
+        "desc": "每第 3 次普攻，追加一次攻擊力 50% 的物理傷害。"
+      },
+      "passive": {
+        "kind": "combo_strike",
+        "every": 3,
+        "atk_pct": 50
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_HEAVYAXE",
+      "name": "重裝戰斧",
+      "type": "weapon",
+      "stats": {
+        "atk_flat": 16,
+        "armor_flat": 16
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_MAGIBLADE",
+      "name": "魔刃",
+      "type": "weapon",
+      "stats": {
+        "atk_flat": 14,
+        "skill_dmg_pct": 14
+      },
+      "unique": {
+        "id": "magic_edge",
+        "name": "魔刃",
+        "desc": "普攻額外造成 20 點魔法傷害。"
+      },
+      "passive": {
+        "kind": "on_hit_magic",
+        "damage": 20
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_BLOODBLADE",
+      "name": "血契刃",
+      "type": "weapon",
+      "stats": {
+        "atk_flat": 14,
+        "hp_flat": 170
+      },
+      "unique": {
+        "id": "blood_oath",
+        "name": "血契",
+        "desc": "造成的有效傷害 18% 轉為治療自己。"
+      },
+      "passive": {
+        "kind": "lifesteal",
+        "pct": 18
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_TWINBOW",
+      "name": "疾風雙弓",
+      "type": "weapon",
+      "stats": {
+        "atk_speed_pct": 25
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_SKIRMISH",
+      "name": "游擊甲",
+      "type": "armor",
+      "stats": {
+        "atk_speed_pct": 12,
+        "armor_flat": 14
+      },
+      "unique": {
+        "id": "skirmish",
+        "name": "游擊",
+        "desc": "每次移動後，物防 +20（1.5 秒）。"
+      },
+      "passive": {
+        "kind": "after_move_armor",
+        "armor": 20,
+        "dur": 1.5
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_MAGEBOW",
+      "name": "魔導弓",
+      "type": "weapon",
+      "stats": {
+        "atk_speed_pct": 12,
+        "skill_dmg_pct": 15
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_HUNTCLOAK",
+      "name": "獵人披風",
+      "type": "armor",
+      "stats": {
+        "atk_speed_pct": 12,
+        "hp_flat": 180
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_FORTRESS",
+      "name": "堡壘重甲",
+      "type": "armor",
+      "stats": {
+        "armor_flat": 30
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_SPELLPLATE",
+      "name": "法術護甲",
+      "type": "armor",
+      "stats": {
+        "armor_flat": 14,
+        "skill_dmg_pct": 13
+      },
+      "unique": {
+        "id": "spell_ward",
+        "name": "法盾",
+        "desc": "受到技能傷害後獲得 70 護盾（4 秒，每 4 秒最多一次）。"
+      },
+      "passive": {
+        "kind": "on_skill_hit_shield",
+        "amount": 70,
+        "dur": 4,
+        "cd": 4
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_THORNMAIL",
+      "name": "荊棘護甲",
+      "type": "armor",
+      "stats": {
+        "armor_flat": 14,
+        "hp_flat": 170
+      },
+      "unique": {
+        "id": "thorn_mail",
+        "name": "荊棘",
+        "desc": "受到近戰普攻時，反彈該次傷害 20% 的魔法傷害。"
+      },
+      "passive": {
+        "kind": "thorns",
+        "pct": 20
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_STARSTAFF",
+      "name": "星輝法杖",
+      "type": "trinket",
+      "stats": {
+        "skill_dmg_pct": 30
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_GUARDBOOK",
+      "name": "守護法典",
+      "type": "trinket",
+      "stats": {
+        "skill_dmg_pct": 14,
+        "hp_flat": 170
+      },
+      "unique": {
+        "id": "guardian_tome",
+        "name": "守護",
+        "desc": "施放技能後，生命比例最低的其他友軍獲得 80 護盾（4 秒）。"
+      },
+      "passive": {
+        "kind": "on_cast_ally_shield",
+        "amount": 80,
+        "dur": 4
+      },
+      "source": "craft"
+    },
+    {
+      "id": "CR_GIANTBELT",
+      "name": "巨人腰帶",
+      "type": "armor",
+      "stats": {
+        "hp_flat": 380
+      },
+      "source": "craft"
+    },
+    {
       "id": "CU_DAGGER",
       "name": "獻祭匕首",
       "type": "weapon",
@@ -95,7 +353,8 @@
         "dtype": "physical",
         "total": 12,
         "dur": 3
-      }
+      },
+      "source": "special"
     },
     {
       "id": "CU_FANG",
@@ -114,7 +373,8 @@
       "passive": {
         "kind": "lifesteal",
         "pct": 15
-      }
+      },
+      "source": "special"
     },
     {
       "id": "CU_CODEX",
@@ -133,7 +393,8 @@
       "passive": {
         "kind": "blood_pact",
         "hp_cost_pct": 10
-      }
+      },
+      "source": "special"
     },
     {
       "id": "CU_AMULET",
@@ -153,7 +414,8 @@
         "kind": "curse_on_hit",
         "pct": 10,
         "dur": 3
-      }
+      },
+      "source": "special"
     },
     {
       "id": "CU_ROBE",
@@ -174,7 +436,8 @@
         "kind": "on_battle_shield",
         "amount": 60,
         "dur": 4
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_AXE",
@@ -195,7 +458,8 @@
         "dtype": "magic",
         "total": 15,
         "dur": 3
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_PLATE",
@@ -215,7 +479,8 @@
       "passive": {
         "kind": "thorns",
         "pct": 25
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_RING",
@@ -235,7 +500,8 @@
       "passive": {
         "kind": "on_crit_wound",
         "dur": 3
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_HORN",
@@ -255,7 +521,8 @@
         "kind": "berserk",
         "pct": 20,
         "threshold": 0.5
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_GREATAXE",
@@ -278,7 +545,8 @@
         "dtype": "magic",
         "total": 30,
         "dur": 3
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_BULWARK",
@@ -299,7 +567,8 @@
       "passive": {
         "kind": "thorns",
         "pct": 35
-      }
+      },
+      "source": "special"
     },
     {
       "id": "DM_HEART",
@@ -319,7 +588,8 @@
         "kind": "on_cast_shield",
         "amount": 120,
         "dur": 4
-      }
+      },
+      "source": "special"
     },
     {
       "id": "OG_MASK",
@@ -339,7 +609,8 @@
       "passive": {
         "kind": "mana_on_hit",
         "amount": 5
-      }
+      },
+      "source": "special"
     },
     {
       "id": "OG_EYE",
@@ -359,7 +630,8 @@
       "passive": {
         "kind": "cast_stun",
         "dur": 0.6
-      }
+      },
+      "source": "special"
     },
     {
       "id": "OG_STAFF",
@@ -380,7 +652,8 @@
         "kind": "void_bolt",
         "every": 3,
         "damage": 45
-      }
+      },
+      "source": "special"
     },
     {
       "id": "OG_SHELL",
@@ -400,7 +673,95 @@
       "passive": {
         "kind": "on_hit_slow",
         "dur": 1.5
-      }
+      },
+      "source": "special"
     }
-  ]
+  ],
+  "recipes": [
+    {
+      "a": "CP_BLADE",
+      "b": "CP_BLADE",
+      "result": "CR_GREATBLADE"
+    },
+    {
+      "a": "CP_BLADE",
+      "b": "CP_STRING",
+      "result": "CR_COMBO"
+    },
+    {
+      "a": "CP_BLADE",
+      "b": "CP_PLATE",
+      "result": "CR_HEAVYAXE"
+    },
+    {
+      "a": "CP_BLADE",
+      "b": "CP_CRYSTAL",
+      "result": "CR_MAGIBLADE"
+    },
+    {
+      "a": "CP_BLADE",
+      "b": "CP_STONE",
+      "result": "CR_BLOODBLADE"
+    },
+    {
+      "a": "CP_STRING",
+      "b": "CP_STRING",
+      "result": "CR_TWINBOW"
+    },
+    {
+      "a": "CP_STRING",
+      "b": "CP_PLATE",
+      "result": "CR_SKIRMISH"
+    },
+    {
+      "a": "CP_STRING",
+      "b": "CP_CRYSTAL",
+      "result": "CR_MAGEBOW"
+    },
+    {
+      "a": "CP_STRING",
+      "b": "CP_STONE",
+      "result": "CR_HUNTCLOAK"
+    },
+    {
+      "a": "CP_PLATE",
+      "b": "CP_PLATE",
+      "result": "CR_FORTRESS"
+    },
+    {
+      "a": "CP_PLATE",
+      "b": "CP_CRYSTAL",
+      "result": "CR_SPELLPLATE"
+    },
+    {
+      "a": "CP_PLATE",
+      "b": "CP_STONE",
+      "result": "CR_THORNMAIL"
+    },
+    {
+      "a": "CP_CRYSTAL",
+      "b": "CP_CRYSTAL",
+      "result": "CR_STARSTAFF"
+    },
+    {
+      "a": "CP_CRYSTAL",
+      "b": "CP_STONE",
+      "result": "CR_GUARDBOOK"
+    },
+    {
+      "a": "CP_STONE",
+      "b": "CP_STONE",
+      "result": "CR_GIANTBELT"
+    }
+  ],
+  "component_drops": {
+    "_note": "一般戰鬥（不是特殊戰鬥 3/6/9/12/15/18/21，也不是第 24 回合）結束後依 chance 掉落 1 個隨機組件；每章自然掉落＋保底合計最多 cap 個；章節第 guarantee_round_in_chapter 回合（第 5、11、17、23 回合）結束時若不足 guarantee 個就補足（在章末最後一場戰鬥前完成）。種類與機率由固定種子決定。第一輪測試值。",
+    "chance": 0.35,
+    "guarantee": 2,
+    "cap": 3,
+    "guarantee_round_in_chapter": 5
+  },
+  "reward_timing": {
+    "_note": "V0.5：特殊戰鬥結束時排定獎勵，下一回合備戰時才三選一；選擇時倒數不暫停，倒數歸零仍未選擇就從顯示的三件中隨機發放一件（固定種子）。"
+  }
 }

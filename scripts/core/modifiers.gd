@@ -115,6 +115,16 @@ static func sources_for_lineup(unit_ids: Array, civ_id: String, use_synergy: boo
 	return out
 
 
+## 一組裝備的基礎屬性加總（戰鬥中更換裝備時用來扣除舊值、加上新值）
+static func item_mods(items: Array) -> Dictionary:
+	var m := {}
+	for item_id in items:
+		var st: Dictionary = GameData.item(str(item_id)).get("stats", {})
+		for k in st.keys():
+			m[k] = float(m.get(k, 0.0)) + float(st[k])
+	return m
+
+
 ## 把來源清單加總成修正值字典
 static func sum_sources(list: Array) -> Dictionary:
 	var m := empty()

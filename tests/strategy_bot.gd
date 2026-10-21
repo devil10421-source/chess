@@ -1,5 +1,5 @@
 extends RefCounted
-## V0.4 策略模擬用的自動玩家（只在測試／模擬使用，不會打包進遊戲）。
+## V0.5 策略模擬用的自動玩家（只在測試／模擬使用，不會打包進遊戲）。
 ## 三種策略：
 ##   level    ＝優先升文明等級（早升 Lv.7～10，不刻意刷新）
 ##   midcarry ＝優先把中費（3 費）主力升到二星：一般升級節奏，到 Lv.6～7 後用多餘金幣刷新找 3 費
@@ -147,13 +147,7 @@ static func arrange(run: RunState) -> void:
 
 
 static func _equip_items(run: RunState, st: Dictionary) -> void:
-	var lineup := run.board_lineup()
-	lineup.sort_custom(func(a, b) -> bool: return power(a["id"], int(a["star"])) > power(b["id"], int(b["star"])))
-	for p in lineup:
-		while not run.inventory.is_empty() and RunState.unit_items(run.find_unit(int(p["uid"]))["unit"]).size() < GameData.item_slots():
-			if run.equip(int(p["uid"]), 0) != "":
-				break
-			st["items_equipped"] += 1
+	st["items_equipped"] += AutoPlayer._equip_items(run)
 
 
 static func _track(run: RunState, st: Dictionary) -> void:
@@ -189,6 +183,8 @@ static func play_full_run(civ_id: String, seed_value: int, strategy: String) -> 
 		if GameData.unit_cost(str(u["id"])) <= 2 and int(u["star"]) >= 3:
 			three += 1
 	st["low_three_stars"] = three
+	st["components"] = run.component_log.size()
+	st["crafted"] = run.all_items().filter(func(id): return str(GameData.item(str(id)).get("source", "")) == "craft").size()
 	return {"outcome": run.outcome, "round": run.round_no, "history": run.history, "stats": st, "hp": run.hp,
 		"pool_ok": _pool_check(run)}
 

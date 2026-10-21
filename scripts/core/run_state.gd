@@ -29,8 +29,15 @@ var history: Array = []        # 每回合結算報告
 var inventory: Array = []      # 裝備背包（裝備 id）
 var rewards_claimed: Array = []  # 已領取裝備獎勵的回合
 var pending_reward: Dictionary = {}  # 尚未選擇的三選一：{round, faction, drop, choices: [id, id, id]}
+## V0.5：倒數歸零仍未選擇、開戰時自動發放的那一件（畫面提示用；不存檔）
+var last_auto_reward: String = ""
 var removers := 0                 # 裝備卸除器數量（V0.4）
+## 進行中的即時戰鬥（V0.5）：開戰到結算之間有效；戰鬥中替場上棋子換裝會排入這場模擬
+var live_battle: CombatSim = null
+var battle_active := false
 var removers_granted: Array = []  # 已發放卸除器的回合
+## 一般戰鬥的組件掉落紀錄（V0.5）：[{round, id, kind: "drop"／"guarantee"}]
+var component_log: Array = []
 
 
 static func create(civ: String, seed_value: int) -> RunState:
@@ -145,6 +152,7 @@ func begin_round() -> void:
 	if finished or prepared_round == round_no:
 		return
 	prepared_round = round_no
+	resolve_pending_merges()
 	var rounds: Array = GameData.civ_special(civ_id, "free_reroll_rounds", [])
 	for r in rounds:
 		if int(r) == round_no:
@@ -204,9 +212,22 @@ func can_buy(slot: int) -> String:
 	var cost := GameData.unit_cost(id)
 	if gold < cost:
 		return "金幣不足"
-	if bench_free_index() < 0 and copies_of(id, 1) < 2:
+	if bench_free_index() < 0 and _merge_candidates(id, 1).size() < 2:
 		return "候補區已滿"
 	return ""
+
+
+## 戰鬥中買到的棋子若要和場上（正在戰鬥）的棋子合成，延到下一次備戰才合成（V0.5）。
+## 進入備戰時呼叫：依序嘗試每種棋子的一星→二星、二星→三星合成。
+func resolve_pending_merges() -> void:
+	if battle_active:
+		return
+	var ids := {}
+	for u in all_units():
+		ids[str(u["id"])] = true
+	for id in ids.keys():
+		_try_merge(id, 1)
+		_try_merge(id, 2)
 
 
 ## preferred_uid：玩家目前選取的棋子；購買觸發合成時，它優先成為合成主體（若沒有已上場的同名棋子）
@@ -256,6 +277,8 @@ func _merge_candidates(id: String, star: int) -> Array:
 	var found: Array = []
 	for c in _sorted_board_cells():
 		var u: Dictionary = board[c]
+		if battle_active:
+			break   # 戰鬥中不動場上棋子：和它們的合成延到下一次備戰
 		if u["id"] == id and int(u["star"]) == star:
 			found.append({"where": "board", "cell": c, "unit": u})
 	for i in bench.size():
@@ -336,6 +359,8 @@ func sell(uid: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if is_fighting(uid):
+		return "戰鬥中的場上棋子不能出售"
 	var u: Dictionary = f["unit"]
 	gold += UnitStats.sell_value(u["id"], int(u["star"]))
 	# 出售時裝備自動返回背包
@@ -378,8 +403,90 @@ func equip(uid: int, inv_index: int) -> String:
 		return "裝備欄已滿（最多 %d 件），需要用%s取下" % [GameData.item_slots(), GameData.remover_name()]
 	items.append(inventory[inv_index])
 	inventory.remove_at(inv_index)
+	_sync_live_items(uid)
 	_notify()
 	return ""
+
+
+# ---------- 組件合成（V0.5） ----------
+## 背包裡兩件組件合成一件完整裝備（放在較前面的位置）；不能合成時回傳原因
+func combine_inventory(i: int, j: int) -> String:
+	if i == j or i < 0 or j < 0 or i >= inventory.size() or j >= inventory.size():
+		return "請選兩件不同的組件"
+	var res := GameData.recipe(str(inventory[i]), str(inventory[j]))
+	if res == "":
+		return "這兩件不能合成"
+	var lo := mini(i, j)
+	var hi := maxi(i, j)
+	inventory.remove_at(hi)
+	inventory[lo] = res
+	_notify()
+	return ""
+
+
+## 棋子身上第 slot 格是組件、背包第 inv_index 件也是組件 → 合成，結果留在同一格（只佔一格）。
+## 戰鬥中的場上棋子也可以：合成完成後立即生效（組件數值移除、換成完整裝備）。
+func combine_on_unit(uid: int, slot: int, inv_index: int) -> String:
+	if finished:
+		return "遠征已結束"
+	var f := find_unit(uid)
+	if f.is_empty():
+		return "找不到棋子"
+	var items := unit_items(f["unit"])
+	if slot < 0 or slot >= items.size() or inv_index < 0 or inv_index >= inventory.size():
+		return "沒有可以合成的組件"
+	var res := GameData.recipe(str(items[slot]), str(inventory[inv_index]))
+	if res == "":
+		return "這兩件不能合成"
+	items[slot] = res
+	inventory.remove_at(inv_index)
+	_sync_live_items(uid)
+	_notify()
+	return ""
+
+
+## 拖背包第 inv_index 件到棋子身上時，可以和棋子哪一格合成（-1＝不能）
+func combinable_slot(uid: int, inv_index: int) -> int:
+	var f := find_unit(uid)
+	if f.is_empty() or inv_index < 0 or inv_index >= inventory.size():
+		return -1
+	var items := unit_items(f["unit"])
+	for s in items.size():
+		if GameData.recipe(str(items[s]), str(inventory[inv_index])) != "":
+			return s
+	return -1
+
+
+# ---------- 一般戰鬥組件掉落與每章保底（V0.5） ----------
+func chapter_components(chapter_no: int) -> int:
+	return component_log.filter(func(e): return GameData.chapter_of(int(e["round"])) == chapter_no).size()
+
+
+## 戰鬥結束（存活）時呼叫：一般戰鬥依機率掉落；章節第 5 場（第 5、11、17、23 回合）結束時補足保底。回傳這次取得的組件 id。
+func _component_drops(round_done: int) -> Array:
+	var cfg := GameData.component_drop_cfg()
+	if cfg.is_empty():
+		return []
+	var got: Array = []
+	var ch := GameData.chapter_of(round_done)
+	var cap := int(cfg.get("cap", 3))
+	var rng := SeededRng.new(SeededRng.mix(run_seed, 7000 + round_done))
+	var comps := GameData.components()
+	var normal := GameData.reward_for_round(round_done).is_empty() and round_done < GameData.total_rounds()
+	if normal and chapter_components(ch) < cap and rng.randf() < float(cfg.get("chance", 0.35)):
+		got.append({"round": round_done, "id": str(comps[rng.randi_range(0, comps.size() - 1)]["id"]), "kind": "drop"})
+		component_log.append(got[-1])
+	var chapter_len := int(GameData.cfg("rounds").get("chapter_length", 6))
+	var g_round := (ch - 1) * chapter_len + int(cfg.get("guarantee_round_in_chapter", 5))
+	if round_done == g_round:
+		while chapter_components(ch) < int(cfg.get("guarantee", 2)):
+			got.append({"round": round_done, "id": str(comps[rng.randi_range(0, comps.size() - 1)]["id"]), "kind": "guarantee"})
+			component_log.append(got[-1])
+	var ids: Array = []
+	for e in got:
+		inventory.append(str(e["id"]))
+		ids.append(str(e["id"]))
+	return ids
 
 
 ## 使用裝備卸除器：消耗 1 個，把棋子第 slot 件裝備移回背包（星級、位置不變）
@@ -391,6 +498,8 @@ func use_remover(uid: int, slot: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if is_fighting(uid):
+		return "戰鬥中不能卸下場上棋子的裝備"
 	var items := unit_items(f["unit"])
 	if slot < 0 or slot >= items.size():
 		return "這格沒有裝備"
@@ -435,6 +544,8 @@ func has_pending_reward() -> bool:
 func claim_reward(index: int) -> String:
 	if pending_reward.is_empty():
 		return "沒有可領取的獎勵"
+	if battle_active:
+		return "戰鬥已開始，不能再選擇獎勵"
 	var choices: Array = pending_reward["choices"]
 	if index < 0 or index >= choices.size():
 		return "無效的選擇"
@@ -449,6 +560,23 @@ func claim_reward(index: int) -> String:
 	return ""
 
 
+## V0.5：特殊戰鬥的獎勵在下一回合備戰時選擇，倒數不暫停。
+## 倒數歸零仍未選擇 → 開戰前從畫面顯示的三件中隨機發放一件（固定種子，與操作時機無關、可重播）。回傳發放的裝備 id。
+func auto_claim_reward() -> String:
+	if pending_reward.is_empty() or battle_active:
+		return ""
+	var choices: Array = pending_reward["choices"]
+	if choices.is_empty():
+		pending_reward = {}
+		return ""
+	var rng := SeededRng.new(SeededRng.mix(run_seed, 9000 + int(pending_reward["round"])))
+	var idx := rng.randi_range(0, choices.size() - 1)
+	var id := str(choices[idx])
+	if claim_reward(idx) != "":
+		return ""
+	return id
+
+
 # ---------- 佈陣 ----------
 func move_to_bench(uid: int, index: int) -> String:
 	if index < 0 or index >= bench.size():
@@ -456,6 +584,8 @@ func move_to_bench(uid: int, index: int) -> String:
 	var f := find_unit(uid)
 	if f.is_empty():
 		return "找不到棋子"
+	if battle_active and f["where"] == "board":
+		return "戰鬥中不能移動場上棋子"
 	var other = bench[index]
 	if f["where"] == "bench":
 		var from := int(f["index"])
@@ -472,6 +602,8 @@ func move_to_bench(uid: int, index: int) -> String:
 
 
 func move_to_board(uid: int, cell: Vector2i) -> String:
+	if battle_active:
+		return "戰鬥中不能改變站位或上場棋子"
 	if not HexGrid.is_player_cell(cell):
 		return "只能部署在己方區域（下方 4 排）"
 	var f := find_unit(uid)
@@ -531,15 +663,46 @@ func auto_fill_board() -> Array:
 	return placed
 
 
-func start_battle() -> Dictionary:
+## 開戰（V0.5 即時模擬）：自動補位 → 記錄開戰金幣 → 建立尚未推進的戰鬥模擬，由畫面依播放時間推進
+func create_battle() -> CombatSim:
+	# 倒數歸零仍未選擇獎勵：開戰前隨機發放（開戰後就不能再選）
+	last_auto_reward = auto_claim_reward()
 	auto_fill_board()
 	gold_at_battle_start = gold
-	var sim := BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
-	return sim.run()
+	live_battle = BattleSetup.build(board_lineup(), civ_id, round_no, BattleSetup.battle_seed(run_seed, round_no))
+	battle_active = true
+	_notify()
+	return live_battle
+
+
+## 一次算完整場（測試、bot 用）
+func start_battle() -> Dictionary:
+	return create_battle().run()
+
+
+## 這隻棋子是否正在本回合的戰鬥中（場上棋子；戰鬥中不能出售、移動或替換）
+func is_fighting(uid: int) -> bool:
+	if not battle_active:
+		return false
+	for c in board.keys():
+		if int(board[c]["uid"]) == uid:
+			return true
+	return false
+
+
+## 戰鬥中替場上棋子更換裝備：通知即時模擬（下一個步進生效）
+func _sync_live_items(uid: int) -> void:
+	if live_battle == null or not is_fighting(uid):
+		return
+	var f := find_unit(uid)
+	if not f.is_empty():
+		live_battle.queue_items(uid, unit_items(f["unit"]))
 
 
 ## 戰後結算（企劃 3.3 的執行順序）。回傳結算報告。
 func settle(result: Dictionary) -> Dictionary:
+	battle_active = false
+	live_battle = null
 	var report := {
 		"round": round_no, "cleared": bool(result.get("cleared", false)), "threat": int(result.get("threat", 0)),
 		"hp_before": hp, "hp_loss": 0, "deer_heal": 0, "income_base": 0, "income_interest": 0, "income_clear": 0,
@@ -577,10 +740,11 @@ func settle(result: Dictionary) -> Dictionary:
 		report["xp_gain"] = Economy.natural_xp()
 	report["level_after"] = level()
 	report["hp_after"] = hp
-	# 裝備獎勵：完成裝備回合（存活）即可三選一，於下一回合備戰前選擇
+	# 裝備獎勵：完成特殊戰鬥（存活）→ 排定三選一，於下一回合備戰時選擇（倒數不暫停）
 	_maybe_create_reward(round_no)
 	report["reward"] = not pending_reward.is_empty()
 	report["remover"] = _maybe_grant_remover(round_no)
+	report["components"] = _component_drops(round_no)
 	# 7. 進入下一回合或結束
 	if round_no >= GameData.total_rounds():
 		finished = true
@@ -619,6 +783,7 @@ func to_dict() -> Dictionary:
 		"pending_reward": pending_reward.duplicate(true),
 		"pool": pool_remaining(),   # 快照（讀檔時以持有狀態重新計算並核對）
 		"removers": removers, "removers_granted": removers_granted.duplicate(),
+		"component_log": component_log.duplicate(true),
 	}
 
 
@@ -672,6 +837,9 @@ static func from_dict(d: Dictionary) -> RunState:
 		r.pending_reward = {"round": int(pr["round"]), "faction": str(pr["faction"]), "drop": str(pr.get("drop", pr.get("tier", "normal"))),
 			"choices": _items_from(pr.get("choices", []))}
 	r.removers = int(d.get("removers", 0))
+	for e in d.get("component_log", []):
+		if typeof(e) == TYPE_DICTIONARY and GameData.has_item(str(e.get("id", ""))):
+			r.component_log.append({"round": int(e["round"]), "id": str(e["id"]), "kind": str(e.get("kind", "drop"))})
 	for x in d.get("removers_granted", []):
 		r.removers_granted.append(int(x))
 	return r

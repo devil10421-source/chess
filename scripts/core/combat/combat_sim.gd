@@ -1,7 +1,9 @@
 class_name CombatSim
 extends RefCounted
 ## 固定步長、可重現的自動戰鬥模擬（企劃第 7 節）。
-## 按下開始戰鬥時一次算完整場，輸出事件清單給畫面播放；畫面不做任何判定。
+## V0.5：改為逐步推進（step／step_to），畫面依播放時間推進模擬，所以戰鬥中可以即時介入（例如替場上棋子穿裝備）。
+## 操作排入下一個步進的開頭套用並記錄在 op_log；用同一種子＋相同的 op_log（scheduled_ops）重跑，事件完全相同。
+## run() 仍可一次跑完整場（測試、模擬 bot、略過動畫用）。畫面不做任何判定。
 ##
 ## 事件格式（皆含 t 與 k）：
 ##   move   {cid, from, to, dur}           dash  {cid, from, to}
@@ -15,6 +17,8 @@ extends RefCounted
 ##   retreat{cid, from, to, dur}（施法後後撤一格，例如草原弓手；播放時同 move）
 ##   rift   {cid, cells, delay}（延遲爆炸的範圍標記）   burst {cid, cells, color}（延遲效果引爆）
 ##   damage 另有 redirect_from（守護連結代為承受）、parried（返刃格擋）、counter（反擊）
+##   cast_start {cid, name}（施法前搖）     items {cid, items, hp, max_hp}（戰鬥中更換裝備，之後的計算立即使用新數值）
+##   attack.ranged＝true 時，傷害在投射物飛行時間後才結算（damage 事件時間＝命中時間）
 
 const EPS := 0.0001
 
@@ -27,8 +31,18 @@ var t := 0.0
 var tick := 0.05
 var max_time := 45.0
 var _next_cid := 1
-## 延遲效果（例如虛空裂隙）：{at, kind, src, ...}，依加入順序在到期的那一步結算
+## 延遲效果（例如虛空裂隙、遠程投射物）：{at, kind, src, ...}，依加入順序在到期的那一步結算
 var _delayed: Array = []
+## 逐步推進（V0.5）
+var started := false
+var finished := false
+var _tick_index := 0
+var _max_steps := 0
+var _snaps: Array = []
+var _result: Dictionary = {}
+var _pending_ops: Array = []      # 等待下一步套用的操作
+var op_log: Array = []            # 已套用的操作 [{tick, uid, items}]（重播用）
+var scheduled_ops: Dictionary = {}  # 重播：tick -> [{uid, items}]
 
 
 func _init(seed_value: int) -> void:
@@ -102,33 +116,135 @@ func emit(e: Dictionary) -> void:
 	events.append(e)
 
 
-# ---------- 主迴圈 ----------
-func run() -> Dictionary:
-	var snaps: Array = []
+# ---------- 主迴圈（逐步推進） ----------
+## 開戰：記錄開場快照、觸發「開戰時」的裝備特效（只觸發這一次；戰鬥中途穿上的裝備不會補觸發）
+func start() -> void:
+	if started:
+		return
+	started = true
+	_snaps.clear()
 	for u in units:
-		snaps.append(u.snapshot())
+		_snaps.append(u.snapshot())
 	for u in units:
 		ItemPassives.on_battle_start(self, u)
-	var steps := int(round(max_time / tick))
-	var finished := false
-	for i in steps + 1:
-		t = i * tick
-		_update_statuses()
-		_run_delayed()
-		if _is_over():
-			finished = true
-			break
-		for u in units:
-			if not u.alive or t + EPS < u.ready_at:
-				continue
-			if u.has_status("stun"):
-				continue
-			_act(u)
-		if _is_over():
-			finished = true
-			break
-	if not finished:
+	_max_steps = int(round(max_time / tick))
+
+
+## 推進一步（固定時間 tick）。回傳 false 表示戰鬥已結束。
+func step() -> bool:
+	if finished:
+		return false
+	start()
+	t = _tick_index * tick
+	_apply_ops(_tick_index)
+	_update_statuses()
+	_run_delayed()
+	if _is_over():
+		_finish()
+		return false
+	for u in units:
+		if not u.alive or t + EPS < u.ready_at:
+			continue
+		if u.has_status("stun"):
+			continue
+		_act(u)
+	if _is_over():
+		_finish()
+		return false
+	_tick_index += 1
+	if _tick_index > _max_steps:
 		t = max_time
+		_finish()
+		return false
+	return true
+
+
+## 推進到模擬時間 sim_time（含）為止
+func step_to(sim_time: float) -> void:
+	start()
+	while not finished and _tick_index * tick <= sim_time + EPS:
+		step()
+
+
+## 目前已推進到的模擬時間
+func now() -> float:
+	return t
+
+
+## 一次跑完整場（測試、bot、略過動畫）
+func run() -> Dictionary:
+	start()
+	while step():
+		pass
+	return _result
+
+
+func result() -> Dictionary:
+	return _result
+
+
+## 開場快照（開戰時每個單位的狀態）
+func snapshots() -> Array:
+	start()
+	return _snaps
+
+
+# ---------- 戰鬥中的操作（V0.5） ----------
+## 替我方棋子（以玩家棋子 uid 指定）更換裝備：排入下一步開頭套用，之前已結算的事件不受影響
+func queue_items(uid: int, items: Array) -> bool:
+	if finished:
+		return false
+	for u in units:
+		if u.side == 0 and u.uid == uid:
+			_pending_ops.append({"uid": uid, "items": items.duplicate()})
+			return true
+	return false
+
+
+func _apply_ops(tick_index: int) -> void:
+	var ops: Array = scheduled_ops.get(tick_index, []).duplicate()
+	ops.append_array(_pending_ops)
+	_pending_ops.clear()
+	for op in ops:
+		for u in units:
+			if u.side == 0 and u.uid == int(op["uid"]):
+				apply_items(u, op["items"])
+				op_log.append({"tick": tick_index, "uid": int(op["uid"]), "items": (op["items"] as Array).duplicate()})
+
+
+## 立即套用新的裝備：移除舊裝備的數值、加上新裝備的數值、重新登記唯一特性。
+## 生命上限增加時目前生命一起增加；減少時只把目前生命壓到新上限。初始魔力等「開戰時」效果不補觸發。
+func apply_items(u: CombatUnit, items: Array) -> void:
+	if not u.alive:
+		return
+	var mods := u.mods.duplicate()
+	var old_m := Modifiers.item_mods(u.items)
+	var new_m := Modifiers.item_mods(items)
+	for k in old_m.keys():
+		mods[k] = float(mods.get(k, 0.0)) - float(old_m[k])
+	for k in new_m.keys():
+		mods[k] = float(mods.get(k, 0.0)) + float(new_m[k])
+	u.mods = mods
+	u.items = items.duplicate()
+	u.passives = ItemPassives.unique_passives(items)
+	var s := UnitStats.final_stats(u.unit_id, u.star, mods)
+	var delta_hp := float(s["hp"]) - u.max_hp
+	u.max_hp = float(s["hp"])
+	u.hp = minf(u.max_hp, u.hp + maxf(0.0, delta_hp))
+	u.atk = s["atk"]
+	u.armor = s["armor"]
+	u.mr = s["mr"]
+	u.atk_speed = s["atk_speed"]
+	u.move_speed = s["move_speed"]
+	u.crit_chance = s["crit_chance"]
+	u.crit_mult = s["crit_mult"]
+	emit({"k": "items", "cid": u.cid, "items": u.items.duplicate(), "hp": u.hp, "max_hp": u.max_hp, "atk": u.atk})
+
+
+func _finish() -> void:
+	if finished:
+		return
+	finished = true
 	var cleared := alive_of(1).is_empty()
 	emit({"k": "end", "cleared": cleared, "time": t})
 	var alive_enemies: Array = []
@@ -143,15 +259,16 @@ func run() -> Dictionary:
 			"damage": roundi(u.damage_dealt), "taken": roundi(u.damage_taken), "shielded": roundi(u.shield_absorbed),
 			"healing": roundi(u.healing_done), "raw_damage": roundi(u.raw_damage), "overkill": roundi(u.overkill),
 			"casts": u.casts, "target_switches": u.target_switches})
-	return {
+	_result = {
 		"cleared": cleared,
 		"time": t,
 		"alive_enemies": alive_enemies,
 		"threat": Economy.threat(stars),
 		"player_alive": alive_of(0).size(),
-		"units": snaps,
+		"units": _snaps,
 		"events": events,
 		"stats": stats,
+		"ops": op_log.duplicate(true),
 	}
 
 
@@ -160,8 +277,15 @@ func _is_over() -> bool:
 
 
 func _act(u: CombatUnit) -> void:
-	# 1) 魔力滿 → 施放技能（被動技能的單位沒有魔力，不會施放）
+	# 1) 魔力滿 → 施法前搖（cast_windup 秒，可看出要放技能）→ 施放技能（被動技能的單位沒有魔力，不會施放）
 	if u.mana_max > 0.0 and u.mana >= u.mana_max - EPS:
+		var windup := float(cfg.get("cast_windup", 0.0))
+		if windup > 0.0 and not u.winding_up and SkillRunner.can_cast(self, u):
+			u.winding_up = true
+			emit({"k": "cast_start", "cid": u.cid, "name": str(u.data.get("skill", {}).get("name", "")), "dur": windup})
+			u.ready_at = t + windup
+			return
+		u.winding_up = false
 		if SkillRunner.cast(self, u):
 			u.casts += 1
 			u.mana = maxf(0.0, u.mana - u.mana_max)
@@ -180,19 +304,32 @@ func _act(u: CombatUnit) -> void:
 		if old != null and old.alive:
 			u.target_switches += 1
 		u.target_cid = tgt.cid
-	# 3) 射程內 → 普攻
+	# 3) 射程內 → 普攻（遠程：投射物飛行時間後才結算傷害，讓畫面命中與結算同步）
 	if HexGrid.distance(u.cell, tgt.cell) <= u.attack_range:
-		basic_attack(u, tgt)
+		var flight := projectile_time(u, tgt)
+		if flight > 0.0:
+			emit({"k": "attack", "cid": u.cid, "tgt": tgt.cid, "ranged": true, "flight": flight})
+			add_delayed({"at": t + flight, "kind": "projectile", "src": u.cid, "tgt": tgt.cid})
+		else:
+			basic_attack(u, tgt)
 		u.ready_at = t + 1.0 / u.effective_atk_speed()
 		return
 	# 4) 移動一格
 	if u.has_status("root") or not info.has("step"):
 		u.ready_at = t + float(cfg.get("idle_retry", 0.2))
 		return
-	var step: Vector2i = info["step"]
+	var step_cell: Vector2i = info["step"]
 	var dur := 1.0 / u.effective_move_speed()
-	move_unit(u, step, dur)
+	move_unit(u, step_cell, dur)
+	ItemPassives.on_move(self, u)
 	u.ready_at = t + dur
+
+
+## 遠程普攻的投射物飛行時間（近戰為 0）：projectile_base ＋ 每格 projectile_per_hex
+func projectile_time(u: CombatUnit, tgt: CombatUnit) -> float:
+	if u.is_melee():
+		return 0.0
+	return float(cfg.get("projectile_base", 0.0)) + float(cfg.get("projectile_per_hex", 0.0)) * HexGrid.distance(u.cell, tgt.cell)
 
 
 # ---------- 索敵與找路 ----------
@@ -339,8 +476,16 @@ func dash_next_to(u: CombatUnit, tgt: CombatUnit) -> bool:
 
 
 # ---------- 傷害、治療、護盾 ----------
+## 立即完成的普攻（近戰；也給測試直接呼叫）
 func basic_attack(u: CombatUnit, tgt: CombatUnit) -> void:
 	emit({"k": "attack", "cid": u.cid, "tgt": tgt.cid, "ranged": not u.is_melee()})
+	basic_hit(u, tgt)
+
+
+## 普攻命中結算（遠程在投射物抵達時呼叫）
+func basic_hit(u: CombatUnit, tgt: CombatUnit) -> void:
+	if tgt == null or not tgt.alive:
+		return
 	if u.has_passive_skill() and str(u.data.get("skill", {}).get("kind", "")) == "focus_fire":
 		# 追跡：連續命中同一目標逐步提高普攻傷害；換目標重置
 		if u.focus_target == tgt.cid:
@@ -395,6 +540,8 @@ func deal_damage(src: CombatUnit, tgt: CombatUnit, raw: float, dtype: String, so
 	var hp_damage := _apply_hit(src, tgt, dmg, {"crit": crit, "dtype": dtype, "source": source, "dot": is_dot, "parried": not parry.is_empty()}, true)
 	if crit:
 		ItemPassives.on_crit(self, src, tgt)
+	if source == "skill" and tgt.alive:
+		ItemPassives.on_skill_taken(self, tgt)
 	if tgt.alive and source == "basic":
 		gain_mana(tgt, float(cfg.get("mana_per_hit", 5)))
 		ItemPassives.on_basic_taken(self, tgt, src, dmg)
@@ -634,6 +781,11 @@ func _run_delayed() -> void:
 		match str(e["kind"]):
 			"rift":
 				SkillRunner.explode_rift(self, e)
+			"projectile":
+				var src := unit_by_cid(int(e["src"]))
+				var tgt := unit_by_cid(int(e["tgt"]))
+				if src != null and tgt != null and tgt.alive:
+					basic_hit(src, tgt)
 
 
 ## 施法後後撤一格（草原弓手）：只走到相鄰合法空格；優先拉開與最近敵人的距離，

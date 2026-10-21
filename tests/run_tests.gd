@@ -77,6 +77,15 @@ func _initialize() -> void:
 		"test_equipment_remover_rounds",
 		"test_merge_keeps_deployed",
 		"test_item_conservation",
+		"test_live_battle_stepping",
+		"test_live_equip",
+		"test_projectile_and_windup",
+		"test_prep_seconds_by_round",
+		"test_battle_shop_ops",
+		"test_component_recipes",
+		"test_component_combine_ops",
+		"test_component_drops",
+		"test_reward_next_round",
 		"test_full_runs",
 	]
 	for name in tests:
@@ -1088,14 +1097,14 @@ func test_oni_skill_dot() -> void:
 
 
 func test_playback_clock() -> void:
-	check(is_equal_approx(PlaybackClock.sim_from_real(10.0), 10.0), "0–15 秒 1.0×")
-	check(is_equal_approx(PlaybackClock.sim_from_real(15.0), 15.0), "15 秒時模擬 15 秒")
-	check(is_equal_approx(PlaybackClock.sim_from_real(25.0), 30.0), "15–25 秒 1.5×：25 秒時模擬 30 秒")
-	check(is_equal_approx(PlaybackClock.sim_from_real(32.5), 45.0), "25 秒後 2.0×：45 秒戰鬥約 32.5 秒播完")
-	check(is_equal_approx(PlaybackClock.real_from_sim(45.0), 32.5), "反向換算 45 → 32.5")
-	eq(PlaybackClock.rate_at_real(5.0), 1.0, "5 秒時倍率 1.0")
-	eq(PlaybackClock.rate_at_real(20.0), 1.5, "20 秒時倍率 1.5")
-	eq(PlaybackClock.rate_at_real(30.0), 2.0, "30 秒時倍率 2.0")
+	# V0.5：整體放慢約 15%：0–18 秒 0.85×、18–30 秒 1.3×、之後 1.7×
+	check(is_equal_approx(PlaybackClock.sim_from_real(10.0), 8.5), "0–18 秒 0.85×（播放放慢 15%）")
+	check(is_equal_approx(PlaybackClock.sim_from_real(18.0), 15.3), "18 秒時模擬 15.3 秒")
+	check(is_equal_approx(PlaybackClock.sim_from_real(30.0), 15.3 + 12.0 * 1.3), "18–30 秒 1.3×")
+	check(is_equal_approx(PlaybackClock.real_from_sim(PlaybackClock.sim_from_real(40.0)), 40.0), "反向換算一致")
+	eq(PlaybackClock.rate_at_real(5.0), 0.85, "5 秒時倍率 0.85")
+	eq(PlaybackClock.rate_at_real(20.0), 1.3, "20 秒時倍率 1.3")
+	eq(PlaybackClock.rate_at_real(35.0), 1.7, "35 秒時倍率 1.7")
 	var prev := -1.0
 	var ok := true
 	for i in 400:
@@ -1450,7 +1459,9 @@ func test_equipment_passives() -> void:
 	var foe := s5.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
 	caster.mana = caster.mana_max
 	caster.target_cid = foe.cid
-	s5._act(caster)
+	s5._act(caster)   # 施法前搖
+	check(caster.winding_up and caster.shield_total() == 0.0, "前搖期間尚未施放")
+	s5._act(caster)   # 前搖結束 → 施放
 	check(caster.shield_total() >= 120.0, "炎魔之心：施法後獲得護盾")
 	check(foe.has_status("stun"), "虛空之眼：技能主要目標暈眩")
 	# 每第 3 次普攻的法術追加
@@ -2277,6 +2288,10 @@ func test_equipment_v04() -> void:
 	for it in GameData.items():
 		check(not it.has("tier"), "%s 沒有品質欄位" % it["id"])
 		check(not it.get("stats", {}).is_empty(), "%s 有固定屬性" % it["id"])
+		if not it.has("unique"):
+			# V0.5：基礎組件與純數值合成裝備沒有唯一特性
+			check(str(it.get("source", "")) in ["component", "craft"] and not it.has("passive"), "%s 是純數值裝備" % it["id"])
+			continue
 		var u: Dictionary = it.get("unique", {})
 		check(u.has("id") and u.has("name") and u.has("desc"), "%s 有唯一特性（id／名稱／描述）" % it["id"])
 		check(Equipment.unique_line(str(it["id"])).begins_with("唯一特性・"), "%s 唯一特性固定格式" % it["id"])
@@ -2452,3 +2467,354 @@ func test_item_conservation() -> void:
 	eq(run.all_items().size(), total, "400 次隨機操作（購買、合成、裝備、卸除、出售、存讀檔）後裝備總數不變")
 	check(run.all_units().all(func(u): return RunState.unit_items(u).size() <= 2), "每隻棋子最多 2 件")
 	_pool_ok(run, "同時卡池守恆")
+
+
+# ------------------------------------------------------------ V0.5 即時戰鬥
+func _live_sim(seed_value: int = 21) -> CombatSim:
+	var lineup := [{"id": "ORC1", "star": 2, "cell": Vector2i(3, 4), "uid": 1, "items": []},
+		{"id": "CEN1", "star": 2, "cell": Vector2i(3, 7), "uid": 2, "items": []},
+		{"id": "HUM1", "star": 1, "cell": Vector2i(2, 7), "uid": 3, "items": []}]
+	return BattleSetup.build(lineup, "orc", 10, seed_value)
+
+
+func test_live_battle_stepping() -> void:
+	var a := _live_sim().run()
+	var b := _live_sim()
+	var tt := 0.0
+	while not b.finished:
+		tt += 0.37
+		b.step_to(tt)
+	eq(JSON.stringify(b.result()["events"]), JSON.stringify(a["events"]), "逐步推進與一次跑完的事件完全相同")
+	eq(b.result()["cleared"], a["cleared"], "結果相同")
+	# 推進到某時間後，所有事件時間都不超過目前模擬時間（畫面不會看到未來的結算）
+	var c := _live_sim()
+	c.step_to(3.0)
+	check(c.events.all(func(e): return float(e["t"]) <= 3.0 + 0.001), "推進到 3 秒時沒有超前的事件")
+	check(not c.finished, "戰鬥尚未結束")
+
+
+func test_live_equip() -> void:
+	# 戰鬥中穿裝備：之後的普攻立即使用新攻擊力；之前的事件不被追溯修改
+	var sim := _live_sim(5)
+	sim.step_to(2.0)
+	var orc: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var atk0 := orc.atk
+	var before := JSON.stringify(sim.events)
+	var n_before := sim.events.size()
+	check(sim.queue_items(1, ["DM_GREATAXE"]), "排入裝備操作")
+	sim.step()
+	check(is_equal_approx(orc.atk, atk0 + 22.0), "裝上攻擊 +22：攻擊力 %.1f → %.1f" % [atk0, orc.atk])
+	eq(JSON.stringify(sim.events.slice(0, n_before)), before, "操作前已結算的事件沒有被修改")
+	check(sim.events.slice(n_before).any(func(e): return e["k"] == "items" and int(e["cid"]) == orc.cid), "產生裝備事件（畫面同步）")
+	check(is_equal_approx(orc.penetration("physical"), 20.0), "裝備的物理穿透立即生效")
+	# 唯一特性立即登記：之後的普攻帶持續傷害
+	sim.step_to(8.0)
+	var dot_after := false
+	for i in range(n_before, sim.events.size()):
+		var e: Dictionary = sim.events[i]
+		if e["k"] == "status" and e["kind"] == "dot" and int(e["src"]) == orc.cid:
+			dot_after = true
+	check(dot_after or not orc.alive, "炎獄連擊在穿上後開始觸發")
+	# 重播：同種子＋同操作時間 → 事件完全相同
+	sim.run()
+	var replay := _live_sim(5)
+	for op in sim.op_log:
+		var lst: Array = replay.scheduled_ops.get(int(op["tick"]), [])
+		lst.append({"uid": op["uid"], "items": op["items"]})
+		replay.scheduled_ops[int(op["tick"])] = lst
+	replay.run()
+	eq(JSON.stringify(replay.events), JSON.stringify(sim.events), "相同種子與相同操作時間可完全重現")
+	# 開戰時觸發的效果不補觸發；生命上限增加時目前生命一起增加
+	var s2 := _live_sim(6)
+	s2.step_to(1.0)
+	var hum: CombatUnit = s2.units.filter(func(x): return x.uid == 3)[0]
+	var hp0 := hum.hp
+	var max0 := hum.max_hp
+	s2.queue_items(3, ["CU_ROBE", "CU_CODEX"])
+	s2.step()
+	eq(hum.shield_total(), 0.0, "祭儀庇護（開戰護盾）不補觸發")
+	eq(hum.max_hp, max0 + 120.0, "生命上限 +120")
+	check(hum.hp >= hp0 + 120.0 - 0.01, "生命交換（開戰失血）不補觸發，目前生命一起 +120")
+	# 換裝：舊裝備數值完全移除，不重複計算
+	s2.queue_items(3, ["CU_CODEX"])
+	s2.step()
+	eq(hum.max_hp, max0, "移除法袍後生命上限回到原值")
+	check(is_equal_approx(float(hum.mods.get("hp_flat", 0.0)), 0.0), "修正值沒有殘留")
+	# 戰鬥結束後不再接受操作
+	s2.run()
+	check(not s2.queue_items(3, []), "戰鬥結束後不接受操作")
+
+
+func test_projectile_and_windup() -> void:
+	var sim := _live_sim(8)
+	sim.run()
+	var archer := -1
+	for u in sim.units:
+		if u.uid == 2:
+			archer = u.cid
+	var first_attack := -1.0
+	var first_hit := -1.0
+	for e in sim.events:
+		if e["k"] == "attack" and int(e["cid"]) == archer and bool(e["ranged"]) and first_attack < 0.0:
+			first_attack = float(e["t"])
+		if e["k"] == "damage" and int(e["src"]) == archer and e["source"] == "basic" and first_hit < 0.0 and first_attack >= 0.0:
+			first_hit = float(e["t"])
+	check(first_attack >= 0.0 and first_hit > first_attack, "遠程普攻：命中（%.2f）晚於出手（%.2f），傷害在投射物抵達時結算" % [first_hit, first_attack])
+	var starts := sim.events.filter(func(e): return e["k"] == "cast_start")
+	var casts := sim.events.filter(func(e): return e["k"] == "cast")
+	check(not starts.is_empty(), "有施法前搖事件")
+	if not starts.is_empty():
+		var s0: Dictionary = starts[0]
+		var c0: Array = casts.filter(func(e): return int(e["cid"]) == int(s0["cid"]) and float(e["t"]) >= float(s0["t"]))
+		check(not c0.is_empty() and float(c0[0]["t"]) - float(s0["t"]) >= GameData.cfg("combat").get("cast_windup", 0.25) - 0.001, "前搖結束後才施放技能")
+
+
+# ------------------------------------------------------------ V0.5 戰鬥中經營
+func test_prep_seconds_by_round() -> void:
+	var want := {1: 45.0, 2: 30.0, 6: 30.0, 7: 25.0, 12: 25.0, 18: 25.0, 19: 30.0, 24: 30.0}
+	for rd in want.keys():
+		eq(PrepTimer.seconds_for_round(rd), want[rd], "第 %d 回合備戰 %d 秒" % [rd, want[rd]])
+	var pt := PrepTimer.new()
+	pt.start_round(1)
+	eq(pt.remaining, 45.0, "第 1 回合倒數從 45 秒開始")
+	check(pt.tick(46.0), "歸零時回傳 true（自動開戰）")
+
+
+func test_battle_shop_ops() -> void:
+	var run := RunState.create("orc", 501)
+	run.gold = 200
+	run.xp = 8   # Lv.3：場上 3 隻已滿，開戰不會自動補位
+	run.board[Vector2i(3, 4)] = {"uid": 1, "id": "ORC1", "star": 1, "items": []}
+	run.board[Vector2i(4, 4)] = {"uid": 2, "id": "ORC1", "star": 1, "items": []}
+	run.board[Vector2i(3, 7)] = {"uid": 3, "id": "CEN1", "star": 1, "items": []}
+	run.bench[0] = {"uid": 4, "id": "HUM1", "star": 1, "items": []}
+	run.bench[1] = {"uid": 5, "id": "ELF1", "star": 1, "items": []}
+	run.next_uid = 10
+	run.begin_round()
+	var sim := run.create_battle()
+	var board_before := JSON.stringify(run.board_lineup())
+	var syn_before := run.synergy_counts()
+	check(run.battle_active and run.is_fighting(1) and not run.is_fighting(4), "開戰後：場上棋子在戰鬥中、候補不在")
+	# 商店操作
+	eq(run.reroll(), "", "戰鬥中可以刷新")
+	eq(run.buy_xp(), "", "戰鬥中可以買經驗")
+	run.toggle_lock()
+	check(run.shop_locked, "戰鬥中可以鎖定商店")
+	run.toggle_lock()
+	eq(run.move_to_bench(4, 6), "", "戰鬥中可以調整候補區順序")
+	eq(run.sell(5), "", "戰鬥中可以出售候補棋子")
+	check(run.sell(1) != "", "戰鬥中的場上棋子不能出售")
+	check(run.move_to_board(4, Vector2i(1, 5)) != "", "戰鬥中不能讓候補棋子上場")
+	check(run.move_to_bench(1, 8) != "", "戰鬥中不能把場上棋子移回候補")
+	check(run.move_to_board(1, Vector2i(1, 5)) != "", "戰鬥中不能改變站位")
+	# 買到和場上棋子同名的第 3 隻：延到下一次備戰才合成
+	run.shop = ["ORC1", "", "", "", ""]
+	eq(run.buy(0), "", "戰鬥中可以購買")
+	eq(run.copies_of("ORC1", 1), 3, "場上棋子沒有被合成（待合成）")
+	eq(JSON.stringify(run.board_lineup()), board_before, "本回合場上棋子、星級與站位沒有改變")
+	eq(run.synergy_counts(), syn_before, "羈絆沒有改變")
+	_pool_ok(run, "戰鬥中商店操作後卡池守恆")
+	# 戰鬥中替場上棋子穿裝備：立即進入即時模擬
+	sim.step_to(1.0)
+	var cu: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var atk0 := cu.atk
+	run.inventory = ["DM_GREATAXE"]
+	eq(run.equip(1, 0), "", "戰鬥中可以替場上棋子穿裝備")
+	sim.step()
+	check(is_equal_approx(cu.atk, atk0 + 22.0), "裝備立即影響本場戰鬥（攻擊 %.1f → %.1f）" % [atk0, cu.atk])
+	check(run.use_remover(1, 0) != "", "戰鬥中不能卸下場上棋子的裝備")
+	# 結算 → 下一回合備戰時完成合成（保留場上棋子為主體）
+	var res := sim.run()
+	run.settle(res)
+	check(not run.battle_active, "結算後戰鬥結束")
+	run.begin_round()
+	var main := run.find_unit(1)
+	check(not main.is_empty() and main["where"] == "board" and int(main["unit"]["star"]) == 2, "下一次備戰：三隻合成二星，保留場上棋子（位置不變）")
+	eq(run.copies_of("ORC1", 1), 0, "材料已合併")
+	_pool_ok(run, "合成後卡池守恆")
+
+
+# ------------------------------------------------------------ V0.5 組件與合成
+func test_component_recipes() -> void:
+	var comps := GameData.components()
+	eq(comps.map(func(c): return str(c["name"])), ["鐵刃", "獵弦", "鐵甲", "法晶", "生命石"], "五種基礎組件")
+	eq(GameData.item("CP_BLADE")["stats"], {"atk_flat": 12.0}, "鐵刃 攻擊 +12")
+	eq(GameData.item("CP_STRING")["stats"], {"atk_speed_pct": 10.0}, "獵弦 攻速 +10%")
+	eq(GameData.item("CP_PLATE")["stats"], {"armor_flat": 12.0}, "鐵甲 物防 +12")
+	eq(GameData.item("CP_CRYSTAL")["stats"], {"skill_dmg_pct": 12.0}, "法晶 技能傷害 +12%")
+	eq(GameData.item("CP_STONE")["stats"], {"hp_flat": 150.0}, "生命石 生命 +150")
+	for c in comps:
+		check(not c.has("unique") and not c.has("passive"), "%s 沒有唯一特性" % c["name"])
+	var names := {"CP_BLADE+CP_BLADE": "巨型戰刃", "CP_BLADE+CP_STRING": "連擊刃", "CP_BLADE+CP_PLATE": "重裝戰斧", "CP_BLADE+CP_CRYSTAL": "魔刃",
+		"CP_BLADE+CP_STONE": "血契刃", "CP_STRING+CP_STRING": "疾風雙弓", "CP_STRING+CP_PLATE": "游擊甲", "CP_STRING+CP_CRYSTAL": "魔導弓",
+		"CP_STRING+CP_STONE": "獵人披風", "CP_PLATE+CP_PLATE": "堡壘重甲", "CP_PLATE+CP_CRYSTAL": "法術護甲", "CP_PLATE+CP_STONE": "荊棘護甲",
+		"CP_CRYSTAL+CP_CRYSTAL": "星輝法杖", "CP_CRYSTAL+CP_STONE": "守護法典", "CP_STONE+CP_STONE": "巨人腰帶"}
+	var results := {}
+	for k in names.keys():
+		var ab: PackedStringArray = k.split("+")
+		var res := GameData.recipe(ab[0], ab[1])
+		eq(str(GameData.item(res).get("name", "")), names[k], "%s 配方" % k)
+		eq(GameData.recipe(ab[1], ab[0]), res, "%s 配方順序不拘" % k)
+		results[res] = true
+		# 不倒退：成品在每個組件屬性上都不低於材料加總
+		var sum := Modifiers.item_mods([ab[0], ab[1]])
+		var st: Dictionary = GameData.item(res)["stats"]
+		for key in sum.keys():
+			check(float(st.get(key, 0.0)) >= float(sum[key]), "%s 的 %s 不低於材料（%s ≥ %s）" % [names[k], key, st.get(key, 0), sum[key]])
+	eq(results.size(), 15, "十五種不同的合成裝備")
+	eq(GameData.equipment()["recipes"].size(), 15, "配方表 15 條")
+	eq(GameData.recipe("CP_BLADE", "DM_AXE"), "", "特殊裝備不能當材料")
+	# 純數值裝備可疊加；特效裝備相同唯一特性只生效一次
+	var m := Modifiers.item_mods(["CR_GREATBLADE", "CR_GREATBLADE"])
+	eq(float(m["atk_flat"]), 60.0, "兩把巨型戰刃攻擊 +60（純數值疊加）")
+	eq(ItemPassives.unique_passives(["CR_GREATBLADE", "CR_GREATBLADE"]).size(), 0, "純數值裝備沒有特性")
+	eq(ItemPassives.unique_passives(["CR_COMBO", "CR_COMBO"]).size(), 1, "兩把連擊刃：連擊只生效一次")
+	eq(float(Modifiers.item_mods(["CR_COMBO", "CR_COMBO"])["atk_flat"]), 28.0, "但數值照樣累加")
+	# 連擊：每第 3 次普攻追加一次
+	var sim := CombatSim.new(1)
+	var a := sim.add_unit("ORC1", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CR_COMBO"])
+	var b := sim.add_unit("HUM2", 3, Vector2i(3, 3), 1, Modifiers.empty())
+	var n0 := sim.events.size()
+	for i in 3:
+		sim.basic_attack(a, b)
+	eq(sim.events.slice(n0).filter(func(e): return e["k"] == "damage" and e["source"] == "item").size(), 1, "連擊刃：3 次普攻追加 1 次")
+	# 法盾：受到技能傷害後護盾，有冷卻
+	var s2 := CombatSim.new(2)
+	var t := s2.add_unit("HUM2", 1, Vector2i(3, 4), 0, Modifiers.empty(), 0, ["CR_SPELLPLATE"])
+	var c := s2.add_unit("ONI2", 1, Vector2i(3, 3), 1, Modifiers.empty())
+	t.max_hp = 9999.0
+	t.hp = 9999.0
+	s2.deal_damage(c, t, 50.0, "magic", "skill", false)
+	eq(t.shield_total(), 70.0, "法術護甲：被技能命中獲得 70 護盾")
+	s2.deal_damage(c, t, 1.0, "magic", "skill", false)
+	check(t.shield_total() < 70.0, "冷卻中不重複觸發")
+
+
+func test_component_combine_ops() -> void:
+	var run := RunState.create("orc", 601)
+	run.bench[0] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CP_BLADE", "DM_RING"]}
+	run.next_uid = 2
+	run.inventory = ["CP_STRING", "OG_EYE", "CP_STRING", "CP_PLATE"]
+	var total := run.all_items().size()
+	check(run.combine_inventory(1, 2) != "", "特殊裝備不能合成")
+	eq(run.inventory.size(), 4, "失敗時背包不變")
+	eq(run.combine_inventory(0, 2), "", "背包兩件獵弦合成")
+	eq(run.inventory, ["CR_TWINBOW", "OG_EYE", "CP_PLATE"], "疾風雙弓放在前面的位置")
+	eq(run.combinable_slot(1, 2), 0, "鐵甲可以和棋子身上的鐵刃合成")
+	eq(run.combinable_slot(1, 1), -1, "虛空之眼不能合成")
+	eq(run.combine_on_unit(1, 0, 2), "", "棋子身上合成（兩格已滿也可以）")
+	eq(_unit_with_items(run, 1), ["CR_HEAVYAXE", "DM_RING"], "合成後只佔一格")
+	eq(run.inventory, ["CR_TWINBOW", "OG_EYE"], "背包扣除材料")
+	eq(run.all_items().size(), total - 2, "兩次合成各少一件（2→1），沒有複製或遺失")
+	# 存讀檔
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(run.to_dict())))
+	eq(loaded.all_items(), run.all_items(), "存讀檔後裝備一致")
+	# 戰鬥中合成：組件數值移除，只算成品
+	var r2 := RunState.create("orc", 602)
+	r2.board[Vector2i(3, 4)] = {"uid": 1, "id": "ORC1", "star": 1, "items": ["CP_BLADE"]}
+	r2.next_uid = 2
+	r2.inventory = ["CP_BLADE"]
+	var sim := r2.create_battle()
+	sim.step_to(0.5)
+	var cu: CombatUnit = sim.units.filter(func(x): return x.uid == 1)[0]
+	var base_atk: float = float(UnitStats.base_stats("ORC1", 1)["atk"])
+	check(is_equal_approx(cu.atk, base_atk + 12.0), "開戰時：鐵刃 +12")
+	eq(r2.combine_on_unit(1, 0, 0), "", "戰鬥中在場上棋子身上合成")
+	sim.step()
+	check(is_equal_approx(cu.atk, base_atk + 30.0), "合成後立即生效：只算巨型戰刃 +30，沒有和組件重複計算（%.1f）" % cu.atk)
+	eq(cu.items, ["CR_GREATBLADE"], "戰鬥中的裝備已換成成品")
+
+
+func test_component_drops() -> void:
+	var logs := {}
+	for sd in 300:
+		var run := RunState.create("elf", 7000 + sd)
+		for rd in range(1, 25):
+			run._component_drops(rd)
+		var ok := true
+		for ch in [1, 2, 3, 4]:
+			var n := run.chapter_components(ch)
+			if n < 2 or n > 3:
+				ok = false
+		check(ok, "種子 %d：每章 2～3 個組件" % sd)
+		for e in run.component_log:
+			var rd := int(e["round"])
+			check(GameData.reward_for_round(rd).is_empty() and rd < 24, "只有一般戰鬥會掉落（第 %d 回合）" % rd)
+			if e["kind"] == "guarantee":
+				check(rd in [5, 11, 17, 23], "保底在章末最後一場戰鬥前發放（第 %d 回合）" % rd)
+			check(GameData.is_component(str(e["id"])), "掉落的是基礎組件")
+		check(run.component_log.filter(func(e): return GameData.chapter_of(int(e["round"])) == 4).all(func(e): return int(e["round"]) <= 23), "第四章最晚第 23 回合發完（可用於第 24 回合）")
+		eq(run.inventory.size(), run.component_log.size(), "掉落都放進背包")
+		if sd < 3:
+			logs[sd] = JSON.stringify(run.component_log)
+	for sd in 3:
+		var again := RunState.create("elf", 7000 + sd)
+		for rd in range(1, 25):
+			again._component_drops(rd)
+		eq(JSON.stringify(again.component_log), logs[sd], "相同種子掉落相同（可重播）")
+	# 經由結算發放、存讀檔保留
+	var r := RunState.create("human", 77)
+	for rd in range(1, 6):
+		r.round_no = rd
+		r.pending_reward = {}
+		r.start_battle()
+		r.settle(_fake_result(true))
+	check(r.chapter_components(1) >= 2, "第一章第 5 回合結束時已達保底（%d 個）" % r.chapter_components(1))
+	var loaded := RunState.from_dict(JSON.parse_string(JSON.stringify(r.to_dict())))
+	eq(JSON.stringify(loaded.component_log), JSON.stringify(r.component_log), "存讀檔後掉落紀錄一致")
+
+
+# ------------------------------------------------------------ V0.5 特殊獎勵在下一回合選擇
+func test_reward_next_round() -> void:
+	var picks := {}
+	for sd in 40:
+		var run := RunState.create("human", 8100 + sd)
+		run.round_no = 3
+		run.start_battle()
+		run.settle(_fake_result(true))
+		eq(run.round_no, 4, "第 3 回合結束 → 第 4 回合")
+		check(run.has_pending_reward(), "第 4 回合備戰時才選擇第 3 回合獎勵")
+		run.begin_round()
+		check(run.has_pending_reward(), "進入備戰後獎勵仍待選擇")
+		var shown: Array = run.pending_reward["choices"].duplicate()
+		var inv := run.inventory.size()
+		var sim := run.create_battle()
+		check(sim != null and not run.has_pending_reward(), "倒數歸零開戰：未選擇的獎勵自動發放")
+		eq(run.inventory.size(), inv + 1, "自動發放一件")
+		check(shown.has(run.last_auto_reward) and run.inventory[-1] == run.last_auto_reward, "從顯示的三件中選出")
+		check(run.rewards_claimed.has(3), "記錄第 3 回合已領取")
+		picks[shown.find(run.last_auto_reward)] = true
+		# 重播：同種子同結果
+		var again := RunState.create("human", 8100 + sd)
+		again.round_no = 3
+		again.start_battle()
+		again.settle(_fake_result(true))
+		again.begin_round()
+		again.create_battle()
+		eq(again.last_auto_reward, run.last_auto_reward, "相同種子自動發放相同裝備")
+	check(picks.size() >= 2, "自動發放是隨機的，不是固定第一件（%s）" % str(picks.keys()))
+	# 開戰後不能再選
+	var r := RunState.create("elf", 8200)
+	r.round_no = 6
+	r.start_battle()
+	r.settle(_fake_result(true))
+	r.begin_round()
+	r.battle_active = true
+	check(r.claim_reward(0) != "", "戰鬥開始後不能選擇")
+	eq(r.auto_claim_reward(), "", "戰鬥中不會再自動發放")
+	r.battle_active = false
+	eq(r.claim_reward(2), "", "備戰時手動選擇")
+	r.create_battle()
+	eq(r.last_auto_reward, "", "已手動選擇就不再自動發放")
+	# 整局都不手動選：七個特殊獎勵全部在下一回合開戰前發放，沒有第 25 回合
+	var full := RunState.create("orc", 8300)
+	for rd in range(1, 25):
+		full.begin_round()
+		full.start_battle()
+		full.settle(_fake_result(true))
+		if full.finished:
+			break
+	eq(full.rewards_claimed.size(), 7, "七個特殊獎勵都在下一回合開戰前發放")
+	check(full.finished and full.round_no == 24, "打完第 24 回合即結束，沒有額外回合")
+	check(full.rewards_claimed.has(21), "第 21 回合獎勵已在第 22 回合發放")
+	check(not full.has_pending_reward(), "結束時沒有遺留的獎勵")

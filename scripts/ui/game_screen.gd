@@ -60,7 +60,6 @@ const STATE_MARK := {
 @onready var reroll_btn: Button = $BottomBar/VBox/RowB/LeftButtons/RerollButton
 @onready var civup_btn: Button = $BottomBar/VBox/RowB/LeftButtons/CivUpButton
 @onready var shop_slots: HBoxContainer = $BottomBar/VBox/RowB/ShopSlots
-@onready var start_btn: Button = $BottomBar/VBox/RowB/RightButtons/StartButton
 @onready var lock_btn: Button = $BottomBar/VBox/RowB/RightButtons/LockButton
 @onready var big_countdown: Label = $BigCountdown
 @onready var reward_overlay: Control = $RewardOverlay
@@ -131,7 +130,7 @@ func _ready() -> void:
 	_style()
 	_connect()
 	get_viewport().size_changed.connect(_layout)
-	board.is_over_sell_zone = func(p: Vector2) -> bool: return bottom_bar.get_global_rect().has_point(p) and phase == Phase.PREP
+	board.is_over_sell_zone = func(p: Vector2) -> bool: return bottom_bar.get_global_rect().has_point(p) and _shop_open()
 	run.changed.connect(_on_run_changed)
 	debug_btn.visible = Session.debug_enabled
 	_apply_side_layout()
@@ -177,7 +176,6 @@ func _build_bottom() -> void:
 	xp_right.add_child(pad)
 	_decorate(reroll_btn, "refresh", Color(0.85, 0.92, 1.0), "刷新 2")
 	_decorate(civup_btn, _civ_icon(), civ_col, "+4 XP", 28)
-	_decorate(start_btn, "play", Color(1.0, 0.95, 0.8), "開戰")
 	_decorate(lock_btn, "unlock", Color(0.85, 0.88, 0.95), "鎖定")
 	_decorate(bag_btn, "bag", Color(0.85, 0.75, 0.55), "背包 0")
 
@@ -306,7 +304,6 @@ func _style() -> void:
 	UiStyle.style_button(reroll_btn, Color(0.16, 0.30, 0.52))
 	UiStyle.style_button(civup_btn, _civ_color().darkened(0.55), _civ_color())
 	UiStyle.style_button(lock_btn, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 15)
-	UiStyle.style_button(start_btn, Color(0.62, 0.38, 0.06), UiStyle.GOLD, 19)
 	UiStyle.style_button(sell_btn, Color(0.50, 0.20, 0.18))
 	UiStyle.style_button(bag_btn, Color(0.22, 0.19, 0.14), Color(0.85, 0.75, 0.55, 0.6), 15)
 	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
@@ -347,9 +344,8 @@ func _connect() -> void:
 	reroll_btn.pressed.connect(_on_reroll)
 	civup_btn.pressed.connect(_on_buy_xp)
 	lock_btn.pressed.connect(func():
-		if phase == Phase.PREP:
+		if _shop_open():
 			run.toggle_lock())
-	start_btn.pressed.connect(func(): _on_start_battle(false))
 	sell_btn.pressed.connect(_on_sell_selected)
 	bag_btn.pressed.connect(_show_bag)
 	close_detail_btn.pressed.connect(_close_detail)
@@ -357,6 +353,7 @@ func _connect() -> void:
 	board.tap_interceptor = _intercept_unit_tap
 	leader.collapse_toggled.connect(func(_c: bool): _apply_side_layout())
 	reward_dots.dot_pressed.connect(func(_r: int, text: String): _toast(text))
+	_build_reward_reopen()
 	speed_btn.pressed.connect(_cycle_speed)
 	skip_btn.pressed.connect(func(): battle_player.skip())
 	menu_btn.pressed.connect(func(): _show_menu(true))
@@ -383,10 +380,8 @@ func _connect() -> void:
 		if phase == Phase.PREP:
 			_report(run.move_to_board(uid, cell)))
 	board.move_to_bench_requested.connect(func(uid: int, idx: int):
-		# 戰鬥中也能整理候補區（只影響下一回合）
-		var f := run.find_unit(uid)
-		if phase == Phase.PREP or (not f.is_empty() and f["where"] == "bench"):
-			_report(run.move_to_bench(uid, idx)))
+		# 戰鬥中也能整理候補區（只影響下一回合）；場上棋子由 RunState 擋下
+		_report(run.move_to_bench(uid, idx)))
 	board.sell_requested.connect(func(uid: int): _sell(uid))
 	battle_player.finished.connect(_on_battle_finished)
 	$DebugPanel/VBox/RoundRow/JumpButton.pressed.connect(_debug_jump)
@@ -491,10 +486,6 @@ func _sync_bottom_columns() -> void:
 
 # ---------- 階段 ----------
 func _enter_prep() -> void:
-	# 先處理上一回合的裝備三選一（選擇時不計入 30 秒）
-	if run.has_pending_reward():
-		_show_reward()
-		return
 	phase = Phase.PREP
 	reward_overlay.visible = false
 	run.begin_round()
@@ -509,23 +500,28 @@ func _enter_prep() -> void:
 	menu_btn.visible = true
 	_set_info("none", null)
 	_refresh()
-	# 介面與棋盤初始化完成後才開始 30 秒倒數（從圖鑑返回同一回合時接續剩餘秒數）
-	prep_timer.start()
+	# 介面與棋盤初始化完成、上一場戰鬥結束後才開始倒數（秒數依回合設定；從圖鑑返回同一回合時接續剩餘秒數）
+	prep_timer.start_round(run.round_no)
 	if Session.prep_time_round == run.round_no and Session.prep_time_left > 0.0:
 		prep_timer.remaining = Session.prep_time_left
 	Session.prep_time_round = -1
 	_last_seconds = -1
 	_update_bar()
+	# V0.5：上一場特殊戰鬥的三選一在這個備戰階段選擇；倒數照常進行，畫面其他操作也不受影響
+	if run.has_pending_reward():
+		_show_reward()
 
 
 func _process(delta: float) -> void:
 	match phase:
 		Phase.PREP:
-			prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible or item_overlay.visible
+			# V0.5：裝備資訊、合成確認、三選一都不暫停倒數；只有選單、除錯、放棄確認會暫停
+			prep_timer.paused = menu_overlay.visible or debug_panel.visible or abandon_confirm.visible
 			if prep_timer.tick(delta):
 				_on_start_battle(true)
 				return
 			_update_bar()
+			_update_reward_countdown()
 		Phase.BATTLE:
 			_update_bar()
 			_info_refresh -= delta
@@ -597,32 +593,35 @@ func _on_run_changed() -> void:
 		SaveSystem.save_run(run)
 	else:
 		_refresh_bottom()
+		_refresh_shop()
 		_refresh_info()
 
 
-## auto = 倒數結束自動開戰
+## 倒數結束自動開戰（V0.5 沒有開始戰鬥按鈕）
 func _on_start_battle(auto: bool) -> void:
 	if phase != Phase.PREP:
 		return
 	board.cancel_drag()
-	item_overlay.visible = false
 	_pending_item = -1
 	_bag_target_uid = -1
 	_refresh_bag()
 	var placed := run.auto_fill_board()
-	if run.board_count() == 0 and not auto:
-		_toast("場上與候補區都沒有棋子，請先招募")
-		return
 	prep_timer.stop()
 	big_countdown.visible = false
 	phase = Phase.BATTLE
 	_set_bar_neutral()
 	board.select(-1)
 	board.interactive = false
-	_last_result = run.start_battle()
+	_last_result = {}
+	var had_reward := run.has_pending_reward()
+	var sim := run.create_battle()
+	_hide_reward()
+	if had_reward and run.last_auto_reward != "":
+		_toast("時間到，隨機獲得裝備：%s（已放入背包）" % GameData.item(run.last_auto_reward).get("name", ""), UiStyle.GOLD)
+		reward_dots.set_state(run.round_no, run.rewards_claimed)
 	board.set_prep_visible(false)
 	board.battle_mode = true
-	battle_player.play(_last_result, board)
+	battle_player.play_live(sim, board)
 	leader.set_stats(battle_player.live_stats())
 	speed_btn.visible = true
 	skip_btn.visible = true
@@ -633,13 +632,14 @@ func _on_start_battle(auto: bool) -> void:
 	_refresh()
 	if not placed.is_empty():
 		_toast("人口未滿：已從候補區自動補上 %d 隻" % placed.size())
-	elif auto:
-		_toast("備戰時間到，自動開戰")
+	else:
+		_toast("備戰時間到，開戰！")
 
 
 func _on_battle_finished() -> void:
 	if phase != Phase.BATTLE:
 		return
+	_last_result = battle_player.sim().result()
 	var rep := run.settle(_last_result)
 	leader.set_stats(_last_result.get("stats", []))   # 保留上一場統計，直到下一場開始
 	if run.finished:
@@ -669,6 +669,8 @@ func _toast_report(rep: Dictionary) -> void:
 		_toast("鹿角人：遠征生命 +%d" % rep["deer_heal"], Color(0.55, 0.95, 0.6))
 	if rep["level_after"] != rep["level_before"]:
 		_toast("文明升到 Lv.%d！" % rep["level_after"], Color(0.6, 0.85, 1.0))
+	for cid_ in rep.get("components", []):
+		_toast("戰鬥掉落組件：%s（已放入背包）" % GameData.item(str(cid_)).get("name", ""), Color(0.75, 0.9, 1.0))
 	if bool(rep.get("remover", false)):
 		_toast("獲得 1 個%s（現有 %d 個）" % [GameData.remover_name(), run.removers], UiStyle.GOLD)
 	if rep["outcome"] == "victory":
@@ -678,13 +680,10 @@ func _toast_report(rep: Dictionary) -> void:
 
 
 # ---------- 裝備三選一 ----------
+## V0.5：在備戰階段顯示三選一，倒數不暫停；面板外的區域可以照常操作（商店、佈陣、背包）
 func _show_reward() -> void:
-	phase = Phase.REWARD
-	prep_timer.stop()
-	big_countdown.visible = false
-	_set_bar_neutral()
-	bar_left.text = " 選擇裝備獎勵（不計備戰時間）"
-	bar_right.text = ""
+	if not run.has_pending_reward() or phase != Phase.PREP:
+		return
 	for c in reward_cards.get_children():
 		reward_cards.remove_child(c)
 		c.queue_free()
@@ -694,17 +693,97 @@ func _show_reward() -> void:
 	var choices: Array = pr["choices"]
 	for i in choices.size():
 		reward_cards.add_child(_item_card(str(choices[i]), "選擇", func(): _claim(i)))
+	var old_later := reward_cards.get_parent().get_node_or_null("LaterButton")
+	if old_later:
+		old_later.get_parent().remove_child(old_later)
+		old_later.queue_free()
+	var later := Button.new()
+	later.name = "LaterButton"
+	later.text = "先收起（稍後再選）"
+	later.custom_minimum_size = Vector2(0, 40)
+	UiStyle.style_button(later, Color(0.18, 0.21, 0.28), Color(1, 1, 1, 0.15), 14)
+	later.pressed.connect(func():
+		reward_overlay.visible = false
+		_update_reward_countdown())
+	reward_cards.get_parent().add_child(later)
 	reward_overlay.visible = true
+	_reward_reopen.visible = false
+	_update_reward_countdown()
 	_refresh_top()
 
 
+func _hide_reward() -> void:
+	reward_overlay.visible = false
+	_reward_reopen.visible = false
+	var later := reward_cards.get_parent().get_node_or_null("LaterButton")
+	if later:
+		later.get_parent().remove_child(later)
+		later.queue_free()
+
+
+func is_reward_open() -> bool:
+	return reward_overlay.visible
+
+
 func _claim(i: int) -> void:
+	if phase != Phase.PREP or not run.has_pending_reward():
+		_hide_reward()
+		return
 	var id := str(run.pending_reward["choices"][i])
-	if run.claim_reward(i) == "":
-		reward_overlay.visible = false
+	var r := run.claim_reward(i)
+	if r == "":
+		_hide_reward()
 		_toast("獲得裝備：%s（已放入背包）" % GameData.item(id)["name"], UiStyle.GOLD)
+		reward_dots.set_state(run.round_no, run.rewards_claimed)
 		SaveSystem.save_run(run)
-		_enter_prep()
+	else:
+		_toast(r)
+
+
+var _reward_reopen: Button
+
+
+## 收起三選一後，在倒數條下方顯示「選擇獎勵」按鈕（顯示剩餘秒數）
+func _build_reward_reopen() -> void:
+	_reward_reopen = Button.new()
+	_reward_reopen.name = "RewardReopen"
+	_reward_reopen.visible = false
+	_reward_reopen.custom_minimum_size = Vector2(220, 40)
+	UiStyle.style_button(_reward_reopen, Color(0.55, 0.36, 0.08), UiStyle.GOLD, 15)
+	_reward_reopen.pressed.connect(_show_reward)
+	add_child(_reward_reopen)
+
+
+## 三選一面板與收起按鈕上的倒數；最後 5 秒紅色閃爍提醒「時間到會隨機發放」
+func _update_reward_countdown() -> void:
+	if _reward_reopen == null:
+		return
+	var pending := phase == Phase.PREP and run.has_pending_reward()
+	if not pending:
+		if reward_overlay.visible or _reward_reopen.visible:
+			_hide_reward()
+		return
+	var secs := prep_timer.seconds_left()
+	var warn := secs <= 5
+	var hint: Label = $RewardOverlay/Panel/VBox/RewardHint
+	var pulse := 0.5 + 0.5 * absf(sin(Time.get_ticks_msec() / 140.0))
+	if warn:
+		hint.text = "剩 %d 秒！時間到會從三件中隨機發放一件" % secs
+		hint.add_theme_color_override("font_color", Color(1.0, 0.35 + 0.3 * pulse, 0.3))
+		hint.add_theme_font_size_override("font_size", 17)
+	else:
+		hint.text = "選擇一件加入背包・剩 %d 秒（倒數不暫停；時間到會從三件中隨機發放一件）" % secs
+		hint.add_theme_color_override("font_color", Color(0.62, 0.66, 0.74))
+		hint.add_theme_font_size_override("font_size", 13)
+	var panel: Control = $RewardOverlay/Panel
+	panel.modulate = Color(1, 0.85 + 0.15 * pulse, 0.85 + 0.15 * pulse) if warn else Color.WHITE
+	_reward_reopen.visible = not reward_overlay.visible
+	if _reward_reopen.visible:
+		_reward_reopen.text = "選擇裝備獎勵（剩 %d 秒）" % secs
+		_reward_reopen.modulate = Color(1, 0.6 + 0.4 * pulse, 0.6 + 0.4 * pulse) if warn else Color.WHITE
+		var r := board_rect()
+		_reward_reopen.size = _reward_reopen.get_combined_minimum_size()
+		_reward_reopen.position = Vector2(r.get_center().x - _reward_reopen.size.x * 0.5, r.position.y + 4.0)
 
 
 ## 裝備卡片（固定格式）：名稱／基礎屬性／唯一特性・名稱：一句話描述
@@ -740,7 +819,76 @@ func _item_text(id: String) -> String:
 	var u := Equipment.unique_of(id)
 	if not u.is_empty():
 		lines.append("[b][color=#ffd34d]唯一特性・%s[/color][/b]：%s" % [u.get("name", ""), u.get("desc", "")])
+	elif str(GameData.item(id).get("source", "")) == "craft":
+		lines.append("[color=#9aa3ad]純數值裝備：可以和其他裝備的數值疊加[/color]")
+	if GameData.is_component(id):
+		var parts: Array = []
+		for rc in Equipment.recipes_for(id):
+			parts.append("＋%s→%s" % [GameData.item(rc["with"]).get("name", ""), GameData.item(rc["result"]).get("name", "")])
+		lines.append("[color=#9aa3ad]基礎組件，可合成：%s[/color]" % "、".join(parts))
 	return "\n".join(lines)
+
+
+# ---------- 合成（V0.5） ----------
+## 合成預覽：顯示結果的名稱、屬性與唯一特性；確認後才合成（避免手機誤觸）。
+## alt_text／alt_cb：另一個選項（例如棋子還有空欄時「直接穿上」）
+func _preview_combine(a_id: String, b_id: String, on_confirm: Callable, alt_text: String = "", alt_cb: Callable = Callable()) -> void:
+	var res := GameData.recipe(a_id, b_id)
+	if res == "":
+		_toast("這兩件不能合成")
+		return
+	_open_item_overlay("合成預覽")
+	item_body.add_child(InfoView.make_rich("%s ＋ %s → [b]%s[/b]（合成後只佔一格）" % [GameData.item(a_id).get("name", ""), GameData.item(b_id).get("name", ""), GameData.item(res).get("name", "")], 15))
+	item_body.add_child(_item_card(res, "", Callable()))
+	_overlay_button("確認合成", func():
+		item_overlay.visible = false
+		on_confirm.call(), true)
+	if alt_text != "":
+		_overlay_button(alt_text, func():
+			item_overlay.visible = false
+			alt_cb.call())
+	_overlay_button("取消", func(): item_overlay.visible = false)
+
+
+func is_combine_preview_open() -> bool:
+	return item_overlay.visible and item_title.text == "合成預覽"
+
+
+## 背包裡兩件組件合成
+func _combine_in_bag(i: int, j: int) -> void:
+	var a_id := str(run.inventory[i])
+	var b_id := str(run.inventory[j])
+	_preview_combine(a_id, b_id, func():
+		var r := run.combine_inventory(i, j)
+		if r == "":
+			_toast("合成了 %s" % GameData.item(GameData.recipe(a_id, b_id)).get("name", ""), UiStyle.GOLD)
+			_pending_item = -1
+		_report(r)
+		_refresh_bag())
+
+
+## 背包裡的裝備交給棋子：能和棋子身上的組件合成時先預覽（有空欄時也可選擇直接穿上）；否則直接穿上
+func _give_item(uid: int, inv_index: int) -> void:
+	var slot := run.combinable_slot(uid, inv_index)
+	if slot < 0:
+		if _try_equip(uid, inv_index):
+			_close_bag()
+			board.select(uid)
+		return
+	var f := run.find_unit(uid)
+	var items := RunState.unit_items(f["unit"])
+	var a_id := str(items[slot])
+	var b_id := str(run.inventory[inv_index])
+	var has_free := items.size() < GameData.item_slots()
+	_preview_combine(a_id, b_id, func():
+		var r := run.combine_on_unit(uid, slot, inv_index)
+		if r == "":
+			_toast("%s 合成了 %s" % [GameData.unit(str(f["unit"]["id"])).get("name", ""), GameData.item(GameData.recipe(a_id, b_id)).get("name", "")], UiStyle.GOLD)
+			_close_bag()
+		_report(r),
+		"直接穿上（不合成）" if has_free else "", func():
+			if _try_equip(uid, inv_index):
+				_close_bag())
 
 
 # ---------- 裝備欄與背包 ----------
@@ -756,21 +904,39 @@ var _drag_consumed := false
 var _ghost: Control
 
 
+## 商店、候補區、背包在備戰與戰鬥中都可以操作（V0.5）；戰鬥中的場上棋子由 RunState 限制
+func _shop_open() -> bool:
+	return phase == Phase.PREP or phase == Phase.BATTLE or phase == Phase.AFTER
+
+
 func _equip_allowed() -> bool:
-	return phase == Phase.PREP
+	return _shop_open()
 
 
 func _on_equip_slot(slot: int) -> void:
 	var items: Array = _current_items()
-	var editable := _equip_allowed() and _info_mode == "unit"
+	var uid_now := _info_uid()
+	var editable := _equip_allowed() and uid_now >= 0
 	if slot < items.size():
 		_show_item_info(str(items[slot]), slot, editable)
 	elif not editable:
-		_toast("戰鬥中不能更換裝備" if phase == Phase.BATTLE else "只能在備戰時替自己的棋子裝備")
+		_toast("只能替自己的棋子裝備")
 	elif run.inventory.is_empty():
 		_toast("背包沒有裝備（裝備回合完成後可三選一）")
 	else:
 		_open_bag(int(_info_ref))
+
+
+## 目前資訊卡顯示的是哪一隻自己的棋子（備戰選取或戰鬥中點選我方）；不是自己的棋子回傳 -1
+func _info_uid() -> int:
+	match _info_mode:
+		"unit":
+			return int(_info_ref)
+		"battle":
+			var snap := battle_player.unit_snapshot(int(_info_ref))
+			if not snap.is_empty() and int(snap["side"]) == 0:
+				return int(snap.get("uid", -1))
+	return -1
 
 
 func _current_items() -> Array:
@@ -779,6 +945,9 @@ func _current_items() -> Array:
 			var f := run.find_unit(int(_info_ref))
 			return RunState.unit_items(f["unit"]) if not f.is_empty() else []
 		"battle":
+			var uid := _info_uid()
+			if uid >= 0 and not run.find_unit(uid).is_empty():
+				return RunState.unit_items(run.find_unit(uid)["unit"])
 			return battle_player.unit_snapshot(int(_info_ref)).get("items", [])
 	return []
 
@@ -810,7 +979,7 @@ func _show_item_info(id: String, slot: int, editable: bool) -> void:
 	_open_item_overlay(str(GameData.item(id).get("name", id)))
 	item_body.add_child(_item_card(id, "", Callable()))
 	if editable:
-		var uid := int(_info_ref)
+		var uid := _info_uid()
 		var hint := InfoView.make_rich("[color=#9aa3ad]裝備裝上後會鎖定。使用 1 個%s可取下這件並放回背包（星級與位置不變）。目前持有 %d 個。[/color]" % [GameData.remover_name(), run.removers], 13)
 		item_body.add_child(hint)
 		_overlay_button("使用卸除器（剩 %d）" % run.removers, func():
@@ -861,9 +1030,9 @@ func _refresh_bag() -> void:
 	elif not _equip_allowed():
 		bag_hint.text = "戰鬥中只能查看；備戰時才能裝備。"
 	elif _pending_item >= 0:
-		bag_hint.text = "已選取：點棋盤或候補區上的棋子即可裝備（再點一次裝備取消）。"
+		bag_hint.text = "已選取：點棋子即可裝備；點另一件組件可預覽合成（再點一次取消）。"
 	else:
-		bag_hint.text = "把裝備拖到棋子上；或先點裝備、再點棋子。裝上後鎖定，需要卸除器才能取下。"
+		bag_hint.text = "把裝備拖到棋子上，或拖到另一件組件上合成；也可以先點裝備再點棋子。裝上後鎖定，需要卸除器才能取下。"
 	for c in bag_list.get_children():
 		bag_list.remove_child(c)
 		c.queue_free()
@@ -911,7 +1080,8 @@ func _bag_row(i: int) -> Button:
 	s.add_theme_color_override("font_color", Color(0.55, 0.75, 1.0))
 	s.clip_text = true
 	var u := Label.new()
-	u.text = "唯一・" + str(Equipment.unique_of(id).get("name", ""))
+	var uq := str(Equipment.unique_of(id).get("name", ""))
+	u.text = ("唯一・" + uq) if uq != "" else ("組件・可合成" if GameData.is_component(id) else "純數值")
 	u.add_theme_font_size_override("font_size", 12)
 	u.add_theme_color_override("font_color", Color(1.0, 0.83, 0.3))
 	u.clip_text = true
@@ -950,10 +1120,12 @@ func _bag_click(i: int) -> void:
 		_toast("戰鬥中不能更換裝備")
 		return
 	if _bag_target_uid >= 0:
-		var target := _bag_target_uid
-		if _try_equip(target, i):
-			_close_bag()
-			board.select(target)
+		_give_item(_bag_target_uid, i)
+		return
+	# 已選取一件組件、再點另一件可合成的組件 → 合成預覽
+	if _pending_item >= 0 and _pending_item != i and _pending_item < run.inventory.size() \
+			and GameData.recipe(str(run.inventory[_pending_item]), str(run.inventory[i])) != "":
+		_combine_in_bag(_pending_item, i)
 		return
 	_pending_item = -1 if _pending_item == i else i
 	_refresh_bag()
@@ -965,10 +1137,8 @@ func _intercept_unit_tap(uid: int) -> bool:
 		return false
 	var idx := _pending_item
 	_pending_item = -1
-	if _try_equip(uid, idx):
-		_close_bag()
-	else:
-		_refresh_bag()
+	_give_item(uid, idx)
+	_refresh_bag()
 	return true
 
 
@@ -1011,13 +1181,21 @@ func _drag_input(event: InputEvent) -> bool:
 			# 放開位置若剛好還在原本那一列上，按鈕會再發出 pressed：標記略過這一次
 			var row := bag_row_button(idx)
 			_drag_consumed = row != null and row.get_global_rect().has_point(event.position)
+			# 放到背包裡另一件組件上 → 合成預覽
+			for c in bag_list.get_children():
+				if c is Button and c.get_global_rect().has_point(event.position) and int(c.get_meta("inv_index", -1)) != idx:
+					var j := int(c.get_meta("inv_index", -1))
+					if GameData.recipe(str(run.inventory[idx]), str(run.inventory[j])) != "":
+						_combine_in_bag(idx, j)
+					else:
+						_toast("這兩件不能合成")
+					get_viewport().set_input_as_handled()
+					return true
 			var uid := board.unit_at_screen(event.position)
 			if uid >= 0:
-				if _try_equip(uid, idx):
-					_close_bag()
-					board.select(uid)
+				_give_item(uid, idx)
 			else:
-				_toast("把裝備放到棋盤或候補區的棋子上")
+				_toast("把裝備放到棋子上，或放到另一件組件上合成")
 			get_viewport().set_input_as_handled()
 			return true
 	return false
@@ -1043,17 +1221,17 @@ func _report(reason: String) -> void:
 
 
 func _on_buy(slot: int) -> void:
-	if phase == Phase.PREP:
-		_report(run.buy(slot))
+	if _shop_open():
+		_report(run.buy(slot, board.selected_uid()))
 
 
 func _on_reroll() -> void:
-	if phase == Phase.PREP:
+	if _shop_open():
 		_report(run.reroll())
 
 
 func _on_buy_xp() -> void:
-	if phase == Phase.PREP:
+	if _shop_open():
 		_report(run.buy_xp())
 
 
@@ -1064,7 +1242,10 @@ func _on_sell_selected() -> void:
 
 
 func _sell(uid: int) -> void:
-	if phase != Phase.PREP:
+	if not _shop_open():
+		return
+	if run.is_fighting(uid):
+		_toast("戰鬥中的場上棋子不能出售")
 		return
 	var f := run.find_unit(uid)
 	if f.is_empty():
@@ -1104,9 +1285,6 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_on_buy_xp()
 		KEY_E:
 			_on_sell_selected()
-		KEY_SPACE:
-			if phase == Phase.PREP:
-				_on_start_battle(false)
 		KEY_ESCAPE:
 			if item_overlay.visible:
 				item_overlay.visible = false
@@ -1205,12 +1383,12 @@ func _info_prep_unit(uid: int) -> void:
 	else:
 		sources = Modifiers.sources_for_lineup([id], "", false, [items])[0]
 		note = "候補區：只計裝備（上場後才套用文明與羈絆）"
-	if phase == Phase.BATTLE:
-		note += "。戰鬥中只能查看"
+	if run.is_fighting(uid):
+		note += "。戰鬥中：可以穿裝備（立即生效），不能出售或移動"
 	detail_title.text = "棋子資訊"
 	card.visible = true
 	card.show_unit({"ref": "u%d" % uid, "id": id, "star": int(u["star"]), "side": 0, "sources": sources, "items": items, "note": note})
-	if phase == Phase.PREP:
+	if _shop_open() and not run.is_fighting(uid):
 		sell_btn.visible = true
 		sell_btn.text = "出售　+%d 金" % UnitStats.sell_value(id, int(u["star"]))
 
@@ -1298,7 +1476,7 @@ func _refresh_bottom() -> void:
 
 
 func _refresh_shop() -> void:
-	var prep := phase == Phase.PREP
+	var prep := _shop_open()
 	var three := run.three_star_ids()
 	for i in _shop_buttons.size():
 		var b := _shop_buttons[i]
@@ -1330,8 +1508,6 @@ func _refresh_shop() -> void:
 		civup_btn.disabled = not prep or run.gold < Economy.xp_cost()
 	_btn_text(lock_btn, "已鎖定" if run.shop_locked else "鎖定", "lock" if run.shop_locked else "unlock")
 	lock_btn.disabled = not prep
-	start_btn.disabled = not prep
-	_btn_text(start_btn, "戰鬥中" if phase == Phase.BATTLE else "開戰")
 
 
 ## 文明列不再常駐顯示 Buff／Debuff（改由浮動說明顯示）

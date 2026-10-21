@@ -20,6 +20,7 @@ var uid := 0
 var cid := 0
 var show_bars := false
 var show_head := true           # 頭上狀態條／星級／裝備（資訊卡頭像關閉）
+var on_bench := false           # 候補區：不畫 HP／MP 與裝備，只在頭上畫星級標記（V0.5）
 var hp := 1.0
 var max_hp := 1.0
 var shield := 0.0
@@ -104,6 +105,16 @@ func add_status(kind: String, dur: float) -> void:
 	statuses[kind] = maxf(float(statuses.get(kind, 0.0)), dur)
 
 
+## 施法前搖：短暫發光
+var _windup_left := 0.0
+var _windup_total := 0.0
+
+
+func windup(dur: float) -> void:
+	_windup_left = dur
+	_windup_total = maxf(0.01, dur)
+
+
 func die(dur: float) -> void:
 	var tw := create_tween()
 	tw.tween_property(self, "modulate:a", 0.0, dur)
@@ -112,6 +123,8 @@ func die(dur: float) -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	if _windup_left > 0.0:
+		_windup_left = maxf(0.0, _windup_left - delta)
 	if not statuses.is_empty():
 		for k in statuses.keys():
 			statuses[k] = float(statuses[k]) - delta * Session.playback_rate
@@ -162,6 +175,10 @@ func _draw() -> void:
 	draw_circle(bp, r * 0.3, Color(0.08, 0.09, 0.12))
 	draw_circle(bp, r * 0.25, rarity)
 	draw_string(UiStyle.FONT, bp + Vector2(-r * 0.3, r * 0.13), str(cost), HORIZONTAL_ALIGNMENT_CENTER, r * 0.6, int(r * 0.36), Color(0.05, 0.05, 0.08))
+	# 施法前搖：外圈逐漸收束的光環
+	if _windup_left > 0.0:
+		var k := 1.0 - _windup_left / _windup_total
+		draw_arc(o, r * (1.6 - 0.45 * k), 0, TAU, 40, Color(1.0, 0.85, 0.35, 0.35 + 0.5 * k), 3.0, true)
 	# 受擊／施法閃光
 	if flash_color.a > 0.01:
 		draw_circle(o, r * 1.05, flash_color)
@@ -170,7 +187,9 @@ func _draw() -> void:
 		var pulse := 0.5 + 0.5 * sin(_time * 6.0)
 		draw_arc(o, r * 1.32, 0, TAU, 48, Color(1.0, 0.88, 0.4, 0.35 + 0.25 * pulse), 7.0, true)
 		draw_arc(o, r * 1.2, 0, TAU, 48, Color(1.0, 0.95, 0.6, 1.0), 3.0 + 1.5 * pulse, true)
-	if show_head:
+	if show_head and on_bench:
+		_draw_bench_star(o, r)
+	elif show_head:
 		_draw_head(o, r)
 
 
@@ -193,6 +212,21 @@ func head_layout(o: Vector2 = Vector2.ZERO, r: float = -1.0) -> Dictionary:
 			item_rects.append(Rect2(Vector2(o.x - row_w * 0.5 + i * (isz + gap), top + hp_h + mp_h + 3.0), Vector2(isz, isz)))
 	return {"bar": Rect2(Vector2(left + mark_w, top), Vector2(bar_w, hp_h + 1.0 + mp_h)), "hp_h": hp_h, "mp_h": mp_h,
 		"mark": Vector2(left + mark_w * 0.45, top + (hp_h + mp_h + 1.0) * 0.5), "items": item_rects}
+
+
+## 候補區：只在棋子正上方畫星級標記（深色底，不會被棋子或選取框蓋住）
+func bench_star_center(o: Vector2 = Vector2.ZERO, r: float = -1.0) -> Vector2:
+	if r < 0.0:
+		r = radius
+	return o + Vector2(0, -r - maxf(5.0, r * 0.22))
+
+
+func _draw_bench_star(o: Vector2, r: float) -> void:
+	var c := bench_star_center(o, r)
+	var w := maxf(14.0, r * 0.7) if star < 3 else maxf(12.0, r * 0.55)
+	var h := maxf(9.0, r * 0.38)
+	draw_rect(Rect2(c - Vector2(w, h) * 0.5, Vector2(w, h)), Color(0, 0, 0, 0.7))
+	draw_star_mark(self, c, r, star)
 
 
 ## 頭上的星級標記、HP／MP 條、裝備圖示、狀態字

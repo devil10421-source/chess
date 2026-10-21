@@ -131,7 +131,7 @@ func _run() -> void:
 	# ── 版面 ──
 	check(g.round_label.text == "1/24", "上方顯示回合 1/24")
 	check(GameData.reward_rounds().size() == 7, "七個裝備節點")
-	check(g.prep_timer.running and g.prep_timer.duration == 30.0, "30 秒備戰倒數開始")
+	check(g.prep_timer.running and g.prep_timer.duration == 45.0, "第 1 回合 45 秒備戰倒數開始")
 	check(g._gold_label.text == "5" and g._lv_label.text == "Lv.1" and g._hp_label.text == "40/40" and g._pop_label.text == "0/1", "底部顯示 金幣｜Lv｜生命｜人口")
 	check(g.xp_left.text.strip_edges() == "0/2 XP" and g._xp_cost_label.text == "4" and g._xp_word.text == "升級", "XP 條：0/2 XP、4 金升級")
 	# 文明升級圖示：商店左側、文明代表色徽章；點擊＝購買 4 XP、花 4 金
@@ -328,6 +328,44 @@ func _run() -> void:
 	check(g.phase == 1, "倒數歸零自動開戰")
 	check(run.board_count() >= 1, "自動補位")
 	check(g.bar_left.text.contains("戰鬥中"), "開戰後倒數條改為戰鬥狀態")
+	check(not g.has_node("BottomBar/VBox/RowB/RightButtons/StartButton"), "沒有開始戰鬥按鈕（倒數歸零自動開戰）")
+
+	# ── V0.5：戰鬥中經營商店與即時裝備 ──
+	var bpl: BattlePlayer = g.battle_player
+	# 第 1 回合的稻草兵太脆，讓它耐打一點，確保以下檢查都在戰鬥進行中完成（只改這場測試的模擬）
+	for eu in bpl.sim().units:
+		if eu.side == 1:
+			eu.max_hp = 2500.0
+			eu.hp = 2500.0
+	run.gold = 40
+	run.changed.emit()
+	var gold_r := run.gold
+	g.reroll_btn.pressed.emit()
+	await get_tree().process_frame
+	check(run.gold == gold_r - Economy.reroll_cost(), "戰鬥中可以刷新商店")
+	var bench_n := run.all_units().size()
+	for i in run.shop.size():
+		if run.can_buy(i) == "":
+			(g.get_node("BottomBar/VBox/RowB/ShopSlots/Slot%d" % i) as Button).pressed.emit()
+			break
+	await get_tree().process_frame
+	check(run.all_units().size() >= bench_n, "戰鬥中可以購買棋子")
+	var fight_uid := int(run.board_lineup()[0]["uid"])
+	RunState.unit_items(run.find_unit(fight_uid)["unit"]).clear()   # 確保有空裝備欄（之前測試穿過的裝備直接清掉）
+	run._sync_live_items(fight_uid)
+	await wait(0.2)
+	var live_cu: CombatUnit = bpl.sim().units.filter(func(x): return x.uid == fight_uid)[0]
+	var atk_live0 := live_cu.atk
+	run.inventory.append("DM_GREATAXE")
+	run.changed.emit()
+	g._open_bag(fight_uid)
+	await get_tree().process_frame
+	var axe_i := run.inventory.find("DM_GREATAXE")
+	g.bag_row_button(axe_i).pressed.emit()
+	await wait(0.3)
+	check(is_equal_approx(live_cu.atk, atk_live0 + 22.0), "戰鬥中替場上棋子穿裝備：攻擊力立即 +22（%.1f → %.1f）" % [atk_live0, live_cu.atk])
+	check(bpl.token(live_cu.cid).items.has("DM_GREATAXE"), "棋盤上的棋子裝備圖示即時更新")
+	check(run.sell(fight_uid) != "", "戰鬥中的場上棋子不能出售")
 
 	# ── 戰鬥中：整理候補、查看雙方、即時貢獻 ──
 	var bp: BattlePlayer = g.battle_player
@@ -341,7 +379,7 @@ func _run() -> void:
 		var moved_uid := int(run.bench[from_i]["uid"])
 		await drag(screen_pos(board, board.bench_center(from_i)), screen_pos(board, board.bench_center(to_i)))
 		check(run.bench[to_i] != null and int(run.bench[to_i]["uid"]) == moved_uid, "戰鬥中可以整理候補區")
-		check(run.board_count() == g._last_result["units"].filter(func(x): return x["side"] == 0).size(), "整理候補不會把棋子加入戰場")
+		check(run.board_count() == g.battle_player.sim().snapshots().filter(func(x): return x["side"] == 0).size(), "整理候補不會把棋子加入戰場")
 	await wait(0.8)
 	var my_cid := -1
 	var foe_cid := -1
@@ -351,7 +389,7 @@ func _run() -> void:
 		if int(bp._units[cid]["side"]) == 1:
 			foe_cid = int(cid)
 	await click_at(screen_pos(board, bp.token(my_cid).position))
-	check(g._info_mode == "battle" and card.visible, "戰鬥中點己方棋子顯示資訊卡")
+	check(g._info_mode == "battle" and card.visible, "戰鬥中點己方棋子顯示資訊卡（%s, %s, phase %d）" % [g._info_mode, str(card.visible), g.phase])
 	check(card._hp_label.text.begins_with("生命"), "資訊卡顯示即時生命")
 	card.cell_button("atk").pressed.emit()
 	await get_tree().process_frame
@@ -367,6 +405,7 @@ func _run() -> void:
 
 	# ── 戰後：沒有結算視窗、自動回到備戰 ──
 	Session.battle_speed = 4.0
+	g.skip_btn.pressed.emit()   # 略過動畫（直接算完，結果與正常播放相同）
 	var t1 := 0.0
 	while g.phase == 1 and t1 < 40.0:
 		await wait(0.2)
@@ -388,7 +427,51 @@ func _run() -> void:
 	check(g.leader.row_count() > 0, "戰後保留上一場統計")
 	Session.battle_speed = 1.0
 
-	# ── 裝備回合：三選一（不計備戰時間）──
+	# ── V0.5 組件合成：背包內合成、拖到棋子身上合成，都先預覽再確認 ──
+	g.prep_timer.remaining = 999.0
+	var inv_keep: Array = run.inventory.duplicate()
+	run.inventory = ["CP_BLADE", "CP_BLADE", "CP_PLATE"]
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	check(g.bag_row_button(0) != null and g.bag_row_button(0).find_children("*", "Label", true, false).any(func(l): return (l as Label).text == "組件・可合成"), "背包列標示「組件・可合成」")
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	g.bag_row_button(1).pressed.emit()
+	await wait(0.1)
+	check(g.is_combine_preview_open(), "點兩件組件 → 合成預覽")
+	check(g.item_body.find_children("*", "", true, false).any(func(n): return n is RichTextLabel and (n as RichTextLabel).text.contains("巨型戰刃")), "預覽顯示合成結果")
+	check(run.inventory.size() == 3, "確認前不會合成")
+	await shot("combine_preview")
+	var confirm_btn: Button = g.item_buttons.get_children().filter(func(b): return (b as Button).text == "確認合成")[0]
+	confirm_btn.pressed.emit()
+	await wait(0.1)
+	check(run.inventory == ["CR_GREATBLADE", "CP_PLATE"], "確認後合成：巨型戰刃（兩件→一件）")
+	# 棋子身上有鐵刃 → 把鐵甲交給它：預覽重裝戰斧
+	var cu_uid := -1
+	for bu in run.bench:
+		if bu != null:
+			cu_uid = int(bu["uid"])
+			bu["items"] = ["CP_BLADE"]
+			break
+	if cu_uid < 0:
+		var bf: Dictionary = run.board.values()[0]
+		cu_uid = int(bf["uid"])
+		bf["items"] = ["CP_BLADE"]
+	g._give_item(cu_uid, 1)
+	await wait(0.1)
+	check(g.is_combine_preview_open(), "把組件交給身上有組件的棋子 → 合成預覽")
+	check(g.item_buttons.get_children().any(func(b): return (b as Button).text == "直接穿上（不合成）"), "還有空欄時可以選擇直接穿上")
+	g.item_buttons.get_children().filter(func(b): return (b as Button).text == "確認合成")[0].pressed.emit()
+	await wait(0.1)
+	check(RunState.unit_items(run.find_unit(cu_uid)["unit"]) == ["CR_HEAVYAXE"], "棋子身上合成重裝戰斧，只佔一格")
+	check(run.inventory == ["CR_GREATBLADE"], "背包扣除鐵甲")
+	RunState.unit_items(run.find_unit(cu_uid)["unit"]).clear()
+	run.inventory = inv_keep
+	g._close_bag()
+	g.item_overlay.visible = false
+	await wait(0.1)
+
+	# ── 特殊戰鬥獎勵：下一回合備戰時三選一，倒數不暫停 ──
 	g.prep_timer.remaining = 999.0
 	if Session.debug_enabled:
 		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 3
@@ -398,17 +481,67 @@ func _run() -> void:
 		var inv_before := run.inventory.size()
 		press("DebugPanel/VBox/Row3/WinButton")
 		await wait(0.8)
-		check(g.reward_overlay.visible, "裝備回合完成 → 三選一")
+		g.debug_panel.visible = false
+		await wait(0.1)
+		check(run.round_no == 4 and g.phase == 0, "第 3 回合結束 → 進入第 4 回合備戰")
+		check(g.reward_overlay.visible, "第 4 回合備戰時顯示第 3 回合的三選一")
 		check(g.reward_cards.get_child_count() == 3, "三件裝備可查看")
-		check(not g.prep_timer.running, "選擇裝備時不計備戰時間")
+		check(g.prep_timer.running and not g.prep_timer.paused, "選擇獎勵時倒數不暫停")
+		var r0: float = g.prep_timer.remaining
+		await wait(0.5)
+		check(g.prep_timer.remaining < r0, "倒數持續進行（%.2f → %.2f）" % [r0, g.prep_timer.remaining])
+		check(g.reward_overlay.mouse_filter == Control.MOUSE_FILTER_IGNORE, "面板外的區域可以照常操作")
+		var gold_rw := run.gold
+		g.reroll_btn.pressed.emit()
+		await get_tree().process_frame
+		check(run.gold == gold_rw - Economy.reroll_cost() and g.reward_overlay.visible, "三選一開著也能刷新商店")
 		await shot("reward")
+		var later: Button = g.reward_cards.get_parent().get_node("LaterButton")
+		later.pressed.emit()
+		await wait(0.1)
+		var reopen: Button = g.get_node("RewardReopen")
+		check(not g.reward_overlay.visible and reopen.visible and reopen.text.contains("秒"), "先收起 → 顯示「選擇裝備獎勵（剩 N 秒）」")
+		reopen.pressed.emit()
+		await wait(0.1)
+		check(g.reward_overlay.visible, "再按一次打開三選一")
+		check(g.reward_cards.get_parent().get_children().filter(func(n): return n.name.begins_with("LaterButton")).size() == 1, "重新打開不會重複「先收起」按鈕")
+		g.prep_timer.remaining = 4.5
+		await wait(0.15)
+		check(g.get_node("RewardOverlay/Panel/VBox/RewardHint").text.contains("隨機"), "最後 5 秒強烈提示時間到會隨機發放")
+		await shot("reward_warning")
+		g.prep_timer.remaining = 999.0
 		var pick: Button = g.reward_cards.get_child(0).find_children("*", "Button", true, false)[0]
 		pick.pressed.emit()
 		await wait(0.3)
 		check(run.inventory.size() == inv_before + 1, "選擇後加入背包")
 		check(run.rewards_claimed.has(3), "第 3 回合已領取")
-		check(g.phase == 0 and g.prep_timer.running, "選完才開始第 4 回合倒數")
+		check(not g.reward_overlay.visible and not reopen.visible, "選完關閉三選一")
+		check(g.phase == 0 and g.prep_timer.running, "選擇不影響倒數與備戰")
 		check(g.reward_dots.claimed.has(3), "裝備節點點亮")
+		# 倒數歸零仍未選擇 → 從三件中隨機發放並開戰
+		(g.get_node("DebugPanel/VBox/RoundRow/RoundSpin") as SpinBox).value = 6
+		press("DebugPanel/VBox/RoundRow/JumpButton")
+		await wait(0.3)
+		press("DebugPanel/VBox/Row3/WinButton")
+		await wait(0.8)
+		g.debug_panel.visible = false
+		await wait(0.1)
+		check(run.round_no == 7 and g.reward_overlay.visible, "第 7 回合備戰顯示第 6 回合的三選一")
+		var shown: Array = run.pending_reward["choices"].duplicate()
+		var inv6 := run.inventory.size()
+		g.prep_timer.remaining = 0.3
+		await wait(0.6)
+		check(g.phase == 1, "不選擇也照常開戰")
+		check(run.rewards_claimed.has(6) and run.inventory.size() == inv6 + 1 and shown.has(run.inventory[-1]), "時間到從顯示的三件中隨機發放一件")
+		check(not g.reward_overlay.visible and not run.has_pending_reward(), "開戰後不能再選")
+		check(g.toast_texts().any(func(t): return t.contains("隨機獲得")), "提示隨機獲得的裝備")
+		Session.battle_speed = 4.0
+		g.skip_btn.pressed.emit()
+		var t7 := 0.0
+		while g.phase != 0 and t7 < 40.0:
+			await wait(0.2)
+			t7 += 0.2
+		Session.battle_speed = 1.0
 
 	# ── 收合：右側排行浮在戰場上，開關不推動棋盤 ──
 	g.prep_timer.remaining = 999.0

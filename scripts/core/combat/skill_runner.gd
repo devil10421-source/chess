@@ -85,6 +85,28 @@ static func _self_pen(sim: CombatSim, u: CombatUnit) -> void:
 	sim.add_status(u, kind, pen, float(_p(u, "pen_dur", 4)), u.cid, {"tag": "skill"})
 
 
+## 這次能不能施放（給施法前搖判斷；與 cast() 的提早返回條件一致，不改變任何狀態）
+static func can_cast(sim: CombatSim, u: CombatUnit) -> bool:
+	var kind := str(u.data.get("skill", {}).get("kind", ""))
+	match kind:
+		"none", "focus_fire":
+			return false
+		"strike", "rapid_shot", "bleed_strike", "curse":
+			# 需要目標在射程內：沒有鎖定目標時看最近的敵人是否在射程內
+			var cur := sim.unit_by_cid(u.target_cid)
+			if cur != null and cur.alive and cur.side != u.side:
+				return HexGrid.distance(u.cell, cur.cell) <= u.attack_range
+			for e in sim.enemies_of(u):
+				if HexGrid.distance(u.cell, e.cell) <= u.attack_range:
+					return true
+			return false
+		"surround_guard":
+			return sim.enemies_of(u).filter(func(e: CombatUnit) -> bool: return HexGrid.distance(e.cell, u.cell) <= 1).size() >= int(_p(u, "min_adj", 2))
+		"shadow_dance":
+			return _reachable_lowest_ratio(sim, u) != null
+	return not sim.enemies_of(u).is_empty()
+
+
 static func cast(sim: CombatSim, u: CombatUnit) -> bool:
 	var kind := str(u.data.get("skill", {}).get("kind", ""))
 	match kind:

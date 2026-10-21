@@ -38,14 +38,35 @@ static func play_prep(run: RunState) -> void:
 	_equip_items(run)
 
 
-## 把背包裝備穿到場上最強的棋子身上（每隻最多 2 件）
-static func _equip_items(run: RunState) -> void:
+## 把背包裝備穿到場上最強的棋子身上（每隻最多 2 件）。V0.5：先把背包裡的組件兩兩合成；
+## 棋子身上有組件時，背包組件優先和它合成。回傳穿上／合成的次數。
+static func _equip_items(run: RunState) -> int:
+	var n := 0
+	var merged := true
+	while merged:
+		merged = false
+		for i in run.inventory.size():
+			for j in range(i + 1, run.inventory.size()):
+				if GameData.recipe(str(run.inventory[i]), str(run.inventory[j])) != "" and run.combine_inventory(i, j) == "":
+					merged = true
+					break
+			if merged:
+				break
 	var lineup := run.board_lineup()
 	lineup.sort_custom(func(a, b) -> bool: return power(a["id"], int(a["star"])) > power(b["id"], int(b["star"])))
 	for p in lineup:
-		while not run.inventory.is_empty() and RunState.unit_items(run.find_unit(int(p["uid"]))["unit"]).size() < GameData.item_slots():
-			if run.equip(int(p["uid"]), 0) != "":
-				break
+		var uid := int(p["uid"])
+		var k := 0
+		while k < run.inventory.size():
+			var slot := run.combinable_slot(uid, k)
+			if slot >= 0 and run.combine_on_unit(uid, slot, k) == "":
+				n += 1
+				continue
+			if RunState.unit_items(run.find_unit(uid)["unit"]).size() < GameData.item_slots() and run.equip(uid, k) == "":
+				n += 1
+				continue
+			k += 1
+	return n
 
 
 static func _buy_best(run: RunState, keep: int) -> bool:

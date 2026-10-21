@@ -1,6 +1,8 @@
 class_name BattlePlayer
 extends Node
-## 依時間播放 CombatSim 產生的事件清單。只負責動畫，不做任何戰鬥判定。
+## 依播放時間推進 CombatSim（V0.5 即時模擬）並播放它產生的事件。只負責動畫，不做任何戰鬥判定。
+## 每一幀：實際時間 → 模擬時間（PlaybackClock），把模擬推進到這個時間，再播放這段時間內新產生的事件；
+## 所以畫面上的命中與傷害結算同步，戰鬥中替棋子穿裝備也會立即影響之後的計算。
 
 signal finished
 signal threat_changed(threat: int)
@@ -30,16 +32,22 @@ func is_playing() -> bool:
 	return _playing
 
 
-func play(result: Dictionary, board_view: BoardView) -> void:
+var _sim: CombatSim
+
+
+## 開始播放即時戰鬥（sim 尚未推進或只推進到 0 秒）
+func play_live(sim: CombatSim, board_view: BoardView) -> void:
 	board = board_view
 	clear()
-	_events = result.get("events", [])
-	_end_time = float(result.get("time", 0.0)) + 0.6
+	_sim = sim
+	sim.start()
+	_events = sim.events
+	_end_time = INF
 	_index = 0
 	_clock = 0.0
 	_real = 0.0
 	_delay = 0.4
-	for s in result.get("units", []):
+	for s in sim.snapshots():
 		var tk: UnitToken = TOKEN_SCENE.instantiate()
 		board.tokens_root.add_child(tk)
 		tk.setup(s["id"], int(s["star"]), int(s["side"]), board.hex_size * 0.72)
@@ -75,6 +83,8 @@ func clear() -> void:
 func skip() -> void:
 	if not _playing:
 		return
+	if _sim:
+		_sim.run()   # 略過：直接算完（之後不再接受操作）
 	while _index < _events.size():
 		_apply(_events[_index], true)
 		_index += 1
@@ -91,11 +101,20 @@ func _process(delta: float) -> void:
 	_real += delta * Session.battle_speed
 	_clock = PlaybackClock.sim_from_real(_real)
 	Session.playback_rate = PlaybackClock.rate_at_real(_real) * Session.battle_speed
+	if _sim:
+		_sim.step_to(_clock)
+		if _sim.finished:
+			_end_time = float(_sim.result().get("time", _clock)) + 0.6
 	while _index < _events.size() and float(_events[_index]["t"]) <= _clock:
 		_apply(_events[_index], false)
 		_index += 1
 	if _index >= _events.size() and _clock >= _end_time:
 		_finish()
+
+
+## 即時戰鬥的模擬（GameScreen 結算用）
+func sim() -> CombatSim:
+	return _sim
 
 
 ## 目前播放到的模擬秒數與實際秒數（UI 顯示用）
@@ -140,9 +159,10 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			var dst: UnitToken = _tokens.get(int(e["tgt"]))
 			if src and dst:
 				if bool(e["ranged"]):
-					board.fx.projectile(src.position, dst.position, Color(1, 0.95, 0.7), 0.18)
+					# 投射物飛行時間與模擬一致（命中時才出現傷害數字）
+					board.fx.projectile(src.position, dst.position, Color(1, 0.95, 0.7), float(e.get("flight", 0.18)), sp)
 				else:
-					src.lunge(dst.position, 0.22 / sp)
+					src.lunge(dst.position, 0.264 / sp)   # V0.5：攻擊動作可辨識時間 +20%
 		"damage":
 			_acc(int(e["src"]), "damage", float(e.get("hp_dmg", 0.0)))
 			_acc(int(e["tgt"]), "taken", float(e.get("hp_dmg", 0.0)))
@@ -156,7 +176,7 @@ func _apply(e: Dictionary, instant: bool) -> void:
 					if bool(e.get("dot", false)):
 						col = Color(1.0, 0.45, 0.3)
 					var txt := str(int(e["v"])) + ("!" if bool(e["crit"]) else "")
-					board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 0.5), txt, col, 22 if bool(e["crit"]) else 17)
+					board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 0.5), txt, col, 22 if bool(e["crit"]) else 17, 1.04)
 					if float(e["absorbed"]) > 0.0 and float(e["v"]) <= float(e["absorbed"]):
 						tk.flash(Color(0.9, 0.95, 1.0, 0.5), 0.2)
 					else:
@@ -167,7 +187,7 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			if tk:
 				tk.set_bars(float(e["hp"]), tk.max_hp, tk.shield)
 				if not instant:
-					board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 0.5), "+" + str(int(e["v"])), UiStyle.GOOD, 17)
+					board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 0.5), "+" + str(int(e["v"])), UiStyle.GOOD, 17, 1.04)
 		"shield":
 			var tk: UnitToken = _tokens.get(int(e["tgt"]))
 			if tk:
@@ -186,10 +206,31 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			var centers: Array = []
 			for c in e.get("cells", []):
 				centers.append(board.cell_center(c))
-			board.fx.area(centers, col)
+			board.fx.area(centers, col, 0.7)
+			for c in centers:
+				board.fx.ring(c, col, board.hex_size * 0.7, 0.45)   # 命中回饋
 			if tk:
 				tk.flash(Color(col, 0.6), 0.4)
-				board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 1.2), str(e["name"]), Color(1, 0.9, 0.5), 15, 1.0)
+		"cast_start":
+			# 施法前搖：發光＋技能名稱，讓玩家看得出要放技能
+			if instant:
+				return
+			var tk: UnitToken = _tokens.get(int(e["cid"]))
+			if tk:
+				tk.windup(float(e.get("dur", 0.25)) / sp)
+				board.fx.float_text(tk.position + Vector2(0, -board.hex_size * 1.2), str(e["name"]), Color(1, 0.9, 0.5), 15, 1.3)
+		"items":
+			# 戰鬥中更換裝備：之後的數值已在模擬中更新，這裡同步畫面
+			var cid := int(e["cid"])
+			var tk: UnitToken = _tokens.get(cid)
+			if tk:
+				tk.items = (e["items"] as Array).duplicate()
+				tk.set_bars(float(e["hp"]), float(e["max_hp"]), tk.shield)
+				if not instant:
+					board.fx.ring(tk.position, UiStyle.GOLD, board.hex_size * 0.9, 0.5)
+			if _units.has(cid):
+				_units[cid]["items"] = (e["items"] as Array).duplicate()
+				_units[cid]["max_hp"] = float(e["max_hp"])
 		"status":
 			var cid := int(e["cid"])
 			var list: Array = _live_status.get(cid, [])
@@ -238,7 +279,7 @@ func _apply(e: Dictionary, instant: bool) -> void:
 			var cid := int(e["cid"])
 			var tk: UnitToken = _tokens.get(cid)
 			if tk:
-				tk.die(0.0 if instant else 0.35 / sp)
+				tk.die(0.0 if instant else 0.5 / sp)   # V0.5：消失過渡較長
 				tk.show_bars = false
 			_live_status.erase(cid)
 			if _alive_enemy.has(cid):

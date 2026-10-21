@@ -413,16 +413,11 @@ clip_text = true
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 
-[node name="StartButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
-custom_minimum_size = Vector2(0, 42)
+[node name="LockButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
+custom_minimum_size = Vector2(0, 76)
 layout_mode = 2
 text = ""
 size_flags_vertical = 3
-
-[node name="LockButton" type="Button" parent="BottomBar/VBox/RowB/RightButtons"]
-custom_minimum_size = Vector2(0, 30)
-layout_mode = 2
-text = ""
 
 [node name="BigCountdown" type="Label" parent="."]
 visible = false
@@ -452,7 +447,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 visible = false
-mouse_filter = 0
+mouse_filter = 2
 
 [node name="Panel" type="PanelContainer" parent="RewardOverlay"]
 custom_minimum_size = Vector2(720, 0)
@@ -475,7 +470,7 @@ theme_override_constants/separation = 10
 
 [node name="RewardHint" type="Label" parent="RewardOverlay/Panel/VBox"]
 layout_mode = 2
-text = "選擇一件加入背包（選擇時不計備戰時間）"
+text = "選擇一件加入背包（倒數不暫停；時間到會從三件中隨機發放一件）"
 horizontal_alignment = 1
 theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.62, 0.66, 0.74, 1)
