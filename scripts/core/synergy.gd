@@ -20,6 +20,8 @@ static func count(unit_ids: Array) -> Dictionary:
 			continue
 		for group in GameData.trait_groups():
 			var key := _tag(u, group)
+			if group == "race" and not GameData.traits().get("race", {}).has(key):
+				continue   # 中立棋子：不計入任何種族羈絆，也沒有自己的陣營羈絆
 			var d: Dictionary = out[group]
 			d[key] = int(d.get(key, 0)) + 1
 	return out

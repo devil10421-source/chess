@@ -54,13 +54,12 @@
    "skill": {
     "kind": "area_cc",
     "name": "星光束縛",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並緩速 {pct}%（{cc} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並使其緩速 {cc} 秒。",
     "params": {
      "dmg": 0.9,
      "radius": 1,
      "cc": 2.0,
      "cc_kind": "slow",
-     "pct": 35,
      "dtype": "magic"
     }
    }
@@ -139,13 +138,13 @@
    "skill": {
     "kind": "dash_strike",
     "name": "弱點奇襲",
-    "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害並使其護甲 -{armor}（{dur} 秒）。",
+    "desc": "突入生命最低的敵人側翼，造成 {dmg} 物理傷害；之後 {pen_dur} 秒自身物理穿透 +{pen}%。",
     "params": {
      "dmg": 1.2,
      "pick": "lowest_hp",
-     "armor": 15,
-     "dur": 4,
-     "dtype": "physical"
+     "dtype": "physical",
+     "pen": 30,
+     "pen_dur": 4
     }
    }
   },
@@ -223,12 +222,12 @@
    "skill": {
     "kind": "strike",
     "name": "裂甲投矛",
-    "desc": "投矛造成 {dmg} 物理傷害並使目標護甲 -{armor}（{dur} 秒）。",
+    "desc": "投矛造成 {dmg} 物理傷害；之後 {pen_dur} 秒自身物理穿透 +{pen}%。",
     "params": {
      "dmg": 1.1,
-     "armor": 15,
-     "dur": 4,
-     "dtype": "physical"
+     "dtype": "physical",
+     "pen": 30,
+     "pen_dur": 4
     }
    }
   },
@@ -267,11 +266,12 @@
    "skill": {
     "kind": "rapid_shot",
     "name": "迅捷連射",
-    "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害。",
+    "desc": "額外射出一箭，造成攻擊力 {atk_pct}% + {dmg} 物理傷害，然後向後撤一格拉開距離（沒有合適空格則不動）。",
     "params": {
      "dmg": 1.0,
      "atk_pct": 100,
-     "dtype": "physical"
+     "dtype": "physical",
+     "retreat": 1
     }
    }
   },
@@ -428,7 +428,7 @@
    "skill": {
     "kind": "bleed_strike",
     "name": "血刃斬",
-    "desc": "造成 {dmg} 物理傷害，並使目標流血共 {dot}（{dur} 秒）。",
+    "desc": "造成 {dmg} 物理傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 1.3,
      "dot": 1.0,
@@ -491,13 +491,286 @@
    "skill": {
     "kind": "hellfire",
     "name": "業火降臨",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 0.9,
      "radius": 2,
      "dot": 0.7,
      "dur": 4,
      "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "NEU1",
+   "name": "傭兵槍兵",
+   "short": "槍兵",
+   "race": "neutral",
+   "cost": 1,
+   "type": "vanguard",
+   "class": "warrior",
+   "range": 1,
+   "mana_max": 50,
+   "skill": {
+    "kind": "surround_guard",
+    "name": "槍陣自守",
+    "desc": "被 {min_adj} 名以上敵人貼身包圍時，自身物防 +{armor}（{dur} 秒）；沒被包圍時保留魔力。",
+    "params": {
+     "min_adj": 2,
+     "armor": 30,
+     "dur": 4
+    }
+   }
+  },
+  {
+   "id": "NEU2",
+   "name": "流浪醫師",
+   "short": "游醫",
+   "race": "neutral",
+   "cost": 2,
+   "type": "support",
+   "class": "priest",
+   "range": 3,
+   "skill": {
+    "kind": "heal_lowest",
+    "name": "隨身藥箱",
+    "desc": "治療生命比例最低的友軍 {heal}。",
+    "params": {
+     "heal": 1.9
+    }
+   }
+  },
+  {
+   "id": "NEU3",
+   "name": "追跡獵手",
+   "short": "獵手",
+   "race": "neutral",
+   "cost": 2,
+   "type": "rear",
+   "class": "archer",
+   "range": 3,
+   "mana_max": 0,
+   "skill": {
+    "kind": "focus_fire",
+    "passive": true,
+    "name": "追跡（被動）",
+    "desc": "連續普攻同一個敵人時，每次普攻傷害 +{pct}%（最多 {max_stacks} 層）；換目標後重置。",
+    "params": {
+     "pct": 8,
+     "max_stacks": 5
+    }
+   }
+  },
+  {
+   "id": "NEU4",
+   "name": "符文守衛",
+   "short": "符衛",
+   "race": "neutral",
+   "cost": 3,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "skill": {
+    "kind": "rune_ward",
+    "name": "守護符文",
+    "desc": "自身與 {radius} 格內友軍各獲得 {shield} 護盾（{dur} 秒）。",
+    "params": {
+     "shield": 0.9,
+     "radius": 1,
+     "dur": 4
+    }
+   }
+  },
+  {
+   "id": "NEU5",
+   "name": "漂泊術士",
+   "short": "術士",
+   "race": "neutral",
+   "cost": 3,
+   "type": "rear",
+   "class": "mage",
+   "range": 3,
+   "skill": {
+    "kind": "hellfire",
+    "name": "瘴氣雲",
+    "desc": "對目標與周圍 {radius} 格敵人造成魔法持續傷害，各共 {dot}（{dur} 秒）。",
+    "params": {
+     "dmg": 0,
+     "radius": 1,
+     "dot": 1.6,
+     "dur": 4,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "NEU6",
+   "name": "流亡騎士",
+   "short": "騎士",
+   "race": "neutral",
+   "cost": 4,
+   "type": "vanguard",
+   "class": "guardian",
+   "range": 1,
+   "mana_max": 100,
+   "start_mana": 40,
+   "spec": {
+    "hp": 900,
+    "atk": 48,
+    "armor": 25,
+    "mr": 20,
+    "atk_speed": 0.7,
+    "range": 1,
+    "start_mana": 40,
+    "mana_max": 100
+   },
+   "skill": {
+    "kind": "oath_guard",
+    "spec_scaled": true,
+    "name": "守護誓約",
+    "desc": "選擇生命比例最低的其他友軍：自身獲得 {shield} 護盾、目標獲得 {shield2} 護盾，建立 {link_dur} 秒守護連結；目標即將受到致命傷害時，由騎士承受該次剩餘傷害（每次施法最多 1 次，騎士可能因此陣亡）。",
+    "params": {
+     "shield": 180,
+     "shield2": 120,
+     "link_dur": 5,
+     "dur": 5
+    }
+   }
+  },
+  {
+   "id": "NEU7",
+   "name": "無面術士",
+   "short": "無面",
+   "race": "neutral",
+   "cost": 4,
+   "type": "rear",
+   "class": "mage",
+   "range": 3,
+   "mana_max": 100,
+   "start_mana": 30,
+   "spec": {
+    "hp": 520,
+    "atk": 52,
+    "armor": 8,
+    "mr": 18,
+    "atk_speed": 0.65,
+    "range": 3,
+    "start_mana": 30,
+    "mana_max": 100
+   },
+   "skill": {
+    "kind": "void_rift",
+    "spec_scaled": true,
+    "name": "虛空裂隙",
+    "desc": "在能覆蓋最多敵人的格子開啟裂隙，{delay} 秒後爆炸，對中心與相鄰格造成 {dmg} 魔法傷害，並造成持續傷害共 {dot}（{dur} 秒）。裂隙不會追蹤，爆炸前離開可閃避。",
+    "params": {
+     "delay": 1.2,
+     "radius": 1,
+     "dmg": 160,
+     "dot": 36,
+     "dur": 3,
+     "dtype": "magic"
+    }
+   }
+  },
+  {
+   "id": "NEU8",
+   "name": "流浪劍聖",
+   "short": "劍聖",
+   "race": "neutral",
+   "cost": 4,
+   "type": "mobile",
+   "class": "warrior",
+   "range": 1,
+   "mana_max": 80,
+   "start_mana": 20,
+   "spec": {
+    "hp": 760,
+    "atk": 74,
+    "armor": 16,
+    "mr": 12,
+    "atk_speed": 0.85,
+    "range": 1,
+    "start_mana": 20,
+    "mana_max": 80
+   },
+   "skill": {
+    "kind": "riposte",
+    "spec_scaled": true,
+    "name": "返刃",
+    "desc": "進入 {dur} 秒防禦架勢：首次受到普攻時該次傷害 −{block}%，並反擊造成攻擊力 {atk_pct}% 的物理傷害（反擊不回魔、不觸發其他反擊）；期間沒被普攻則消失。",
+    "params": {
+     "dur": 3,
+     "block": 60,
+     "atk_pct": 160,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "NEU9",
+   "name": "影刃刺客",
+   "short": "影刃",
+   "race": "neutral",
+   "cost": 4,
+   "type": "mobile",
+   "class": "assassin",
+   "range": 1,
+   "mana_max": 90,
+   "start_mana": 30,
+   "spec": {
+    "hp": 560,
+    "atk": 86,
+    "armor": 10,
+    "mr": 12,
+    "atk_speed": 1.0,
+    "range": 1,
+    "start_mana": 30,
+    "mana_max": 90
+   },
+   "skill": {
+    "kind": "shadow_dance",
+    "spec_scaled": true,
+    "name": "影襲連舞",
+    "desc": "移動到生命比例最低的敵人身旁，造成攻擊力 {atk_pct}% 的物理傷害；擊殺時追擊下一個生命比例最低的敵人，造成原傷害的 {chase_pct}%（每次施法最多追擊 1 次）。",
+    "params": {
+     "atk_pct": 220,
+     "chase_pct": 60,
+     "dtype": "physical"
+    }
+   }
+  },
+  {
+   "id": "NEU10",
+   "name": "朝聖醫者",
+   "short": "朝聖",
+   "race": "neutral",
+   "cost": 4,
+   "type": "support",
+   "class": "priest",
+   "range": 3,
+   "mana_max": 90,
+   "start_mana": 40,
+   "spec": {
+    "hp": 650,
+    "atk": 42,
+    "armor": 12,
+    "mr": 22,
+    "atk_speed": 0.65,
+    "range": 3,
+    "start_mana": 40,
+    "mana_max": 90
+   },
+   "skill": {
+    "kind": "prophecy",
+    "spec_scaled": true,
+    "name": "生命預言",
+    "desc": "祝福生命比例最低的友軍 {dur} 秒：生命降到 {threshold}% 以下時立即治療 {heal}；沒有觸發則結束時治療 {heal2}。一個祝福最多觸發一次，同來源重複施加只刷新。",
+    "params": {
+     "dur": 6,
+     "threshold": 40,
+     "heal": 240,
+     "heal2": 120
     }
    }
   }
@@ -639,7 +912,7 @@
    "skill": {
     "kind": "hellfire",
     "name": "炎爆",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並燃燒共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 1.0,
      "radius": 1,
@@ -691,7 +964,7 @@
    "skill": {
     "kind": "hellfire",
     "name": "腐朽孢子",
-    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並侵蝕共 {dot}（{dur} 秒）。",
+    "desc": "對目標周圍 {radius} 格敵人造成 {dmg} 法術傷害，並造成持續傷害共 {dot}（{dur} 秒）。",
     "params": {
      "dmg": 0.6,
      "radius": 1,
@@ -730,7 +1003,7 @@
    "mana_max": 70,
    "boss": true,
    "stats": {
-    "hp": 2200,
+    "hp": 1500,
     "atk": 46,
     "atk_speed": 0.7,
     "armor": 35,
@@ -739,17 +1012,19 @@
    "skill": {
     "kind": "eldritch_pulse",
     "name": "萬眼凝視",
-    "desc": "對全場敵人造成 {dmg} 法術傷害並暈眩 {cc} 秒，施加侵蝕共 {dot}（{dur} 秒）與護甲 -{armor}；自身獲得 {shield} 護盾。",
+    "desc": "對全場敵人造成 {dmg} 法術傷害並暈眩 {cc} 秒，造成持續傷害共 {dot}（{dur} 秒）；自身魔法穿透 +{pen}%（{pen_dur} 秒）並獲得 {shield} 護盾。",
     "params": {
      "dmg": 0.8,
      "cc": 1.0,
      "dot": 0.8,
      "dur": 4,
-     "armor": 10,
      "shield": 3.0,
-     "dtype": "magic"
+     "dtype": "magic",
+     "pen": 25,
+     "pen_dur": 4
     }
    }
   }
- ]
+ ],
+ "_neutral_note": "中立陣營（V0.4）：race = neutral。所有文明都能招募；沒有種族羈絆與文明效果，但吃玩家文明的全軍效果，正常計算職業／類型羈絆。4 費的 spec 為規格書的 ★1 測試屬性（原始數字），生命、攻擊與技能固定量依 game_config.json → neutral.spec_scale 換算到本作數值尺度；物防、魔防、攻速、射程、魔力照原值。"
 }

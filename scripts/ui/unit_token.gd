@@ -1,11 +1,14 @@
 class_name UnitToken
 extends Node2D
 ## 棋子外觀。有 res://assets/units/<ID>/star<N>.png 時顯示圖片，否則以幾何圖形占位。
-## 稀有度＝外環顏色與左下費用徽章（灰／藍／紫／金）；星級＝上方星星 + 外觀特效（2 星銀色雙環、3 星粉紅光環與環繞光點），兩者刻意分開。
+## 稀有度＝外環顏色與左下費用徽章（灰／藍／紫／金）。
+## V0.4：頭上固定顯示「星級標記＋HP／MP 條」：一星＝一個小圓點、二星＝兩個小圓點、三星＝一顆金色星星（在狀態條左側）；
+##       有裝備時在狀態條下方顯示 1～2 個小圖示，沒有裝備就完全不畫（不畫空格）。2 星銀環、3 星光環仍保留作為輔助。
 
-const STATUS_GLYPH := {"stun": "暈", "root": "定", "slow": "緩", "taunt": "嘲", "dot": "灼", "atk_down": "弱",
-	"armor_down": "破", "mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒"}
-const NEGATIVE := ["stun", "root", "slow", "taunt", "dot", "atk_down", "armor_down", "mark"]
+const STATUS_GLYPH := {"stun": "暈", "root": "定", "slow": "緩", "taunt": "嘲", "dot": "蝕", "atk_down": "弱", "wound": "傷",
+	"mark": "標", "atk_up": "攻", "armor_up": "甲", "dmg_up": "怒", "phys_dr": "守", "hot": "癒", "phys_pen": "穿", "magic_pen": "穿",
+	"guard_link": "誓", "parry": "架", "blessing": "祝"}
+const NEGATIVE := ["stun", "root", "slow", "taunt", "dot", "atk_down", "wound", "mark"]
 
 @onready var art: Sprite2D = $Art
 
@@ -16,6 +19,7 @@ var radius := 26.0
 var uid := 0
 var cid := 0
 var show_bars := false
+var show_head := true           # 頭上狀態條／星級／裝備（資訊卡頭像關閉）
 var hp := 1.0
 var max_hp := 1.0
 var shield := 0.0
@@ -158,16 +162,6 @@ func _draw() -> void:
 	draw_circle(bp, r * 0.3, Color(0.08, 0.09, 0.12))
 	draw_circle(bp, r * 0.25, rarity)
 	draw_string(UiStyle.FONT, bp + Vector2(-r * 0.3, r * 0.13), str(cost), HORIZONTAL_ALIGNMENT_CENTER, r * 0.6, int(r * 0.36), Color(0.05, 0.05, 0.08))
-	# 星級
-	var stars := "★".repeat(star)
-	var star_col := UiStyle.STAR_COLOR if star < 3 else Color(1, 0.75, 0.9)
-	draw_string(UiStyle.FONT, o + Vector2(-r, -r * 1.02), stars, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, int(r * 0.5), star_col)
-	# 裝備提示：右下角小方塊（顏色＝裝備類型）
-	for i in items.size():
-		var info := Equipment.type_info(str(items[i]))
-		var p := o + Vector2(r * (0.55 + i * 0.32), r * 0.62)
-		draw_rect(Rect2(p - Vector2(r * 0.13, r * 0.13), Vector2(r * 0.26, r * 0.26)), Color(str(info.get("color", "#ffffff"))))
-		draw_rect(Rect2(p - Vector2(r * 0.13, r * 0.13), Vector2(r * 0.26, r * 0.26)), Color(0, 0, 0, 0.6), false, 1.0)
 	# 受擊／施法閃光
 	if flash_color.a > 0.01:
 		draw_circle(o, r * 1.05, flash_color)
@@ -176,23 +170,86 @@ func _draw() -> void:
 		var pulse := 0.5 + 0.5 * sin(_time * 6.0)
 		draw_arc(o, r * 1.32, 0, TAU, 48, Color(1.0, 0.88, 0.4, 0.35 + 0.25 * pulse), 7.0, true)
 		draw_arc(o, r * 1.2, 0, TAU, 48, Color(1.0, 0.95, 0.6, 1.0), 3.0 + 1.5 * pulse, true)
-	# 戰鬥血條／魔力條
-	if show_bars:
-		var bw := r * 2.0
-		var top := o + Vector2(-r, -r * 1.55)
-		draw_rect(Rect2(top, Vector2(bw, 6)), Color(0, 0, 0, 0.7))
-		var total := maxf(max_hp, hp + shield)
-		var hp_w := bw * clampf(hp / total, 0.0, 1.0)
-		draw_rect(Rect2(top, Vector2(hp_w, 6)), Color(0.35, 0.85, 0.45) if side == 0 else Color(0.92, 0.32, 0.32))
-		if shield > 0.0:
-			draw_rect(Rect2(top + Vector2(hp_w, 0), Vector2(bw * clampf(shield / total, 0.0, 1.0), 6)), Color(0.95, 0.95, 1.0))
-		draw_rect(Rect2(top + Vector2(0, 7), Vector2(bw, 3)), Color(0, 0, 0, 0.7))
-		draw_rect(Rect2(top + Vector2(0, 7), Vector2(bw * clampf(mana / maxf(1.0, mana_max), 0.0, 1.0), 3)), Color(0.35, 0.6, 1.0))
-		if not statuses.is_empty():
-			var glyphs := ""
-			for k in statuses.keys():
-				glyphs += str(STATUS_GLYPH.get(k, ""))
-			draw_string(UiStyle.FONT, o + Vector2(-r * 1.5, -r * 1.65), glyphs, HORIZONTAL_ALIGNMENT_CENTER, r * 3.0, int(r * 0.42), Color(1, 0.95, 0.6))
+	if show_head:
+		_draw_head(o, r)
+
+
+## 頭上元件的位置（以棋子中心為原點）：bar＝HP＋MP 條、mark＝星級標記中心、items＝每件裝備圖示（沒有裝備＝空陣列）
+func head_layout(o: Vector2 = Vector2.ZERO, r: float = -1.0) -> Dictionary:
+	if r < 0.0:
+		r = radius
+	var hp_h := clampf(r * 0.22, 5.0, 8.0)
+	var mp_h := clampf(r * 0.1, 2.0, 4.0)
+	var mark_w := r * 0.56
+	var bar_w := r * 1.7
+	var left := o.x - (mark_w + bar_w) * 0.5
+	var top := o.y - r - 3.0 - hp_h - 1.0 - mp_h
+	var item_rects: Array = []
+	if not items.is_empty():
+		var isz := maxf(9.0, r * 0.44)
+		var gap := 2.0
+		var row_w := items.size() * isz + (items.size() - 1) * gap
+		for i in items.size():
+			item_rects.append(Rect2(Vector2(o.x - row_w * 0.5 + i * (isz + gap), top + hp_h + mp_h + 3.0), Vector2(isz, isz)))
+	return {"bar": Rect2(Vector2(left + mark_w, top), Vector2(bar_w, hp_h + 1.0 + mp_h)), "hp_h": hp_h, "mp_h": mp_h,
+		"mark": Vector2(left + mark_w * 0.45, top + (hp_h + mp_h + 1.0) * 0.5), "items": item_rects}
+
+
+## 頭上的星級標記、HP／MP 條、裝備圖示、狀態字
+func _draw_head(o: Vector2, r: float) -> void:
+	var L := head_layout(o, r)
+	var bar: Rect2 = L["bar"]
+	var hp_h: float = L["hp_h"]
+	var mp_h: float = L["mp_h"]
+	var bx := bar.position.x
+	var top := bar.position.y
+	var bar_w := bar.size.x
+	draw_rect(bar.grow(1.0), Color(0, 0, 0, 0.75))
+	var total := maxf(max_hp, hp + shield)
+	var hp_w := bar_w * clampf(hp / maxf(total, 0.001), 0.0, 1.0)
+	draw_rect(Rect2(Vector2(bx, top), Vector2(hp_w, hp_h)), Color(0.35, 0.85, 0.45) if side == 0 else Color(0.92, 0.32, 0.32))
+	if shield > 0.0:
+		draw_rect(Rect2(Vector2(bx + hp_w, top), Vector2(bar_w * clampf(shield / total, 0.0, 1.0), hp_h)), Color(0.95, 0.95, 1.0))
+	draw_rect(Rect2(Vector2(bx, top + hp_h + 1.0), Vector2(bar_w * clampf(mana / maxf(1.0, mana_max), 0.0, 1.0), mp_h)), Color(0.35, 0.6, 1.0))
+	# 星級標記（狀態條左側）
+	draw_star_mark(self, L["mark"], r, star)
+	# 裝備圖示：狀態條下方，只畫實際持有的件數（沒有裝備就不畫）
+	var rects: Array = L["items"]
+	for i in rects.size():
+		var id := str(items[i])
+		var col := Color(str(Equipment.type_info(id).get("color", "#ffffff")))
+		var rect: Rect2 = rects[i]
+		draw_rect(rect.grow(1.0), Color(0, 0, 0, 0.8))
+		draw_rect(rect, col.darkened(0.55))
+		UiIcon.paint(self, str(GameData.item(id).get("type", "weapon")), rect.position + Vector2(1, 1), rect.size.x - 2.0, col.lightened(0.3))
+	if not statuses.is_empty():
+		var glyphs := ""
+		for k in statuses.keys():
+			glyphs += str(STATUS_GLYPH.get(k, ""))
+		draw_string(UiStyle.FONT, Vector2(o.x - r * 1.5, top - 3.0), glyphs, HORIZONTAL_ALIGNMENT_CENTER, r * 3.0, int(r * 0.42), Color(1, 0.95, 0.6))
+
+
+## 星級標記：一星一點、二星兩點、三星金色星星（棋子頭上與資訊卡共用）
+static func draw_star_mark(ci: CanvasItem, c: Vector2, r: float, p_star: int) -> void:
+	if p_star >= 3:
+		var pts := PackedVector2Array()
+		var rad := maxf(5.0, r * 0.26)
+		for i in 10:
+			var a := -PI / 2 + i * PI / 5
+			var rr := rad if i % 2 == 0 else rad * 0.45
+			pts.append(c + Vector2(cos(a), sin(a)) * rr)
+		var outline := PackedVector2Array()
+		for q in pts:
+			outline.append(c + (q - c) * 1.25)
+		ci.draw_colored_polygon(outline, Color(0, 0, 0, 0.8))
+		ci.draw_colored_polygon(pts, Color(1.0, 0.82, 0.25))
+		return
+	var dr := maxf(2.6, r * 0.12)
+	var n := clampi(p_star, 1, 2)
+	for i in n:
+		var dx := 0.0 if n == 1 else (i - 0.5) * dr * 2.6
+		ci.draw_circle(c + Vector2(dx, 0), dr + 1.2, Color(0, 0, 0, 0.85))
+		ci.draw_circle(c + Vector2(dx, 0), dr, Color(0.92, 0.94, 1.0))
 
 
 func _draw_class_mark(o: Vector2, r: float, cls: String) -> void:

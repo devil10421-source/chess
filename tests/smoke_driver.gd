@@ -85,6 +85,22 @@ func drag(from: Vector2, to: Vector2) -> void:
 	await get_tree().process_frame
 
 
+func hover(pos: Vector2) -> void:
+	var mv := InputEventMouseMotion.new()
+	mv.position = pos
+	mv.global_position = pos
+	get_tree().root.push_input(mv, true)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+
+## 棋盤（含候補區、上方狀態條空間）在畫面上的範圍
+func board_screen_rect(board: BoardView) -> Rect2:
+	var t := board.total_size()
+	var tl := screen_pos(board, Vector2((board.board_size().x - t.x) * 0.5, -board.top_pad()))
+	return Rect2(tl, t * board.get_global_transform_with_canvas().get_scale())
+
+
 func screen_pos(board: BoardView, local: Vector2) -> Vector2:
 	return board.get_global_transform_with_canvas() * local
 
@@ -118,19 +134,46 @@ func _run() -> void:
 	check(g.prep_timer.running and g.prep_timer.duration == 30.0, "30 秒備戰倒數開始")
 	check(g._gold_label.text == "5" and g._lv_label.text == "Lv.1" and g._hp_label.text == "40/40" and g._pop_label.text == "0/1", "底部顯示 金幣｜Lv｜生命｜人口")
 	check(g.xp_left.text.strip_edges() == "0/2 XP" and g._xp_cost_label.text == "4" and g._xp_word.text == "升級", "XP 條：0/2 XP、4 金升級")
+	# 文明升級圖示：商店左側、文明代表色徽章；點擊＝購買 4 XP、花 4 金
+	check(g.civup_btn.get_parent().name == "LeftButtons" and g.civup_btn.visible, "文明升級按鈕在商店左側")
+	check(g._btn_labels[g.civup_btn]["icon"].kind == "civ_elf", "文明升級使用精靈徽章圖示")
+	var lv_xp_before := run.xp
+	await click_at(g.civup_btn.get_global_rect().get_center())
+	check(run.gold == 1 and run.xp == lv_xp_before + 4, "點文明圖示：+4 XP、−4 金")
+	check(g._gold_label.text == "1" and g._lv_label.text == "Lv.%d" % run.level(), "金幣與等級即時更新")
+	var plan := Economy.xp_plan(run.xp)
+	check(g.xp_left.text.strip_edges() == "%d/%d XP" % [plan["cur"], plan["need"]] and g._xp_cost_label.text == str(plan["cost"]), "XP 條即時更新")
+	check(g.civup_btn.disabled, "金幣不足時停用")
 	var xp_w: float = g.xp_bar.get_global_rect().size.x
 	var slots_w: float = g.shop_slots.get_global_rect().size.x
 	check(absf(xp_w - slots_w) <= 2.0, "XP 條與五格商店等寬（%.0f vs %.0f）" % [xp_w, slots_w])
 	var top_rect: Rect2 = g.top_bar.get_global_rect()
 	var bottom_rect: Rect2 = g.bottom_bar.get_global_rect()
 	check(top_rect.end.y < bottom_rect.position.y, "上方列與下方操作區不重疊")
-	check(g.get_node("LeftPanel/VBox/Scroll/List").get_child(0) == g.civ_btn, "文明是羈絆清單的第一項")
-	check(not g.civ_detail.visible, "文明效果平常不展開")
-	g.civ_btn.pressed.emit()
-	await get_tree().process_frame
-	check(g.civ_detail.visible and g.civ_detail.text.count("▲") == 2 and g.civ_detail.text.count("▼") == 2, "點文明展開 2 Buff＋2 Debuff")
+	check(g.get_node("LeftPanel/Scroll/List").get_child(0) == g.civ_btn, "文明固定在羈絆清單第一項")
+	check(g.left_panel.get_global_rect().size.x <= 170.0, "羈絆清單寬度受限（%.0f）" % g.left_panel.get_global_rect().size.x)
+	check(not g.is_popover_open(), "文明效果平常不顯示長文字")
+	var board_pos0: Vector2 = board.position
+	var hex0: float = board.hex_size
+	await hover(g.civ_btn.get_global_rect().get_center())
+	check(g.is_popover_open() and g.popover_key() == "civ", "滑鼠懸停文明 → 浮動說明")
+	check(g.popover_bbcode().count("▲") == 2 and g.popover_bbcode().count("▼") == 2, "說明列出 2 Buff＋2 Debuff")
+	check(board.position == board_pos0 and board.hex_size == hex0, "浮動說明不推動棋盤")
+	await hover(screen_pos(board, board.cell_center(Vector2i(3, 2))))
+	check(not g.is_popover_open(), "滑鼠移開 → 說明消失")
+	await click_at(g.civ_btn.get_global_rect().get_center())
+	check(g.is_popover_open() and g._pop_pinned, "點擊文明（手機）→ 固定顯示說明")
+	await shot("civ_popover")
+	await click_at(screen_pos(board, board.cell_center(Vector2i(3, 2))))
+	check(not g.is_popover_open(), "點空白處關閉說明")
+	var vs: Vector2 = g.get_viewport_rect().size
+	var br := board_screen_rect(board)
+	check(br.position.y >= g.top_bar.get_global_rect().end.y - 0.5 and br.end.y <= g.bottom_bar.get_global_rect().position.y + 0.5, "棋盤與上下兩條不重疊（%s／上 %s／下 %s）" % [str(br), str(g.top_bar.get_global_rect()), str(g.bottom_bar.get_global_rect())])
+	check(br.position.x >= g.left_panel.get_global_rect().end.x - 0.5, "棋盤不被羈絆清單遮住")
+	check(absf(br.get_center().x - vs.x * 0.5) <= 2.0, "棋盤固定置中")
+	if vs.y == 720.0:
+		check(board.hex_size >= 36.5, "棋盤放大（格子 %.1f，V0.3 為 34.0）" % board.hex_size)
 	await shot("prep_layout")
-	g.civ_btn.pressed.emit()
 
 	# ── 棋子資訊卡：九宮格（3×4）──
 	g.prep_timer.remaining = 999.0
@@ -145,8 +188,15 @@ func _run() -> void:
 			uid = int(run.bench[i]["uid"])
 			bidx = i
 			break
+	var tk0: UnitToken = board._prep_tokens.get(uid)
+	var hl: Dictionary = tk0.head_layout()
+	check(hl["mark"].x < (hl["bar"] as Rect2).position.x and tk0.star == 1, "星級標記在 HP／MP 條左側（一星一點）")
+	check((hl["items"] as Array).is_empty(), "沒有裝備的棋子不畫裝備格")
+	var bp0: Vector2 = board.position
 	await click_at(screen_pos(board, board.bench_center(bidx)))
 	check(g._info_mode == "unit" and g.detail_box.visible, "點棋子 → 右側顯示資訊卡")
+	await get_tree().process_frame
+	check(board.position == bp0, "資訊卡浮在右側，不推動棋盤")
 	var card: UnitCard = g.card
 	check(card._cells.size() == 12, "3×4 共 12 個屬性格")
 	var plus := false
@@ -165,46 +215,95 @@ func _run() -> void:
 	check(not card.is_detail_open(), "點其他地方關閉明細，回到簡潔宮格")
 	check(g._info_mode == "unit", "關閉明細不會取消選取")
 
-	# ── 裝備：點空欄位 → 從背包穿上 ──
-	run.inventory = ["DM_PLATE", "CU_DAGGER"]
+	# ── 裝備（V0.4）：點空欄位 → 右側背包 → 點裝備直接穿上 ──
+	run.inventory = ["DM_PLATE", "CU_DAGGER", "OG_EYE"]
 	run.changed.emit()
 	await get_tree().process_frame
 	var white_armor := card.cell_color("armor")
+	var bpos: Vector2 = board.position
 	card.slot_button(0).pressed.emit()
 	await get_tree().process_frame
-	check(g.item_overlay.visible, "點空裝備欄 → 打開背包選擇")
-	var wear: Button = null
-	for c in g.item_body.get_children():
-		for b in c.find_children("*", "Button", true, false):
-			if (b as Button).text == "穿上":
-				wear = b
-				break
-		if wear:
-			break
-	if wear == null:
-		check(false, "背包選擇畫面有「穿上」按鈕")
+	check(g.is_bag_open(), "點空裝備欄 → 右側打開背包")
+	check(board.position == bpos, "背包浮在右側，不推動棋盤")
+	var row0: Button = g.bag_row_button(0)
+	if row0 == null:
+		check(false, "背包列出裝備")
 		get_tree().quit(1)
 		return
-	wear.pressed.emit()
+	row0.pressed.emit()
 	await wait(0.2)
-	check(RunState.unit_items(run.find_unit(uid)["unit"]) == ["DM_PLATE"], "穿上熔岩胸甲")
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == ["DM_PLATE"], "點裝備 → 穿到這隻棋子")
+	check(not g.is_bag_open(), "裝上後背包關閉、回到棋子資訊")
 	check(card.cell_color("armor") != white_armor and card.cell_color("armor").b > card.cell_color("armor").r, "裝備物防 → 物防數字變藍")
-	check(run.inventory == ["CU_DAGGER"], "背包少一件")
+	check(run.inventory == ["CU_DAGGER", "OG_EYE"], "背包少一件")
+	check((board._prep_tokens[uid].head_layout()["items"] as Array).size() == 1, "穿 1 件裝備：棋子下方只畫 1 個圖示")
 	await shot("card_equipped")
+	# 鎖定：已裝備的欄位只能用卸除器取下
 	card.slot_button(0).pressed.emit()
 	await get_tree().process_frame
-	var unequip: Button = null
-	for b in g.item_buttons.get_children():
-		if (b as Button).text == "卸下":
-			unequip = b
-	if unequip == null:
-		check(false, "裝備資訊有「卸下」按鈕")
-		get_tree().quit(1)
-		return
-	unequip.pressed.emit()
+	var rm_btn: Button = null
+	for bb in g.item_buttons.get_children():
+		if (bb as Button).text.begins_with("使用卸除器"):
+			rm_btn = bb
+	check(rm_btn != null and rm_btn.disabled, "沒有卸除器時不能取下（按鈕停用）")
+	check(not g.item_buttons.get_children().any(func(x): return (x as Button).text == "卸下" or (x as Button).text == "更換"), "沒有免費卸下或更換")
+	g.item_overlay.visible = false
+	run.removers = 1
+	card.slot_button(0).pressed.emit()
+	await get_tree().process_frame
+	for bb in g.item_buttons.get_children():
+		if (bb as Button).text.begins_with("使用卸除器"):
+			rm_btn = bb
+	rm_btn.pressed.emit()
 	await wait(0.1)
-	check(RunState.unit_items(run.find_unit(uid)["unit"]).is_empty() and run.inventory.size() == 2, "卸下回到背包")
-	run.equip(uid, 0)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]).is_empty() and run.inventory.size() == 3 and run.removers == 0, "使用卸除器：裝備回背包、卸除器 −1")
+	# 拖曳：從背包把裝備拖到棋子上
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	check(g.is_bag_open(), "按背包按鈕打開背包")
+	await shot("bag")
+	var drag_row: Button = g.bag_row_button(0)
+	var drag_id: String = run.inventory[0]
+	var tok_pos := screen_pos(board, board._prep_tokens[uid].position)
+	var from_pos := drag_row.get_global_rect().get_center()
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = from_pos
+	down.global_position = from_pos
+	get_tree().root.push_input(down, true)
+	await get_tree().process_frame
+	for i in range(1, 9):
+		var mv := InputEventMouseMotion.new()
+		mv.position = from_pos.lerp(tok_pos, i / 8.0)
+		mv.global_position = mv.position
+		mv.button_mask = MOUSE_BUTTON_MASK_LEFT
+		get_tree().root.push_input(mv, true)
+		await get_tree().process_frame
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = tok_pos
+	up.global_position = tok_pos
+	get_tree().root.push_input(up, true)
+	await wait(0.15)
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == [drag_id], "拖曳裝備到棋子 → 穿上")
+	# 點裝備再點棋子（手機替代操作）
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	var tap_id: String = run.inventory[0]
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	check(g._pending_item == 0, "點一下裝備 → 進入選擇棋子")
+	await click_at(screen_pos(board, board.bench_center(bidx)))
+	check(RunState.unit_items(run.find_unit(uid)["unit"]) == [drag_id, tap_id], "再點棋子 → 穿上")
+	g.bag_btn.pressed.emit()
+	await wait(0.1)
+	g.bag_row_button(0).pressed.emit()
+	await get_tree().process_frame
+	await click_at(screen_pos(board, board.bench_center(bidx)))
+	check(RunState.unit_items(run.find_unit(uid)["unit"]).size() == 2 and run.inventory.size() == 1, "兩格已滿時不能再穿、不覆蓋")
+	g._close_bag()
 
 	# ── 倒數顏色 ──
 	g.prep_timer.remaining = 15.0
@@ -311,18 +410,18 @@ func _run() -> void:
 		check(g.phase == 0 and g.prep_timer.running, "選完才開始第 4 回合倒數")
 		check(g.reward_dots.claimed.has(3), "裝備節點點亮")
 
-	# ── 收合 ──
+	# ── 收合：右側排行浮在戰場上，開關不推動棋盤 ──
 	g.prep_timer.remaining = 999.0
+	var pos_open: Vector2 = board.position
+	var hex_open: float = board.hex_size
 	g.leader._toggle.pressed.emit()
 	await wait(0.3)
-	check(g.right_panel.get_global_rect().size.x < 80, "右側貢獻面板可收合")
-	g.left_toggle.pressed.emit()
-	await wait(0.3)
-	check(g.left_panel.get_global_rect().size.x < 80, "左側面板可收合")
+	check(g.right_panel.get_global_rect().size.x < 80 and g.right_panel.get_global_rect().size.y < 80, "右側貢獻面板收合成小圖示")
+	check(board.position == pos_open and board.hex_size == hex_open, "收合排行：棋盤位置與大小不變")
 	await shot("collapsed")
 	g.leader._toggle.pressed.emit()
-	g.left_toggle.pressed.emit()
-	await wait(0.2)
+	await wait(0.3)
+	check(board.position == pos_open and board.hex_size == hex_open, "展開排行：棋盤位置與大小不變")
 
 	# ── 存檔續玩（含裝備）──
 	var items_before := run.all_items().size()

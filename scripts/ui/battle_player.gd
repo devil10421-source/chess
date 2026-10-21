@@ -125,7 +125,7 @@ func _pos(cid: int) -> Vector2:
 func _apply(e: Dictionary, instant: bool) -> void:
 	var sp := maxf(0.1, Session.playback_rate)
 	match str(e["k"]):
-		"move":
+		"move", "retreat":
 			var tk: UnitToken = _tokens.get(int(e["cid"]))
 			if tk:
 				tk.move_to(board.cell_center(e["to"]), 0.0 if instant else float(e["dur"]) / sp)
@@ -193,11 +193,37 @@ func _apply(e: Dictionary, instant: bool) -> void:
 		"status":
 			var cid := int(e["cid"])
 			var list: Array = _live_status.get(cid, [])
-			list.append({"kind": str(e["kind"]), "value": float(e.get("value", 0.0)), "until": float(e["t"]) + float(e["dur"])})
+			var entry := {"kind": str(e["kind"]), "value": float(e.get("value", 0.0)), "until": float(e["t"]) + float(e["dur"]), "src": int(e.get("src", -1))}
+			# 與模擬一致：緩速／重傷只有一份；同來源的刷新型狀態直接取代
+			var replaced := false
+			for i in list.size():
+				var old: Dictionary = list[i]
+				if old["kind"] == entry["kind"] and (entry["kind"] in CombatSim.UNIQUE_STATUSES or (entry["kind"] in CombatSim.REFRESH_STATUSES and int(old.get("src", -1)) == int(entry["src"]))):
+					list[i] = entry
+					replaced = true
+					break
+			if not replaced:
+				list.append(entry)
 			_live_status[cid] = list
 			var tk: UnitToken = _tokens.get(cid)
 			if tk and not instant:
 				tk.add_status(str(e["kind"]), float(e["dur"]))
+		"rift":
+			if instant:
+				return
+			var centers: Array = []
+			for c in e.get("cells", []):
+				centers.append(board.cell_center(c))
+			board.fx.area(centers, Color(0.55, 0.3, 0.95), float(e.get("delay", 1.2)))
+		"burst":
+			if instant:
+				return
+			var centers: Array = []
+			for c in e.get("cells", []):
+				centers.append(board.cell_center(c))
+			board.fx.area(centers, Color(str(e.get("color", "#c27bff"))), 0.5)
+			if not centers.is_empty():
+				board.fx.ring(centers[0], Color(str(e.get("color", "#c27bff"))), board.hex_size * 1.6, 0.5)
 		"cleanse":
 			var cid := int(e["cid"])
 			var tk: UnitToken = _tokens.get(cid)

@@ -178,7 +178,7 @@
   {
    "round": 8,
    "chapter": 2,
-   "name": "破甲獵隊",
+   "name": "投矛獵隊",
    "seed": 108,
    "units": [
     {
@@ -320,12 +320,6 @@
      "star": 1,
      "col": 4,
      "row": 1
-    },
-    {
-     "id": "HUM1",
-     "star": 1,
-     "col": 3,
-     "row": 0
     }
    ]
   },
@@ -350,7 +344,7 @@
     },
     {
      "id": "DEMON_IMP",
-     "star": 2,
+     "star": 1,
      "col": 3,
      "row": 3
     },
@@ -489,13 +483,13 @@
     },
     {
      "id": "DEMON_BERSERKER",
-     "star": 2,
+     "star": 1,
      "col": 5,
      "row": 2
     },
     {
      "id": "DEMON_FIRE",
-     "star": 2,
+     "star": 1,
      "col": 2,
      "row": 1
     },
@@ -523,7 +517,7 @@
     },
     {
      "id": "CEN3",
-     "star": 2,
+     "star": 1,
      "col": 2,
      "row": 3
     },
@@ -550,12 +544,6 @@
      "star": 2,
      "col": 3,
      "row": 0
-    },
-    {
-     "id": "CEN1",
-     "star": 2,
-     "col": 5,
-     "row": 1
     }
    ]
   },
@@ -600,12 +588,6 @@
      "star": 2,
      "col": 4,
      "row": 0
-    },
-    {
-     "id": "ORC3",
-     "star": 2,
-     "col": 2,
-     "row": 0
     }
    ]
   },
@@ -629,12 +611,6 @@
      "row": 3
     },
     {
-     "id": "DEMON_IMP",
-     "star": 2,
-     "col": 2,
-     "row": 3
-    },
-    {
      "id": "DEMON_BLADE",
      "star": 2,
      "col": 4,
@@ -654,7 +630,7 @@
     },
     {
      "id": "DEMON_FIRE",
-     "star": 2,
+     "star": 1,
      "col": 4,
      "row": 1
     }
@@ -675,7 +651,7 @@
     },
     {
      "id": "CEN3",
-     "star": 2,
+     "star": 1,
      "col": 2,
      "row": 3
     },
@@ -708,12 +684,6 @@
      "star": 1,
      "col": 6,
      "row": 2
-    },
-    {
-     "id": "ELF3",
-     "star": 1,
-     "col": 1,
-     "row": 0
     }
    ]
   },
@@ -758,18 +728,6 @@
      "star": 2,
      "col": 2,
      "row": 1
-    },
-    {
-     "id": "HUM1",
-     "star": 2,
-     "col": 3,
-     "row": 0
-    },
-    {
-     "id": "ELF2",
-     "star": 2,
-     "col": 5,
-     "row": 0
     }
    ]
   },
@@ -781,7 +739,7 @@
    "units": [
     {
      "id": "OG_TENTACLE",
-     "star": 2,
+     "star": 1,
      "col": 2,
      "row": 3
     },
@@ -872,12 +830,6 @@
      "star": 2,
      "col": 5,
      "row": 0
-    },
-    {
-     "id": "ONI3",
-     "star": 2,
-     "col": 6,
-     "row": 2
     }
    ]
   },
@@ -889,7 +841,7 @@
    "units": [
     {
      "id": "CEN4",
-     "star": 2,
+     "star": 1,
      "col": 3,
      "row": 3
     },
@@ -934,12 +886,6 @@
      "star": 2,
      "col": 1,
      "row": 0
-    },
-    {
-     "id": "ELF3",
-     "star": 2,
-     "col": 5,
-     "row": 0
     }
    ]
   },
@@ -958,7 +904,7 @@
     },
     {
      "id": "OG_TENTACLE",
-     "star": 2,
+     "star": 1,
      "col": 2,
      "row": 3
     },

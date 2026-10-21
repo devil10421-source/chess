@@ -2,9 +2,11 @@ class_name CombatUnit
 extends RefCounted
 ## 戰鬥中的單位（只存在於一場模擬內）。
 
-const NEGATIVE_KINDS := ["stun", "root", "slow", "dot", "atk_down", "armor_down", "taunt", "mark"]
+## V0.4 共用戰鬥術語：緩速（移速 −25%、攻速 −10%，不疊加）、重傷（受到的治療 −40%，不疊加）、持續傷害（統一名稱）。
+## 「破甲／降低防禦」已取消，改為攻擊者自身的物理穿透／魔法穿透（phys_pen／magic_pen）。
+const NEGATIVE_KINDS := ["stun", "root", "slow", "wound", "dot", "atk_down", "taunt", "mark"]
 ## 森林祝禱「去除一項負面效果」的優先順序
-const CLEANSE_ORDER := ["stun", "root", "slow", "dot", "atk_down", "armor_down", "taunt"]
+const CLEANSE_ORDER := ["stun", "root", "slow", "wound", "dot", "atk_down", "taunt"]
 
 var cid := 0
 var side := 0            # 0 = 玩家、1 = 敵方
@@ -42,6 +44,9 @@ var target_switches := 0
 var items: Array = []
 var passives: Array = []
 var item_counter := 0
+## 追跡獵手（被動）：連續普攻同一目標的層數
+var focus_target := -1
+var focus_stacks := 0
 ## 狀態：{kind, value, until, src, next_tick?, tick_amount?, dtype?, tag?}
 var statuses: Array = []
 ## 護盾：{amount, until}
@@ -59,6 +64,11 @@ var casts := 0
 
 func is_melee() -> bool:
 	return attack_range <= 1
+
+
+## 被動技能（沒有主動施放，例如追跡獵手）
+func has_passive_skill() -> bool:
+	return bool(data.get("skill", {}).get("passive", false))
 
 
 func is_assassin() -> bool:
@@ -103,22 +113,38 @@ func effective_atk() -> float:
 	return atk * maxf(0.1, 1.0 + pct / 100.0)
 
 
-## 有效防禦：套用破甲／增益後的數值，最低為 0（不產生負防禦）
+## 有效防禦：套用增益後的數值，最低為 0（V0.4 起沒有降低防禦的效果，改用攻擊方的穿透）
 func effective_armor() -> float:
-	return maxf(0.0, armor + status_sum("armor_up") - status_sum("armor_down"))
+	return maxf(0.0, armor + status_sum("armor_up"))
 
 
 func effective_mr() -> float:
-	return maxf(0.0, mr + status_sum("mr_up") - status_sum("mr_down"))
+	return maxf(0.0, mr + status_sum("mr_up"))
+
+
+## 緩速規則（game_config.json → combat.status）
+static func slow_move_pct() -> float:
+	return float(GameData.cfg("combat").get("status", {}).get("slow_move_pct", 25))
+
+
+static func slow_as_pct() -> float:
+	return float(GameData.cfg("combat").get("status", {}).get("slow_as_pct", 10))
 
 
 func effective_atk_speed() -> float:
-	var pct := status_sum("as_up") - status_sum("slow")
+	var pct := status_sum("as_up") - (slow_as_pct() if has_status("slow") else 0.0)
 	return atk_speed * maxf(0.25, 1.0 + pct / 100.0)
 
 
 func effective_move_speed() -> float:
-	return move_speed * maxf(0.3, 1.0 - status_sum("slow") / 100.0)
+	return move_speed * maxf(0.3, 1.0 - (slow_move_pct() if has_status("slow") else 0.0) / 100.0)
+
+
+## 穿透（百分比）：mods（裝備、文明、羈絆）＋自身狀態（技能），同類加總後上限 combat.status.penetration_max_pct
+func penetration(dtype: String) -> float:
+	var key := "magic_pen" if dtype == "magic" else "phys_pen"
+	var cap := float(GameData.cfg("combat").get("status", {}).get("penetration_max_pct", 60))
+	return clampf(float(mods.get(key, 0.0)) + status_sum(key), 0.0, cap)
 
 
 func snapshot() -> Dictionary:

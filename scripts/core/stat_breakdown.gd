@@ -1,6 +1,6 @@
 class_name StatBreakdown
 extends RefCounted
-## 棋子屬性宮格資料（V0.3 最終版）。純計算、不依賴畫面。
+## 棋子屬性宮格資料（V0.3 最終版，V0.4 第 4 列改為 物理穿透／魔法穿透／技能）。純計算、不依賴畫面。
 ## 每格只顯示「圖示＋最終數字」；顏色由「最終值 vs 目前星級的基礎值」決定：高於＝藍、低於＝紅、相等＝白。
 ## 升星本身已含在「目前星級基礎值」裡，所以正常升星不會讓數字變藍。
 ## 點擊格子才顯示 lines（來源明細），只列出實際存在的來源。
@@ -9,12 +9,13 @@ extends RefCounted
 ## cat：base 基礎／civ 文明／trait 羈絆／item 裝備／status 暫時性戰鬥效果／cond 條件效果（不影響數字）
 
 const CAT_NAMES := {"base": "基礎", "civ": "文明", "trait": "羈絆", "item": "裝備", "status": "戰鬥效果", "cond": "條件"}
-const STATUS_NAMES := {"atk_up": "攻擊力提升", "atk_down": "攻擊力降低", "armor_up": "護甲提升", "armor_down": "破甲",
-	"mr_up": "魔抗提升", "mr_down": "魔抗降低", "slow": "緩速", "as_up": "攻速提升", "dmg_up": "直接傷害提升",
-	"phys_dr": "物理減傷", "mark": "被標記", "stun": "暈眩", "root": "定身", "taunt": "被嘲諷", "dot": "持續傷害", "hot": "持續治療"}
+const STATUS_NAMES := {"atk_up": "攻擊力提升", "atk_down": "攻擊力降低", "armor_up": "護甲提升",
+	"mr_up": "魔抗提升", "slow": "緩速", "wound": "重傷", "as_up": "攻速提升", "dmg_up": "直接傷害提升",
+	"phys_dr": "物理減傷", "mark": "被標記", "stun": "暈眩", "root": "定身", "taunt": "被嘲諷", "dot": "持續傷害", "hot": "持續治療",
+	"phys_pen": "物理穿透", "magic_pen": "魔法穿透", "guard_link": "守護連結", "parry": "返刃架勢", "blessing": "生命祝福"}
 
-## 宮格順序：3 欄 × 4 列
-const ORDER := ["atk", "armor", "mr", "as", "move", "range", "crit", "crit_dmg", "mana", "skill", "heal", "cc"]
+## 宮格順序：3 欄 × 4 列（治療護盾與控制時間收在「技能」格的明細）
+const ORDER := ["atk", "armor", "mr", "as", "move", "range", "crit", "crit_dmg", "mana", "phys_pen", "magic_pen", "skill"]
 
 
 static func _f(v: float, digits: int = 0) -> String:
@@ -102,7 +103,7 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	out.append(_cell("atk", "sword", "攻擊力", atk_val, float(base["atk"]), _f(atk_val), lines, [], 0.05))
 
 	# 2、3. 物防、魔防
-	for pair in [["armor", "shield", "物理防禦", "armor_flat", "armor_up", "armor_down"], ["mr", "magic_shield", "魔法防禦", "mr_flat", "mr_up", "mr_down"]]:
+	for pair in [["armor", "shield", "物理防禦", "armor_flat", "armor_up", "-"], ["mr", "magic_shield", "魔法防禦", "mr_flat", "mr_up", "-"]]:
 		var key: String = pair[0]
 		var v := float(fin[key]) + _status_sum(statuses, pair[4]) - _status_sum(statuses, pair[5])
 		v = maxf(0.0, v)
@@ -115,20 +116,22 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 			["目前換算減傷率：%.1f%%（%s × D ÷ (D + %s)）" % [red * 100.0, _f(float(dcfg.get("max_reduction", 0.75)) * 100.0) + "%", _f(float(dcfg.get("k", 75)))]]))
 
 	# 4. 攻速
-	var as_pct := _status_sum(statuses, "as_up") - _status_sum(statuses, "slow")
+	var slowed := statuses.any(func(st): return st["kind"] == "slow")
+	var as_pct := _status_sum(statuses, "as_up") - (CombatUnit.slow_as_pct() if slowed else 0.0)
 	var as_val := float(fin["atk_speed"]) * maxf(0.25, 1.0 + as_pct / 100.0)
 	lines = [{"cat": "base", "label": "基礎攻速（次／秒，不隨星級成長）", "text": _f(base["atk_speed"], 2), "sign": 0}]
 	lines.append_array(_src_lines(sources, ["atk_speed_pct"], "%"))
-	lines.append_array(_status_lines(statuses, "as_up", "slow", "%"))
+	lines.append_array(_status_lines(statuses, "as_up", "-", "%"))
+	if slowed:
+		lines.append({"cat": "status", "label": "緩速", "text": _signed(-CombatUnit.slow_as_pct(), "%"), "sign": -1})
 	out.append(_cell("as", "bolt", "攻擊速度", as_val, float(base["atk_speed"]), _f(as_val, 2), lines, ["單位：次／秒"], 0.005))
 
 	# 5. 移動速度
-	var mv_val := float(fin["move_speed"]) * maxf(0.3, 1.0 - _status_sum(statuses, "slow") / 100.0)
+	var mv_val := float(fin["move_speed"]) * maxf(0.3, 1.0 - (CombatUnit.slow_move_pct() if slowed else 0.0) / 100.0)
 	lines = [{"cat": "base", "label": "基礎移動速度（格／秒）", "text": _f(base["move_speed"], 2), "sign": 0}]
 	lines.append_array(_src_lines(sources, ["move_speed_pct"], "%"))
-	for st in statuses:
-		if st["kind"] == "slow":
-			lines.append({"cat": "status", "label": "緩速", "text": _signed(-float(st["value"]), "%"), "sign": -1})
+	if slowed:
+		lines.append({"cat": "status", "label": "緩速", "text": _signed(-CombatUnit.slow_move_pct(), "%"), "sign": -1})
 	out.append(_cell("move", "foot", "移動速度", mv_val, float(base["move_speed"]), _f(mv_val, 1), lines, ["單位：格／秒"], 0.005))
 
 	# 6. 射程
@@ -146,7 +149,8 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	out.append(_cell("crit_dmg", "swords", "暴擊傷害", cd_val, float(base["crit_mult"]) * 100.0, _f(cd_val) + "%", lines))
 
 	# 9. 魔力（備戰顯示上限；戰鬥中顯示 目前／上限）；初始魔力加成視為正面修正
-	var no_skill := str(u.get("skill", {}).get("kind", "")) == "none"
+	var passive := bool(u.get("skill", {}).get("passive", false))
+	var no_skill := str(u.get("skill", {}).get("kind", "")) == "none" or passive
 	var start := float(fin["start_mana"])
 	lines = [{"cat": "base", "label": "施放技能所需魔力", "text": "—" if no_skill else _f(base["mana_max"]), "sign": 0}]
 	lines.append_array(_src_lines(sources, ["start_mana"], "", Callable()).map(func(l):
@@ -155,11 +159,25 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	var mana_text := "—" if no_skill else _f(base["mana_max"])
 	if live.has("mana") and not no_skill:
 		mana_text = "%d/%d" % [roundi(float(live["mana"])), roundi(float(base["mana_max"]))]
-	var mana_cell := _cell("mana", "mana", "魔力", start, 0.0, mana_text, lines,
-		["沒有主動技能"] if no_skill else ["初始魔力 %s；普攻 +10、受到普攻 +5" % _f(start)])
+	var mana_cell := _cell("mana", "mana", "魔力", start, float(base.get("start_mana", 0.0)), mana_text, lines,
+		["被動技能，不使用魔力"] if passive else (["沒有主動技能"] if no_skill else ["初始魔力 %s；普攻 +10、受到普攻 +5" % _f(start)]))
 	out.append(mana_cell)
 
-	# 10. 技能傷害（以 100% 為基準）
+	# 10、11. 物理穿透、魔法穿透（按比例忽略目標減傷率；同類加總上限見 combat.status.penetration_max_pct）
+	var pen_cap := float(GameData.cfg("combat").get("status", {}).get("penetration_max_pct", 60))
+	for pk in [["phys_pen", "pierce", "物理穿透", "物理"], ["magic_pen", "magic_pierce", "魔法穿透", "魔法"]]:
+		var key: String = pk[0]
+		var raw := float(mods.get(key, 0.0)) + _status_sum(statuses, key)
+		var v := clampf(raw, 0.0, pen_cap)
+		lines = [{"cat": "base", "label": "基礎%s" % pk[2], "text": "0%", "sign": 0}]
+		lines.append_array(_src_lines(sources, [key], "%"))
+		lines.append_array(_status_lines(statuses, key, "-", "%"))
+		var ex: Array = ["造成%s傷害時，忽略目標 %s%% 的%s減傷率（例：減傷 40%% → %s%%）" % [pk[3], _f(v), pk[3], _f(40.0 * (1.0 - v / 100.0), 1)]]
+		if raw > pen_cap:
+			ex.append("已達上限 %s%%" % _f(pen_cap))
+		out.append(_cell(key, pk[1], pk[2], v, 0.0, _f(v) + "%", lines, ex))
+
+	# 12. 技能（以 100% 為基準）：數字＝技能傷害；明細另列給出的治療與護盾、施加的控制時間
 	var skill_stats := ["skill_dmg_pct", "skill_direct_pct"]
 	var dtype := str(u.get("skill", {}).get("params", {}).get("dtype", ""))
 	if dtype == "magic":
@@ -171,27 +189,27 @@ static func cells(unit_id: String, star: int, sources: Array, statuses: Array = 
 	lines = [{"cat": "base", "label": "技能傷害基準", "text": "100%", "sign": 0}]
 	lines.append_array(_src_lines(sources, skill_stats, "%"))
 	lines.append_array(_cond_lines(sources))
-	out.append(_cell("skill", "skill", "技能傷害", sk, 100.0, _f(sk) + "%", lines,
-		["含技能造成的持續傷害（直接傷害類加成除外）"]))
-
-	# 11. 治療與護盾（給出）；承受治療列在明細
 	var hs := 100.0 + float(mods.get("heal_shield_pct", 0.0))
-	lines = [{"cat": "base", "label": "給出的治療與護盾基準", "text": "100%", "sign": 0}]
-	lines.append_array(_src_lines(sources, ["heal_shield_pct"], "%"))
+	var ccd := 100.0 + float(mods.get("cc_duration_pct", 0.0))
+	lines.append_array(_src_lines(sources, ["heal_shield_pct"], "%").map(func(l):
+		l["label"] = str(l["label"]) + "（給出的治療與護盾）"
+		return l))
 	lines.append_array(_src_lines(sources, ["heal_received_pct"], "%").map(func(l):
 		l["label"] = str(l["label"]) + "（自身受到的治療）"
 		return l))
-	out.append(_cell("heal", "heal", "治療與護盾", hs, 100.0, _f(hs) + "%", lines))
-
-	# 12. 控制時間（施加）；受到控制列在明細
-	var ccd := 100.0 + float(mods.get("cc_duration_pct", 0.0))
-	lines = [{"cat": "base", "label": "施加控制時間基準", "text": "100%", "sign": 0}]
-	lines.append_array(_src_lines(sources, ["cc_duration_pct"], "%"))
+	lines.append_array(_src_lines(sources, ["cc_duration_pct"], "%").map(func(l):
+		l["label"] = str(l["label"]) + "（施加的控制時間）"
+		return l))
 	lines.append_array(_src_lines(sources, ["cc_received_pct"], "%").map(func(l):
 		l["label"] = str(l["label"]) + "（自身受到的控制）"
 		l["sign"] = -int(l["sign"])
 		return l))
-	out.append(_cell("cc", "chain", "控制時間", ccd, 100.0, _f(ccd) + "%", lines, ["文明修正最多 ±0.2 秒"]))
+	var skill_cell := _cell("skill", "skill", "技能", sk, 100.0, _f(sk) + "%", lines,
+		["技能傷害 %s%%（含技能造成的持續傷害）" % _f(sk), "給出的治療與護盾 %s%%" % _f(hs), "施加的控制時間 %s%%（文明修正最多 ±0.2 秒）" % _f(ccd)])
+	# 技能傷害沒有變化時，以治療護盾＋控制的淨變化決定顏色
+	if int(skill_cell["sign"]) == 0:
+		skill_cell["sign"] = _sign((hs - 100.0) + (ccd - 100.0))
+	out.append(skill_cell)
 	return out
 
 

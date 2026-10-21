@@ -41,6 +41,7 @@ func _init() -> void:
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_portrait_token = TOKEN_SCENE.instantiate()
 	_portrait_token.position = Vector2(26, 28)
+	_portrait_token.show_head = false
 	portrait.add_child(_portrait_token)
 	head.add_child(portrait)
 	var names := VBoxContainer.new()
@@ -232,9 +233,8 @@ func refresh(data: Dictionary) -> void:
 		var ic: UiIcon = b.get_child(0)
 		if i < items.size():
 			var info := Equipment.type_info(str(items[i]))
-			var tier := Equipment.tier_info(str(items[i]))
 			ic.set_icon(str(GameData.item(items[i]).get("type", "weapon")), Color(str(info.get("color", "#ffffff"))))
-			UiStyle.style_button(b, Color(0.16, 0.18, 0.24), Color(str(tier.get("color", "#888888"))), 13)
+			UiStyle.style_button(b, Color(0.16, 0.18, 0.24), Color(str(info.get("color", "#888888"))).darkened(0.2), 13)
 			b.tooltip_text = str(GameData.item(items[i]).get("name", ""))
 		else:
 			ic.set_icon("plus", Color(1, 1, 1, 0.4))
