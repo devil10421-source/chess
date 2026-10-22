@@ -50,6 +50,22 @@ var _spectating := false
 var _spec_left := 0.0
 var _spec_fast := false
 
+## 戰鬥時間軸：自己那場由 BattlePlayer 播放；其他玩家的戰鬥跟著同一個時鐘推進（觀看他人時看到同一時刻的戰況）。
+## 自己那場播完後時鐘繼續走，直到全部戰鬥結束才結算（可按「略過」立即算完）。
+var _war_real := 0.0
+var _war_clock := 0.0
+var _my_battle_done := false
+
+## 觀看其他玩家：local（真正操作的玩家＝me）與 viewed（畫面顯示的棋盤主人）分開管理。
+## 觀看時只切換畫面，不改變操作權限：商店、背包、裝備永遠只作用在自己身上，對方的棋盤唯讀。
+var view_board: BoardView
+var view_seat := -1               # -1＝看自己的棋盤
+var view_banner: PanelContainer
+var view_label: RichTextLabel
+var _view_refresh := 0.0
+
+const TRAIT_COLUMN_W := 104.0
+
 
 func _ready() -> void:
 	m = Session.clash
@@ -59,7 +75,12 @@ func _ready() -> void:
 		m = Session.clash
 	me = m.human()
 	Session.run = me.run
+	ClashMatch.verbose = Session.debug_enabled
+	# 羈絆改成 TFT 式精簡圖示欄：左側變窄、去掉大型面板背景（棋盤因此不會變小）
+	compact_traits = true
+	left_panel.offset_right = left_panel.offset_left + TRAIT_COLUMN_W
 	_build_clash_ui()
+	_build_view_board()
 	board.enemy_preview_provider = _preview_units
 	super._ready()
 	debug_btn.visible = false
@@ -134,6 +155,53 @@ func _build_clash_ui() -> void:
 		_refresh_info())
 	sell_btn.get_parent().add_child(core_btn)
 	sell_btn.get_parent().move_child(core_btn, sell_btn.get_index())
+
+
+## 觀看其他玩家用的第二張唯讀棋盤（和主棋盤同一套 BoardView／BattlePlayer，但不能操作）
+func _build_view_board() -> void:
+	var vb = Node2D.new()
+	vb.set_script(load("res://scripts/ui/board_view.gd"))
+	vb.name = "ViewBoard"
+	var tokens := Node2D.new()
+	tokens.name = "Tokens"
+	vb.add_child(tokens)
+	var fx = Node2D.new()
+	fx.set_script(load("res://scripts/ui/battle_fx.gd"))
+	fx.name = "Fx"
+	fx.z_index = 20
+	vb.add_child(fx)
+	var bp = Node.new()
+	bp.set_script(load("res://scripts/ui/battle_player.gd"))
+	bp.name = "BattlePlayer"
+	vb.add_child(bp)
+	add_child(vb)
+	move_child(vb, board.get_index() + 1)
+	view_board = vb
+	view_board.visible = false
+	view_board.interactive = false
+	view_board.enemy_preview_provider = func(_r: RunState) -> Array: return []
+	# 上方提示列：正在看誰＋返回按鈕
+	view_banner = PanelContainer.new()
+	view_banner.name = "ViewBanner"
+	view_banner.visible = false
+	UiStyle.apply_panel(view_banner, Color(0.06, 0.12, 0.16, 0.94), Color(0.45, 0.9, 1.0, 0.8))
+	var h := VBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	view_banner.add_child(h)
+	view_label = InfoView.make_rich("", 13)
+	view_label.name = "ViewLabel"
+	view_label.custom_minimum_size = Vector2(260, 0)
+	view_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(view_label)
+	var back := Button.new()
+	back.name = "BackToMine"
+	back.text = "返回我的棋盤"
+	back.custom_minimum_size = Vector2(130, 40)
+	UiStyle.style_button(back, Color(0.18, 0.4, 0.45), Color(0.5, 0.95, 1.0), 15)
+	back.pressed.connect(func(): view_player(-1))
+	h.add_child(back)
+	add_child(view_banner)
+	move_child(view_banner, _overlay_index())
 
 
 func _panel_vbox(parent: Control, width: float, border: Color) -> VBoxContainer:
@@ -319,17 +387,21 @@ func _civ_row_text() -> String:
 	return "%s%s" % [me.country, ("・" + g) if g != "" else ""]
 
 
+## 國家列（精簡）：制度圖示＋國家名稱，點擊看完整的國家與制度說明
 func _build_civ_row() -> void:
 	civ_btn.text = ""
-	_row_content(civ_btn, _civ_icon(), _civ_color(), "", _civ_row_text(), Color.WHITE)
+	civ_btn.custom_minimum_size = Vector2(0, 40)
+	civ_btn.tooltip_text = me.country
+	_row_content(civ_btn, _civ_icon(), _civ_color(), "", me.country, Color.WHITE)
 	civ_btn.mouse_entered.connect(func(): _hover_pop("civ", civ_btn, true))
 	civ_btn.mouse_exited.connect(func(): _hover_pop("civ", civ_btn, false))
 	civ_btn.pressed.connect(func(): _press_pop("civ", civ_btn))
 
 
 func _refresh_civ() -> void:
-	_row_content(civ_btn, _civ_icon(), _civ_color(), "", _civ_row_text(), Color.WHITE)
-	UiStyle.style_button(civ_btn, _civ_color().darkened(0.6), _civ_color(), 15)
+	_row_content(civ_btn, _civ_icon(), _civ_color(), "", me.country, Color.WHITE)
+	UiStyle.style_button(civ_btn, Color(0.08, 0.09, 0.12, 0.72), _civ_color(), 13)
+	civ_btn.tooltip_text = "%s・%s" % [me.country, me.government_name() if me.government != "" else "尚未選擇制度"]
 	if popover.visible:
 		popover_text.text = _pop_text(_pop_key)
 
@@ -467,6 +539,7 @@ func _enter_prep() -> void:
 	else:
 		gov_overlay.visible = false
 		gov_reopen.visible = false
+	_refresh_view()
 
 
 func _process(delta: float) -> void:
@@ -490,6 +563,9 @@ func _process(delta: float) -> void:
 		Phase.REWARD:
 			_trade_process(delta)
 		Phase.BATTLE:
+			_advance_war(delta)
+			if phase != Phase.BATTLE:
+				return
 			_update_bar()
 			_update_coop_panel()
 			_info_refresh -= delta
@@ -504,9 +580,33 @@ func _process(delta: float) -> void:
 			_after_time -= delta
 			if _after_time <= 0.0:
 				_after_done()
+	if view_seat >= 0:
+		_view_refresh -= delta
+		if _view_refresh <= 0.0:
+			_view_refresh = 0.25
+			_update_view_banner()
+			_place_view_banner()
+
+
+## 戰鬥時鐘：自己那場播放中跟著 BattlePlayer；播完後自己走（同樣的加速分段與倍率）
+func _advance_war(delta: float) -> void:
+	if battle_player.is_playing():
+		_war_real = battle_player.real_time()
+	else:
+		_war_real += delta * Session.battle_speed
+	_war_clock = PlaybackClock.sim_from_real(_war_real)
+	m.step_battles_to(_war_clock, m.human_battle())
+	if _my_battle_done:
+		_try_settle()
 
 
 func _update_bar() -> void:
+	if phase == Phase.BATTLE and _my_battle_done:
+		bar.max_value = 1.0
+		bar.value = 1.0
+		bar_left.text = " 等待其他玩家的戰鬥結束（剩 %d 場，可按略過）" % m.pending_battles()
+		bar_right.text = "%.1f 秒 " % _war_clock
+		return
 	if phase == Phase.REWARD:
 		bar.max_value = ClashMatch.trade_seconds()
 		bar.value = _trade_left
@@ -713,7 +813,10 @@ func _begin_battle_view() -> void:
 	_last_result = {}
 	if m.stage != "battle":
 		m.start_battles()
-	m.run_battles(true)   # 其他玩家的戰鬥直接算完；自己的那場依畫面播放
+	# 其他玩家的戰鬥不再一開場就算完，而是跟著同一個時鐘推進（_advance_war）
+	_war_real = 0.0
+	_war_clock = 0.0
+	_my_battle_done = false
 	var hb := m.human_battle()
 	board.set_prep_visible(false)
 	board.battle_mode = true
@@ -728,6 +831,8 @@ func _begin_battle_view() -> void:
 	coop_panel.visible = hb.kind == "coop"
 	_update_coop_panel()
 	_refresh()
+	_refresh_view()
+	m.trace("畫面：開始播放自己的戰鬥（%s）" % hb.kind)
 	_toast("開戰！" + _stage_text())
 
 
@@ -752,16 +857,38 @@ func _update_coop_panel() -> void:
 	_place_players()
 
 
+## 自己那場播完：記下來，等其他戰鬥也結束才結算（每回合只結算一次）
 func _on_battle_finished() -> void:
-	if phase != Phase.BATTLE:
+	if phase != Phase.BATTLE or _my_battle_done:
 		return
-	if not m.all_battles_finished():
-		m.run_battles(false)
+	_my_battle_done = true
 	var hb := m.human_battle()
 	if hb != null:
 		_last_result = hb.sim_for(me.index).result()
 		leader.set_stats(_last_result.get("stats", []))
+	m.trace("畫面：自己的戰鬥播放完畢，其他未完成 %d 場" % m.pending_battles())
+	_try_settle()
+
+
+## 略過：自己與其他所有戰鬥立即算完（結果與正常播放相同）
+func _skip_battles() -> void:
+	if phase != Phase.BATTLE:
+		return
+	m.trace("畫面：略過，剩餘戰鬥立即算完")
+	m.run_battles(false)
+	if battle_player.is_playing():
+		battle_player.skip()
+	else:
+		_try_settle()
+
+
+func _try_settle() -> void:
+	if phase != Phase.BATTLE or not _my_battle_done or not m.all_battles_finished():
+		return
 	var rep := m.settle_round()
+	if rep.is_empty():
+		m.trace("畫面：結算被拒絕（stage=%s）" % m.stage)
+		return
 	_toast_clash_report(rep)
 	board.battle_mode = false
 	skip_btn.visible = false
@@ -770,6 +897,7 @@ func _on_battle_finished() -> void:
 	_after_time = 2.2
 	_refresh()
 	_refresh_players()
+	_refresh_view()
 
 
 func _toast_clash_report(rep: Dictionary) -> void:
@@ -804,6 +932,7 @@ func _after_done() -> void:
 		_show_end()
 		return
 	m.begin_round()
+	m.trace("畫面：進入第 %d 回合備戰" % m.round_no)
 	_enter_prep()
 
 
@@ -945,9 +1074,22 @@ func _player_row(p: ClashPlayer, rank: int, a: Dictionary) -> Control:
 	sb.content_margin_right = 4
 	sb.content_margin_top = 1
 	sb.content_margin_bottom = 1
+	if p.index == view_seat:
+		sb.border_color = Color(0.45, 0.9, 1.0)
+		sb.set_border_width_all(2)
+		sb.bg_color = Color(0.08, 0.2, 0.25, 0.95)
 	row.add_theme_stylebox_override("panel", sb)
-	row.tooltip_text = "%s（%s）\nLv.%d・%s%s\n戰績 %d 勝 %d 敗" % [p.country, p.player_name, p.run.level(),
-		p.government_name() if p.government != "" else "尚未選擇制度", ("／" + p.policy_name()) if p.policy != "" else "", p.wins, p.losses]
+	row.tooltip_text = "%s（%s）\nLv.%d・%s%s\n戰績 %d 勝 %d 敗\n點擊：%s" % [p.country, p.player_name, p.run.level(),
+		p.government_name() if p.government != "" else "尚未選擇制度", ("／" + p.policy_name()) if p.policy != "" else "", p.wins, p.losses,
+		"返回我的棋盤" if p.index == me.index else "觀看這名玩家的棋盤"]
+	# 點擊玩家 → 觀看他的棋盤；點自己 → 返回自己的棋盤
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var seat := p.index
+	row.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			view_player(seat)
+			accept_event())
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 4)
 	row.add_child(h)
@@ -983,6 +1125,8 @@ func _player_row(p: ClashPlayer, rank: int, a: Dictionary) -> Control:
 	hpl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	hpl.add_theme_font_size_override("font_size", 13)
 	h.add_child(hpl)
+	for c in row.find_children("*", "Control", true, false):
+		(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return row
 
 
@@ -1006,6 +1150,7 @@ func _place_players() -> void:
 	coop_label.custom_minimum_size = Vector2(minf(free_w, 300.0), 0)
 	coop_panel.reset_size()
 	coop_panel.position = Vector2(r.position.x + 2.0, r.position.y + 2.0)
+	_place_view_banner()
 
 
 func _apply_side_layout() -> void:
@@ -1015,12 +1160,150 @@ func _apply_side_layout() -> void:
 
 func _layout() -> void:
 	super._layout()
+	if view_board != null:
+		view_board.fit(board_rect())
 	_place_players()
+	_place_view_banner()
+
+
+# ---------- 觀看其他玩家的棋盤 ----------
+## seat：要看的玩家座位；自己或 -1＝返回自己的棋盤。只切換畫面，不改變操作權限，也不影響任何戰鬥的推進。
+func view_player(seat: int) -> void:
+	if seat < 0 or seat == me.index:
+		if view_seat >= 0:
+			m.trace("畫面：返回自己的棋盤")
+		view_seat = -1
+		_refresh_view()
+		_refresh_players()
+		return
+	var p: ClashPlayer = m.players[seat]
+	if not p.alive:
+		_toast("%s 已淘汰（第 %d 名）" % [p.country, p.placement])
+		return
+	view_seat = seat
+	m.trace("畫面：觀看 %d %s" % [seat, p.country])
+	_close_bag()
+	item_overlay.visible = false
+	_set_info("none", null)
+	_refresh_view()
+	_refresh_players()
+
+
+func is_viewing_other() -> bool:
+	return view_seat >= 0
+
+
+## 這名玩家本回合所在的戰鬥（PvP 的任一方、合作 PvE 的任一方、幽靈戰或單人 PvE 的挑戰者）
+func _battle_of(seat: int) -> ClashBattle:
+	for bt in m.battles:
+		var b: ClashBattle = bt
+		if b.a == seat or (b.b == seat and (b.kind == "pvp" or b.kind == "coop")):
+			return b
+	return null
+
+
+## 依目前階段重畫觀看中的棋盤：戰鬥中＝跟著同一個時鐘播放他那一場（不重生單位、不重放技能）；其他時候＝他的棋子、站位、候補與裝備
+func _refresh_view() -> void:
+	if view_board == null:
+		return
+	if view_seat >= 0 and not (m.players[view_seat] as ClashPlayer).alive:
+		var gone: ClashPlayer = m.players[view_seat]
+		_toast("%s 已淘汰，返回你的棋盤" % gone.country)
+		view_seat = -1
+		_refresh_players()
+	var viewing := view_seat >= 0
+	view_board.visible = viewing
+	board.visible = not viewing
+	view_banner.visible = viewing
+	if not viewing:
+		view_board.battle_player.clear()
+		return
+	view_board.fit(board_rect())
+	var p: ClashPlayer = m.players[view_seat]
+	var bt: ClashBattle = _battle_of(view_seat) if phase == Phase.BATTLE and m.stage == "battle" else null
+	view_board.battle_player.clear()
+	view_board.show_prep(p.run)
+	if bt != null:
+		view_board.set_prep_visible(false)
+		view_board.battle_mode = true
+		view_board.battle_player.watch(bt.sim_for(view_seat), view_board, func() -> float: return _war_clock)
+	else:
+		view_board.battle_mode = false
+		view_board.set_prep_visible(true)
+	_update_view_banner()
+	_place_view_banner()
+
+
+func _update_view_banner() -> void:
+	if view_seat < 0 or view_label == null:
+		return
+	var p: ClashPlayer = m.players[view_seat]
+	var lines: Array = []
+	var gov := "尚未選擇制度"
+	if p.government != "":
+		gov = p.government_name() + (("／" + p.policy_name()) if p.policy != "" else "")
+	lines.append("[b][color=#7fe0ff]觀看：%s[/color][/b]（%s）" % [p.country, p.player_name])
+	lines.append("生命 %d・Lv.%d・上場 %d 隻" % [maxi(0, p.hp), p.run.level(), p.run.board_count()])
+	lines.append(gov)
+	var a := m.assignment(view_seat)
+	var other := int(a.get("other", -1))
+	var other_name := (m.players[other] as ClashPlayer).country if other >= 0 else ""
+	var state := ""
+	match phase:
+		Phase.PREP:
+			state = "備戰中"
+		Phase.REWARD:
+			state = "交易階段"
+		Phase.AFTER:
+			state = "本回合已結算"
+		Phase.BATTLE:
+			var bt := _battle_of(view_seat)
+			if bt != null:
+				var sim := bt.sim_for(view_seat)
+				var side := 1 if (bt.kind == "pvp" and bt.b == view_seat) else 0
+				var mine := sim.alive_of(side).size()
+				var foes := sim.alive_of(1 - side).size()
+				state = "戰鬥中" if not sim.finished else ("已清場" if foes == 0 and mine > 0 else ("全滅" if mine == 0 else "時間到"))
+				state += "：存活 %d／對方 %d" % [mine, foes]
+				if side == 1:
+					state += "（他的棋子在上方）"
+				if bt.kind == "coop" and sim.holding:
+					state += "，等待隊友救援"
+	var kind_txt: String = {"pvp": "PvP 對手 " + other_name, "ghost": "幽靈戰（對抗 %s 的鏡像）" % other_name, "coop": "合作 PvE 隊友 " + other_name, "solo": "單人 PvE"}.get(str(a.get("kind", "")), "")
+	lines.append(kind_txt)
+	if state != "":
+		lines.append("[color=#ffd24d]%s[/color]" % state)
+	lines.append("[color=#9aa3ad]唯讀：不能操作對方的棋子、商店或裝備[/color]")
+	view_label.text = "\n".join(lines)
+
+
+func _place_view_banner() -> void:
+	if view_banner == null or not view_banner.visible:
+		return
+	# 放在羈絆欄與棋盤之間的空白處（不擋棋盤、不和上方提示文字重疊）；合作 PvE 狀態在上、觀看資訊在下
+	var r := board_rect()
+	var free_w := (r.size.x - board.board_size().x * board.get_global_transform_with_canvas().get_scale().x) * 0.5 - 12.0
+	view_label.custom_minimum_size = Vector2(clampf(free_w, 200.0, 300.0), 0)
+	view_banner.reset_size()
+	var y := r.position.y + 2.0
+	if coop_panel.visible:
+		y = coop_panel.get_global_rect().end.y + 8.0
+	view_banner.position = Vector2(r.position.x + 2.0, y)
+
+
+## 觀看其他玩家時不能把背包裝備拖到（被隱藏的）自己棋盤上
+func _drag_input(event: InputEvent) -> bool:
+	if view_seat >= 0:
+		return false
+	return super._drag_input(event)
 
 
 # ---------- 選單 ----------
 func _connect() -> void:
 	super._connect()
+	for c in skip_btn.pressed.get_connections():
+		skip_btn.pressed.disconnect(c["callable"])
+	skip_btn.pressed.connect(_skip_battles)
 	for path in ["MenuOverlay/Panel/VBox/CodexButton", "MenuOverlay/Panel/VBox/SaveQuitButton", "MenuOverlay/Panel/VBox/AbandonButton"]:
 		var b: Button = get_node(path)
 		for c in b.pressed.get_connections():
@@ -1158,6 +1441,7 @@ func _spec_process(delta: float) -> void:
 		var p: ClashPlayer = m.players[s]
 		_toast("%s 遭到淘汰（第 %d 名）" % [p.country, p.placement], Color(1, 0.5, 0.5))
 	_refresh_players()
+	_refresh_view()
 	if m.finished:
 		_spectating = false
 		_show_end()

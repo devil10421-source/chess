@@ -91,7 +91,47 @@ func _spawn_token(s: Dictionary, instant: bool) -> void:
 		board.fx.ring(board.cell_center(s["cell"]), Color(0.5, 0.9, 1.0), board.hex_size * 1.1, 0.6)
 
 
+## 《氏族爭霸》觀看其他玩家：只「播放」一場已由別處推進中的戰鬥（不推進模擬、不會發出 finished）。
+## 開始時把 clock 之前的事件立即套用（不重播技能、不重生單位），之後跟著 clock 即時播放。
+var _watch_clock: Callable = Callable()
+
+
+func watch(sim: CombatSim, board_view: BoardView, clock: Callable) -> void:
+	board = board_view
+	clear()
+	_sim = null
+	_driver = null
+	_watch_clock = clock
+	_events = sim.events
+	_index = 0
+	_end_time = INF
+	_delay = 0.0
+	for s in sim.snapshots():
+		var tk: UnitToken = TOKEN_SCENE.instantiate()
+		board.tokens_root.add_child(tk)
+		tk.setup(s["id"], int(s["star"]), int(s["side"]), board.hex_size * 0.72)
+		tk.cid = int(s["cid"])
+		tk.position = board.cell_center(s["cell"])
+		tk.show_bars = true
+		tk.mana = float(s["mana"])
+		tk.mana_max = float(s["mana_max"])
+		tk.set_bars(float(s["hp"]), float(s["max_hp"]), 0.0)
+		tk.items = s.get("items", [])
+		_tokens[tk.cid] = tk
+		_units[tk.cid] = s
+	_clock = float(clock.call())
+	while _index < _events.size() and float(_events[_index]["t"]) <= _clock:
+		_apply(_events[_index], true)
+		_index += 1
+	_playing = true
+
+
+func is_watching() -> bool:
+	return _watch_clock.is_valid()
+
+
 func clear() -> void:
+	_watch_clock = Callable()
 	for t in _tokens.values():
 		t.queue_free()
 	_tokens.clear()
@@ -121,6 +161,12 @@ func skip() -> void:
 func _process(delta: float) -> void:
 	if not _playing:
 		return
+	if _watch_clock.is_valid():
+		_clock = float(_watch_clock.call())
+		while _index < _events.size() and float(_events[_index]["t"]) <= _clock:
+			_apply(_events[_index], false)
+			_index += 1
+		return
 	if _delay > 0.0:
 		_delay -= delta
 		return
@@ -130,8 +176,10 @@ func _process(delta: float) -> void:
 	Session.playback_rate = PlaybackClock.rate_at_real(_real) * Session.battle_speed
 	if _driver:
 		_driver.step_to(_clock)
-		if _driver.is_finished():
-			_end_time = maxf(_clock, float(_sim.result().get("time", _clock))) + 0.6
+		# 推進器（例如合作 PvE 的兩張棋盤）結束時記下一次結束時間就好。
+		# （先前每一幀都重算成「目前時間＋0.6 秒」，結束時間永遠在時鐘前面，戰鬥播完也不會結束 → 回合卡住。）
+		if _driver.is_finished() and _end_time == INF:
+			_end_time = _clock + 0.6
 	elif _sim:
 		_sim.step_to(_clock)
 		if _sim.finished:

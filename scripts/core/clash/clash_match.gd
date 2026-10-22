@@ -30,6 +30,11 @@ var reports: Array = []
 var event_log: Array = []
 var last_lone := -1
 var gov_auto_notes: Array = []   # 本回合因時間到而自動選擇的制度／政策（畫面提示用）
+## 回合狀態與結算日誌：每次階段轉換、配對、交易、戰鬥完成、結算都記一行（排查回合卡住等問題用）。
+## verbose 為 true 時同時印到主控台（除錯版的對局畫面會開啟）。
+var state_log: Array = []
+static var verbose := false
+const STATE_LOG_MAX := 600
 
 
 static func create(human_name: String, country: String, seed_value: int, ai_level: String = "", with_human: bool = true) -> ClashMatch:
@@ -176,6 +181,15 @@ func current_rank(seat: int) -> int:
 	return 0
 
 
+func trace(msg: String) -> void:
+	var line := "[R%d/%s] %s" % [round_no, stage, msg]
+	state_log.append(line)
+	while state_log.size() > STATE_LOG_MAX:
+		state_log.pop_front()
+	if verbose:
+		print("[氏族爭霸] " + line)
+
+
 func log_event(text: String) -> void:
 	event_log.append("R%d %s" % [round_no, text])
 
@@ -215,6 +229,10 @@ func begin_round() -> void:
 		var p: ClashPlayer = players[s]
 		if not p.is_human:
 			ClashAI.prep(self, p)
+	if round_kind == "pvp":
+		trace("回合開始：PvP，存活 %d，配對 %s，幽靈 %d→%d" % [alive.size(), str(pvp_plan.get("pairs", [])), int(pvp_plan.get("lone", -1)), int(pvp_plan.get("ghost_of", -1))])
+	else:
+		trace("回合開始：第 %d 次 PvE，存活 %d，雙人 %s，單人 %d" % [pve_count, alive.size(), str(pve_plan.get("pairs", [])), int(pve_plan.get("solo", -1))])
 	changed.emit()
 
 
@@ -290,7 +308,9 @@ func lock_in() -> String:
 		p.run.auto_fill_board()
 	if round_kind == "pve" and not (pve_plan.get("pairs", []) as Array).is_empty():
 		_start_trades()
+		trace("備戰結束 → 交易（%d 組）" % trades.size())
 		return "trade"
+	trace("備戰結束 → 開戰")
 	start_battles()
 	return "battle"
 
@@ -350,8 +370,12 @@ func human_trade_done() -> bool:
 
 
 func end_trades() -> void:
+	if stage != "trade":
+		trace("end_trades 略過（目前不是交易階段）")
+		return
 	for t in trades:
 		ClashTrade.close(t)
+	trace("交易結束：成交 %d／%d 組 → 開戰" % [trades.filter(func(t): return str(t["status"]) == "done").size(), trades.size()])
 	start_battles()
 
 
@@ -404,6 +428,10 @@ func start_battles() -> void:
 	var hb := human_battle()
 	if hb != null:
 		human().run.live_battle = hb.sim_for(human_seat)
+	var kinds := {}
+	for bt in battles:
+		kinds[(bt as ClashBattle).kind] = int(kinds.get((bt as ClashBattle).kind, 0)) + 1
+	trace("開戰：%s，共 %d 場" % [str(kinds), battles.size()])
 	changed.emit()
 
 
@@ -433,6 +461,22 @@ func run_battles(except_human: bool = false) -> void:
 		(bt as ClashBattle).run()
 
 
+## 讓其他戰鬥跟著同一個時間軸推進（真人那場由畫面推進）：觀看其他玩家時看到的是同一時刻的戰況
+func step_battles_to(sim_time: float, except_battle: ClashBattle = null) -> void:
+	for bt in battles:
+		if bt == except_battle:
+			continue
+		var b: ClashBattle = bt
+		if not b.finished:
+			b.step_to(sim_time)
+			if b.finished:
+				trace("戰鬥完成：%s %d%s" % [b.kind, b.a, (" vs %d" % b.b) if b.b >= 0 else ""])
+
+
+func pending_battles() -> int:
+	return battles.filter(func(b): return not (b as ClashBattle).finished).size()
+
+
 func all_battles_finished() -> bool:
 	for bt in battles:
 		if not (bt as ClashBattle).finished:
@@ -445,6 +489,7 @@ func all_battles_finished() -> bool:
 func settle_round() -> Dictionary:
 	# 防止重複結算：只有在戰鬥階段、且全部戰鬥結束後才結算一次
 	if stage != "battle" or not all_battles_finished():
+		trace("settle_round 略過（stage=%s，未完成戰鬥 %d）" % [stage, pending_battles()])
 		return {}
 	stage = "settled"
 	var rep := {"round": round_no, "kind": round_kind, "per_seat": {}, "eliminated": [], "lines": [], "champion": -1}
@@ -539,10 +584,15 @@ func settle_round() -> Dictionary:
 	for s in rep["eliminated"]:
 		log_event("%s 淘汰（第 %d 名）" % [(players[s] as ClashPlayer).country, (players[s] as ClashPlayer).placement])
 	reports.append(rep)
+	var dmg_txt: Array = []
+	for st in rep["per_seat"].keys():
+		dmg_txt.append("%d:-%d" % [int(st), int(rep["per_seat"][st]["damage"])])
+	trace("結算：扣血 %s；淘汰 %s；存活 %d" % [" ".join(dmg_txt), str(rep["eliminated"]), alive_seats().size()])
 	if finished:
 		stage = "over"
 		for p in players:
 			(p as ClashPlayer).run.finished = true
+		trace("對局結束：冠軍 %s" % str(players.filter(func(x): return (x as ClashPlayer).placement == 1).map(func(x): return (x as ClashPlayer).index)))
 	else:
 		round_no += 1
 	changed.emit()

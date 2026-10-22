@@ -32,6 +32,7 @@ func _initialize() -> void:
 		"test_elimination_ranking_ties",
 		"test_simultaneous_final_tie",
 		"test_no_double_settle",
+		"test_lockstep_round_flow",
 		"test_government_choices",
 		"test_policy_effects_economy",
 		"test_policy_effects_combat",
@@ -902,3 +903,42 @@ func test_single_player_untouched() -> void:
 	check(r.shared_pool == null, "單人模式不使用共用棋池")
 	eq(int(r.pool_remaining().get("ELF1", 0)), Shop.supply(1), "單人模式棋池供應不變（%d）" % Shop.supply(1))
 	GameData.set_clash_clans(true)
+
+
+# ---------- 回合推進（修正「戰鬥結束後回合不結束」） ----------
+## 和畫面相同的流程：所有戰鬥跟著同一個時鐘逐步推進（不一次算完），全部結束後結算並進入下一回合。
+## 連續 12 回合（含 PvP、合作 PvE、幽靈戰），每回合都要能在有限時間內完成，且日誌記錄每個階段。
+func test_lockstep_round_flow() -> void:
+	var m := ClashMatch.create("真人", "真人國", 4242, "normal", true)
+	var kinds := {}
+	for r in 12:
+		var r0 := m.round_no
+		var next := m.lock_in()
+		if next == "trade":
+			m.end_trades()
+		eq(m.stage, "battle", "第 %d 回合進入戰鬥" % r0)
+		for bt in m.battles:
+			kinds[(bt as ClashBattle).kind] = true
+		var clock := 0.0
+		var hb := m.human_battle()
+		while not m.all_battles_finished() and clock < 400.0:
+			clock += 0.25
+			if hb != null:
+				hb.step_to(clock)   # 真人那場（畫面上由 BattlePlayer 推進）
+			m.step_battles_to(clock, hb)
+		check(m.all_battles_finished(), "第 %d 回合所有戰鬥（含 AI、幽靈、PvE 援軍）都會結束（%.1f 秒）" % [r0, clock])
+		var rep := m.settle_round()
+		check(not rep.is_empty(), "第 %d 回合結算" % r0)
+		eq(m.round_no, r0 + 1, "回合編號增加")
+		check(m.settle_round().is_empty(), "不會重複結算")
+		for s2 in rep["eliminated"]:
+			check(not m.alive_seats().has(s2), "淘汰者移出後續配對")
+		m.begin_round()
+		for s2 in rep["eliminated"]:
+			check(str(m.assignment(int(s2))) == "{}", "淘汰者不在下一回合的配對中")
+		check(m.pool.audit().is_empty(), "棋池守恆")
+	check(kinds.has("pvp") and kinds.has("coop"), "涵蓋 PvP 與合作 PvE（%s）" % str(kinds.keys()))
+	for key in ["回合開始", "備戰結束", "開戰：", "結算："]:
+		check(m.state_log.any(func(l): return str(l).contains(key)), "日誌記錄「%s」" % key)
+	check(m.state_log.any(func(l): return str(l).contains("交易結束")), "日誌記錄交易結果")
+
