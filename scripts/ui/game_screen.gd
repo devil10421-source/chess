@@ -107,6 +107,9 @@ var _xp_cost_label: Label
 var _xp_coin: UiIcon
 var _xp_word: Label
 var _btn_labels: Dictionary = {}
+## 《氏族爭霸》：羈絆改成 TFT 式精簡圖示欄（透明背景、圖示＋進度、加大間距；點圖示才看效果）。單人模式維持原本的清單。
+var compact_traits := false
+const TRAIT_TIER_COLORS := [Color(0.80, 0.55, 0.32), Color(0.78, 0.84, 0.92), Color(1.0, 0.82, 0.30)]
 
 
 func _ready() -> void:
@@ -299,6 +302,10 @@ func _style() -> void:
 	lp.content_margin_top = 4
 	lp.content_margin_bottom = 4
 	left_panel.add_theme_stylebox_override("panel", lp)
+	if compact_traits:
+		left_panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		trait_list.add_theme_constant_override("separation", 14)
+		$LeftPanel/Scroll/List.add_theme_constant_override("separation", 14)
 	UiStyle.apply_panel(popover, Color(0.08, 0.10, 0.14, 0.97), UiStyle.GOLD)
 	UiStyle.apply_panel($RewardOverlay/Panel, Color(0.10, 0.12, 0.17, 0.98), UiStyle.GOLD)
 	UiStyle.style_button(reroll_btn, Color(0.16, 0.30, 0.52))
@@ -1561,6 +1568,9 @@ func _refresh_traits() -> void:
 	for c in trait_list.get_children():
 		trait_list.remove_child(c)
 		c.queue_free()
+	if compact_traits:
+		_refresh_traits_compact()
+		return
 	var summary := Synergy.summary(run.synergy_counts())
 	if summary.is_empty():
 		var l := Label.new()
@@ -1592,6 +1602,73 @@ func _refresh_traits() -> void:
 		trait_list.add_child(b)
 	if popover.visible and _pop_key != "civ":
 		popover_text.text = _pop_text(_pop_key)
+
+
+## 精簡羈絆欄：[圓形圖示] 2/4，一列一個；未啟動暗色、啟動後依階層（銅／銀／金）上色。名稱在滑鼠提示，效果點擊後才顯示。
+func _refresh_traits_compact() -> void:
+	for s in Synergy.summary(run.synergy_counts()):
+		var g: String = s["group"]
+		var k: String = s["key"]
+		var key := "%s:%s" % [g, k]
+		var tier := int(s["tier"])
+		var active := tier >= 0
+		var b := Button.new()
+		b.flat = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(0, 40)
+		b.tooltip_text = str(s["name"])
+		var empty := StyleBoxEmpty.new()
+		for st in ["normal", "hover", "pressed", "focus", "hover_pressed"]:
+			b.add_theme_stylebox_override(st, empty)
+		var h := HBoxContainer.new()
+		h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_theme_constant_override("separation", 8)
+		var icon_col := GameData.race_color(k) if g == "race" else Color(0.92, 0.94, 1.0)
+		h.add_child(_trait_badge(UiIcon.trait_kind(g, k), icon_col, tier))
+		var pl := Label.new()
+		pl.text = trait_progress(s)
+		pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		pl.add_theme_font_size_override("font_size", 16)
+		pl.add_theme_color_override("font_color", Color.WHITE if active else Color(0.66, 0.69, 0.76))
+		pl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		pl.add_theme_constant_override("outline_size", 4)
+		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(pl)
+		b.add_child(h)
+		b.mouse_entered.connect(func(): _hover_pop(key, b, true))
+		b.mouse_exited.connect(func(): _hover_pop(key, b, false))
+		b.pressed.connect(func(): _press_pop(key, b))
+		b.set_meta("pop_key", key)
+		b.set_meta("active", active)
+		trait_list.add_child(b)
+	if popover.visible and _pop_key != "civ":
+		popover_text.text = _pop_text(_pop_key)
+
+
+func _trait_badge(icon: String, tint: Color, tier: int) -> Control:
+	var badge := PanelContainer.new()
+	badge.name = "Badge"
+	badge.custom_minimum_size = Vector2(38, 38)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(19)
+	var active := tier >= 0
+	var ring: Color = TRAIT_TIER_COLORS[clampi(tier, 0, TRAIT_TIER_COLORS.size() - 1)] if active else Color(1, 1, 1, 0.22)
+	sb.bg_color = ring.darkened(0.62) if active else Color(0.08, 0.09, 0.12, 0.72)
+	sb.border_color = ring
+	sb.set_border_width_all(2)
+	sb.content_margin_left = 5
+	sb.content_margin_right = 5
+	sb.content_margin_top = 5
+	sb.content_margin_bottom = 5
+	badge.add_theme_stylebox_override("panel", sb)
+	var ic := UiIcon.make(icon, tint if active else tint.darkened(0.45), 26)
+	ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(ic)
+	return badge
 
 
 ## 羈絆進度文字：目前種數／下一個門檻（已達最高階時顯示目前／最高門檻）

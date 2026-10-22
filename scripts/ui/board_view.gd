@@ -309,6 +309,9 @@ func _enemy_at(hit: Dictionary) -> Dictionary:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# 隱藏中的棋盤（例如《氏族爭霸》正在觀看其他玩家）不接受任何操作
+	if not is_visible_in_tree():
+		return
 	if battle_mode:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			# 戰鬥中：候補區棋子可以拖曳整理（只影響下一回合），戰場上的棋子只能點選查看
@@ -368,7 +371,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## 拖曳中改用 _input 攔截，避免經過介面面板時事件被吃掉
 func _input(event: InputEvent) -> void:
-	if _press_uid < 0:
+	if _press_uid < 0 or not is_visible_in_tree():
 		return
 	if event is InputEventMouseMotion:
 		if not _dragging and event.position.distance_to(_press_pos) > DRAG_THRESHOLD:
